@@ -1,0 +1,20 @@
+﻿pre-existing notepad windows: 0, procs: 0
+PASS temporary Notepad window found by enumeration
+window: proc=Notepad class=Notepad title='제목 없음 - 메모장' mon=GSM76F5 rect={X=156,Y=0,Width=1190,Height=1032}
+PASS listed in capture enumeration (1 windows total)
+primary id=GSM76F5 wa={X=0,Y=0,Width=1920,Height=1032}
+PASS monitor id mapping (GSM76F5)
+PASS rule matches by process+class
+PASS non-matching rule rejected
+PASS regex title match
+after pos: {X=120,Y=90,Width=900,Height=600} topmost=True
+PASS position/size applied
+PASS pin (always on top) applied
+PASS InPlace true after apply
+after move+watch: {X=120,Y=90,Width=900,Height=600} reapplied=1
+PASS keep-in-place re-applied after move
+PASS maximize
+PASS minimize
+PASS restore
+notepad window closed: True
+ALL PASS

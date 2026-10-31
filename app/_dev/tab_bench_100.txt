@@ -1,0 +1,60 @@
+﻿ctor 364 ms, first show 569 ms
+first windows 13.4 ms
+first notes 17.1 ms
+first kakao 5.5 ms
+first desktop 30.8 ms
+first general 16.2 ms
+first about 12.5 ms
+first powertoys 4.0 ms
+first presets 11.5 ms
+switch avg 13.6 ms, max 47.8 ms, n=40
+--- profile
+  page 0: build 297 refresh 0 swap 0 paint 0
+  page 1: build 0 refresh 3 swap 0 paint 9
+  page 2: build 0 refresh 7 swap 0 paint 9
+  page 3: build 0 refresh 0 swap 1 paint 4
+  page 4: build 0 refresh 21 swap 1 paint 8
+  page 5: build 0 refresh 1 swap 0 paint 14
+  page 6: build 0 refresh 8 swap 0 paint 4
+  page 7: build 0 refresh 0 swap 0 paint 3
+  page 0: build 0 refresh 0 swap 1 paint 10
+  page 1: build 0 refresh 1 swap 0 paint 6
+  page 2: build 0 refresh 1 swap 1 paint 6
+  page 3: build 0 refresh 0 swap 1 paint 4
+  page 4: build 0 refresh 1 swap 0 paint 7
+  page 5: build 0 refresh 1 swap 0 paint 15
+  page 6: build 0 refresh 0 swap 1 paint 5
+  page 7: build 0 refresh 0 swap 1 paint 3
+  page 0: build 0 refresh 0 swap 1 paint 9
+  page 1: build 0 refresh 1 swap 0 paint 5
+  page 2: build 0 refresh 0 swap 0 paint 6
+  page 3: build 0 refresh 0 swap 1 paint 5
+  page 4: build 0 refresh 1 swap 0 paint 12
+  page 5: build 0 refresh 1 swap 1 paint 10
+  page 6: build 0 refresh 0 swap 1 paint 6
+  page 7: build 0 refresh 0 swap 1 paint 4
+  page 0: build 0 refresh 0 swap 0 paint 9
+  page 1: build 0 refresh 1 swap 0 paint 5
+  page 2: build 0 refresh 1 swap 0 paint 13
+  page 3: build 0 refresh 0 swap 1 paint 10
+  page 4: build 0 refresh 1 swap 0 paint 13
+  page 5: build 0 refresh 1 swap 2 paint 43
+  page 6: build 0 refresh 1 swap 1 paint 8
+  page 7: build 0 refresh 0 swap 1 paint 5
+  page 0: build 0 refresh 0 swap 3 paint 20
+  page 1: build 0 refresh 2 swap 0 paint 10
+  page 2: build 0 refresh 1 swap 1 paint 17
+  page 3: build 0 refresh 0 swap 1 paint 6
+  page 4: build 0 refresh 1 swap 0 paint 19
+  page 5: build 0 refresh 1 swap 0 paint 13
+  page 6: build 0 refresh 1 swap 1 paint 12
+  page 7: build 0 refresh 0 swap 0 paint 7
+  page 0: build 0 refresh 0 swap 1 paint 26
+  page 1: build 0 refresh 3 swap 1 paint 11
+  page 2: build 0 refresh 1 swap 0 paint 7
+  page 3: build 0 refresh 0 swap 1 paint 9
+  page 4: build 0 refresh 2 swap 0 paint 14
+  page 5: build 0 refresh 1 swap 0 paint 38
+  page 6: build 0 refresh 1 swap 1 paint 9
+  page 7: build 0 refresh 0 swap 1 paint 5
+  page 0: build 0 refresh 0 swap 1 paint 23

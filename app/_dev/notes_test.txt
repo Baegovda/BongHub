@@ -1,0 +1,28 @@
+﻿PASS notes appear without stealing focus
+PASS test notes stay off-screen
+INFO g:peach topmost=False op=1 ex=8010080
+INFO g:grape topmost=False op=1 ex=8010080
+INFO g:lagoon topmost=False op=1 ex=8010080
+INFO g:peach vis=True b={X=-28584,Y=-29070,Width=320,Height=300} op=1 ws={X=0,Y=0,Width=1920,Height=1080}
+INFO g:grape vis=True b={X=-28240,Y=-29070,Width=320,Height=300} op=1 ws={X=0,Y=0,Width=1920,Height=1080}
+INFO g:lagoon vis=True b={X=-27896,Y=-29070,Width=320,Height=300} op=1 ws={X=0,Y=0,Width=1920,Height=1080}
+PASS blocks icon applied to settings window
+PASS 3 notes saved (json+rtf)
+PASS no temp files left (atomic write)
+PASS reloaded 3 notes from disk
+PASS colors persisted
+PASS text persisted
+PASS rtf keeps bold/strike/bullets
+PASS rtf keeps italic/underline
+PASS image saved inside rtf (250 KB, png)
+PASS position/size persisted
+PASS image restored after reload
+PASS off-screen note clamped onto a visible monitor: {X=-30000,Y=-30000,Width=320,Height=300}
+PASS clamp: right of all monitors -> nearest ({X=4180,Y=300,Width=300,Height=300})
+PASS clamp: visible note unchanged
+PASS clamp: oversized shrinks into area ({X=1920,Y=0,Width=2560,Height=1400})
+PASS hide all -> closed but kept
+PASS delete removes files
+PASS test notes folder cleaned up
+PASS real notes folder untouched
+ALL PASS
