@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.3.2.0")]
-[assembly: AssemblyFileVersion("3.3.2.0")]
-[assembly: AssemblyInformationalVersion("3.3.2")]
+[assembly: AssemblyVersion("3.3.3.0")]
+[assembly: AssemblyFileVersion("3.3.3.0")]
+[assembly: AssemblyInformationalVersion("3.3.3")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -586,8 +586,9 @@ static class TestEnv {
     }
 }
 static class AppInfo {
-    public const string Version = "3.3.2";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.3.3";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.3.3  크기 조절 중 확대 제거: 글자·사이드바·목록·카드는 1:1로 두고 빈 곳은 배경색. 제목 단추는 오른쪽, 메모 도구막대는 아래에 붙임. 놓으면 한 번만 배치",
         "3.3.2  창 크기 조절을 부드럽게: 테두리를 끄는 동안은 화면을 늘려 보여주고 놓을 때 한 번만 배치. 설정 창·스티커 메모·이미지 보기·창 고르기. 그라데이션은 크기가 바뀔 때만 다시 그림",
         "3.3.1  모니터 프리셋별 창 배치(작업 영역) 연계: 아이콘 배치 복원 직후 한 번 실행, 열린 앱은 옮기기만, 중복 실행 방지, 삭제 시 안내",
         "3.3.0  PowerToys 기능 동등성 강화(영역 편집기·Win+화살표·여러 영역·팔레트 확장·사용자 지정 붙여넣기·형식별 미리보기·Resizer 단위/메타데이터) · 스냅/후킹/미리보기/Resizer 대폭 최적화",
@@ -2933,9 +2934,10 @@ class NoteBtn : Control {
     }
 }
 
-// While a border is dragged, skip per-pixel layout and owner-drawn gradients.
-// The last client snapshot is scaled to the new size; one real layout runs on mouse-up.
-// Covers every sizable ChromeForm (settings, image viewer, capture) and sticky notes.
+// While a border is dragged, skip per-pixel layout. The snapshot stays 1:1 (never scaled):
+// content sits at the top-left and is clipped when the window shrinks; new space is the
+// window background. Title buttons stay on the right edge, a note's toolbar on the bottom.
+// One real layout runs on mouse-up. Settings, sticky notes, image viewer, window picker.
 class ResizeGlide {
     public bool Armed, On;
     public static bool Live; // a border drag is in progress (snapshot, or the live fallback)
@@ -2956,10 +2958,14 @@ class ResizeGlide {
             Bitmap bm = Capture(f);
             if (bm == null) { failed = true; return; }
             shot = bm;
-            cover = new GlideCover(shot) {
+            var glideCover = new GlideCover(shot) {
                 Bounds = f.ClientRectangle,
                 Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
             };
+            var chrome = f as ChromeForm; if (chrome != null) chrome.CopyGlideChrome(glideCover);
+            var note = f as NoteForm; if (note != null) note.CopyGlideChrome(glideCover);
+            glideCover.SampleTitle();
+            cover = glideCover;
             On = true;
             f.Resize += OnResize;
             f.FormClosed += OnClosed;
@@ -3037,20 +3043,67 @@ class ResizeGlide {
 }
 class GlideCover : Control {
     readonly Bitmap shot;
+    public int HeaderH, BtnX, BtnW, FooterTop, FooterH;
+    public Color Back = Color.FromArgb(15, 15, 27), TitleL, TitleR;
+    public bool TitleGrad;
     public GlideCover(Bitmap b) {
         shot = b; TabStop = false;
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
     }
+    public void SampleTitle() {
+        TitleGrad = false;
+        if (shot == null || HeaderH < 2 || shot.Width < 2 || shot.Height < 2) return;
+        int y = Math.Min(shot.Height - 1, Math.Max(0, HeaderH / 2));
+        // one pixel just left of the window buttons: the gap uses that colour, so icon/text pixels are never stretched
+        int x = Math.Min(shot.Width - 1, Math.Max(0, BtnW > 0 ? BtnX - 2 : shot.Width / 2));
+        try { TitleL = TitleR = shot.GetPixel(x, y); TitleGrad = true; } catch { TitleGrad = false; }
+    }
+    // 1:1 blit. dest and source stay the same size; anything outside the client or the bitmap is clipped, never scaled.
+    void Blit1(Graphics g, int dx, int dy, int sx, int sy, int w, int h) {
+        if (shot == null || w <= 0 || h <= 0) return;
+        var dest = new Rectangle(dx, dy, w, h);
+        var src = new Rectangle(sx, sy, w, h);
+        var cut = Rectangle.Intersect(dest, ClientRectangle);
+        if (cut.Width <= 0 || cut.Height <= 0) return;
+        src.X += cut.X - dest.X; src.Y += cut.Y - dest.Y; src.Width = cut.Width; src.Height = cut.Height;
+        var src2 = Rectangle.Intersect(src, new Rectangle(0, 0, shot.Width, shot.Height));
+        if (src2.Width <= 0 || src2.Height <= 0) return;
+        var dest2 = new Rectangle(cut.X + (src2.X - src.X), cut.Y + (src2.Y - src.Y), src2.Width, src2.Height);
+        ResizeGlide.Blit(g, shot, dest2, src2);
+    }
     protected override void OnPaintBackground(PaintEventArgs e) {
-        using (var br = new SolidBrush(Color.FromArgb(15, 15, 27))) e.Graphics.FillRectangle(br, ClientRectangle);
+        using (var br = new SolidBrush(Back)) e.Graphics.FillRectangle(br, ClientRectangle);
     }
     protected override void OnPaint(PaintEventArgs e) {
-        if (shot == null) return;
         var g = e.Graphics;
-        g.InterpolationMode = InterpolationMode.Bilinear;
-        g.PixelOffsetMode = PixelOffsetMode.HighSpeed;
-        g.CompositingQuality = CompositingQuality.HighSpeed;
-        g.DrawImage(shot, ClientRectangle);
+        using (var br = new SolidBrush(Back)) g.FillRectangle(br, ClientRectangle);
+        if (shot == null) return;
+        int sw = shot.Width, sh = shot.Height;
+        int header = Math.Max(0, Math.Min(HeaderH, sh));
+        int footer = Math.Max(0, Math.Min(FooterH, Math.Max(0, sh - header)));
+        int footerSrc = sh - footer;
+        if (header > 0 && TitleGrad && Width > 0) {
+            using (var br = new LinearGradientBrush(new Rectangle(0, 0, Math.Max(1, Width), header), TitleL, TitleR, 0f))
+                g.FillRectangle(br, 0, 0, Width, header);
+        }
+        int bodyH = footerSrc - header;
+        if (bodyH > 0) {
+            int limit = footer > 0 ? Height - footer : Height;
+            int dh = Math.Min(bodyH, Math.Max(0, limit - header));
+            Blit1(g, 0, header, 0, header, Math.Min(sw, Width), dh);
+        }
+        if (header > 0) {
+            int inset = BtnW > 0 ? sw - (BtnX + BtnW) : 0;
+            int destBtnX = BtnW > 0 ? Width - inset - BtnW : Width;
+            int leftW = BtnW > 0 ? Math.Max(0, Math.Min(BtnX, destBtnX)) : Math.Min(sw, Width);
+            Blit1(g, 0, 0, 0, 0, leftW, header);
+            if (BtnW > 0) Blit1(g, destBtnX, 0, BtnX, 0, BtnW, header);
+        }
+        if (footer > 0 && Height > header) {
+            int drawH = Math.Min(footer, Height - header);
+            int dy = Height - drawH;
+            Blit1(g, 0, dy, 0, footerSrc + (footer - drawH), Math.Min(sw, Width), drawH);
+        }
     }
 }
 
@@ -3208,6 +3261,18 @@ class NoteForm : Form {
         }
         using (var p = new Pen(Color.FromArgb(34, 255, 255, 255))) e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
     }
+    // snapshot chrome: title strip (right-docked buttons pinned later) and the bottom toolbar, in client pixels
+    public void CopyGlideChrome(GlideCover c) {
+        c.Back = Paper;
+        c.HeaderH = title == null ? 0 : title.Bottom;
+        int x0 = int.MaxValue, x1 = 0;
+        if (title != null) foreach (Control k in title.Controls) if (k.Dock == DockStyle.Right) {
+            int a = title.Left + k.Left, b = title.Left + k.Right;
+            if (a < x0) x0 = a; if (b > x1) x1 = b;
+        }
+        if (x1 > x0) { c.BtnX = x0; c.BtnW = x1 - x0; }
+        if (bar != null && bar.Visible && bar.Height > 0) { c.FooterTop = bar.Top; c.FooterH = Math.Max(0, ClientSize.Height - bar.Top); }
+    }
     public void ApplyOpacity() { double o = Math.Max(0.3, Math.Min(1.0, Notes.Cfg.Opacity / 100.0)); if (Math.Abs(Opacity - o) > 0.001) Opacity = o; }
     void OnDisp(object s, EventArgs e) { try { BeginInvoke((Action)ClampToScreens); } catch { } }
     public void ClampToScreens() { var nb = Notes.Clamp(Bounds, Notes.Areas(), UI.S(32)); if (nb != Bounds) { Bounds = nb; dirtyMeta = true; Kick(); } }
@@ -3344,6 +3409,16 @@ class ChromeForm : Form {
         Controls.Add(Bar);
         Padding = new Padding(UI.S(3), 0, UI.S(3), UI.S(3));
         TextChanged += (s, e) => Bar.Invalidate();
+    }
+    // title bar in client pixels; window buttons (min/max/close) are the strip pinned to the right edge while dragging
+    public void CopyGlideChrome(GlideCover c) {
+        c.Back = BackColor.A == 0 ? Color.FromArgb(15, 15, 27) : BackColor;
+        c.HeaderH = Bar == null ? 0 : Bar.Bottom;
+        int n = 1 + (MinimizeBox ? 1 : 0) + (MaximizeBox ? 1 : 0);
+        c.BtnW = n * UI.S(46);
+        c.BtnX = Bar == null ? 0 : Bar.Right - c.BtnW;
+        if (c.BtnX < 0) { c.BtnW += c.BtnX; c.BtnX = 0; }
+        c.FooterH = 0;
     }
     protected override void OnHandleCreated(EventArgs e) {
         base.OnHandleCreated(e);
