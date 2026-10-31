@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.3.1.0")]
-[assembly: AssemblyFileVersion("3.3.1.0")]
-[assembly: AssemblyInformationalVersion("3.3.1")]
+[assembly: AssemblyVersion("3.3.2.0")]
+[assembly: AssemblyFileVersion("3.3.2.0")]
+[assembly: AssemblyInformationalVersion("3.3.2")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -586,8 +586,9 @@ static class TestEnv {
     }
 }
 static class AppInfo {
-    public const string Version = "3.3.1";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.3.2";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.3.2  창 크기 조절을 부드럽게: 테두리를 끄는 동안은 화면을 늘려 보여주고 놓을 때 한 번만 배치. 설정 창·스티커 메모·이미지 보기·창 고르기. 그라데이션은 크기가 바뀔 때만 다시 그림",
         "3.3.1  모니터 프리셋별 창 배치(작업 영역) 연계: 아이콘 배치 복원 직후 한 번 실행, 열린 앱은 옮기기만, 중복 실행 방지, 삭제 시 안내",
         "3.3.0  PowerToys 기능 동등성 강화(영역 편집기·Win+화살표·여러 영역·팔레트 확장·사용자 지정 붙여넣기·형식별 미리보기·Resizer 단위/메타데이터) · 스냅/후킹/미리보기/Resizer 대폭 최적화",
         "3.2.0  PowerToys 탭 추가: FancyZones(창 위치 규칙 연동) · 잡아서 이동 · 작업 영역 · 명령 팔레트 · 고급 붙여넣기 · 미리보기 · Image Resizer (위험 기능 기본 꺼짐, 꺼진 기능은 후킹·타이머 없음)",
@@ -1865,17 +1866,29 @@ class Section : TableLayoutPanel {
         c.Anchor = stretch ? AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top : AnchorStyles.Left;
         grid.Controls.Add(c, 0, row); grid.SetColumnSpan(c, 2); row++;
     }
-    GraphicsPath path; Size pathSize;
+    GraphicsPath path; Size pathSize; Bitmap cardBm; Size cardSz;
     protected override void OnPaint(PaintEventArgs e) {
-        var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
+        int w = Math.Max(1, Width), h = Math.Max(1, Height);
+        bool sizeChanged = cardBm == null || cardSz.Width != w || cardSz.Height != h;
+        if (sizeChanged && ResizeGlide.Live) { PaintCard(e.Graphics, w, h); return; }
+        if (sizeChanged) {
+            if (cardBm != null) cardBm.Dispose();
+            cardBm = new Bitmap(w, h, PixelFormat.Format32bppPArgb);
+            using (var bg = Graphics.FromImage(cardBm)) PaintCard(bg, w, h);
+            cardSz = new Size(w, h);
+        }
+        e.Graphics.DrawImageUnscaled(cardBm, Point.Empty);
+    }
+    void PaintCard(Graphics g, int w, int h) {
+        g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Dark.ParentBack(this));
-        if (path == null || pathSize != Size) { if (path != null) path.Dispose(); path = UI.Round(new Rectangle(0, 0, Width - 1, Height - 1), UI.S(12)); pathSize = Size; }
-        using (var b = new LinearGradientBrush(new Rectangle(0, 0, Width, Math.Max(1, Height)), UI.CardAlt, UI.Card, 90f)) g.FillPath(b, path);
+        if (path == null || pathSize.Width != w || pathSize.Height != h) { if (path != null) path.Dispose(); path = UI.Round(new Rectangle(0, 0, w - 1, h - 1), UI.S(12)); pathSize = new Size(w, h); }
+        using (var b = new LinearGradientBrush(new Rectangle(0, 0, w, Math.Max(1, h)), UI.CardAlt, UI.Card, 90f)) g.FillPath(b, path);
         using (var pen = new Pen(UI.Border)) g.DrawPath(pen, path);
-        int gw = Math.Max(UI.S(60), Width / 3);
+        int gw = Math.Max(UI.S(60), w / 3);
         using (var b = UI.Grad(new RectangleF(UI.S(16), 0, gw, 1), 150)) g.FillRectangle(b, UI.S(16), 0, gw, Math.Max(1, UI.S(1)));
     }
-    protected override void Dispose(bool d) { if (d && path != null) path.Dispose(); base.Dispose(d); }
+    protected override void Dispose(bool d) { if (d && path != null) path.Dispose(); if (d && cardBm != null) cardBm.Dispose(); base.Dispose(d); }
 }
 
 class HotkeyBox : TextBox {
@@ -2920,20 +2933,163 @@ class NoteBtn : Control {
     }
 }
 
+// While a border is dragged, skip per-pixel layout and owner-drawn gradients.
+// The last client snapshot is scaled to the new size; one real layout runs on mouse-up.
+// Covers every sizable ChromeForm (settings, image viewer, capture) and sticky notes.
+class ResizeGlide {
+    public bool Armed, On;
+    public static bool Live; // a border drag is in progress (snapshot, or the live fallback)
+    Form form; Control cover; Bitmap shot; bool busy, failed;
+    public void Arm(Form f) { form = f; Armed = true; failed = false; Live = true; }
+    public bool SizeChanging(int wParam, int lParam) {
+        if (busy || failed || !Armed || On || form == null || form.IsDisposed || !form.IsHandleCreated) return false;
+        if (wParam == 1 || wParam == 2) return false; // minimized / maximized: lay out once, don't scale a snapshot
+        int nw = lParam & 0xFFFF, nh = (lParam >> 16) & 0xFFFF;
+        if (nw < 2 || nh < 2) return false;
+        return nw != form.ClientSize.Width || nh != form.ClientSize.Height;
+    }
+    public void Begin(Form f) {
+        if (On || busy || f == null || f.IsDisposed || !f.IsHandleCreated) return;
+        busy = true;
+        try {
+            form = f;
+            Bitmap bm = Capture(f);
+            if (bm == null) { failed = true; return; }
+            shot = bm;
+            cover = new GlideCover(shot) {
+                Bounds = f.ClientRectangle,
+                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
+            };
+            On = true;
+            f.Resize += OnResize;
+            f.FormClosed += OnClosed;
+            f.SuspendLayout();
+            f.Controls.Add(cover);
+            cover.BringToFront();
+            if (!cover.IsHandleCreated) cover.CreateControl();
+        } catch {
+            On = false;
+            try { if (f != null) { f.Resize -= OnResize; f.FormClosed -= OnClosed; } } catch { }
+            try { if (cover != null && f != null) f.Controls.Remove(cover); } catch { }
+            if (cover != null) cover.Dispose();
+            cover = null;
+            if (shot != null) shot.Dispose();
+            shot = null;
+            try { if (f != null) f.ResumeLayout(false); } catch { }
+        } finally { busy = false; }
+    }
+    public void Track() {
+        if (!On || cover == null || form == null || form.IsDisposed) return;
+        var r = form.ClientRectangle;
+        if (cover.Bounds != r) cover.Bounds = r;
+        cover.Invalidate();
+        if (cover.IsHandleCreated) cover.Update();
+    }
+    public void End() {
+        Armed = false; failed = false; Live = false;
+        if (!On) { form = null; return; }
+        On = false;
+        var f = form; form = null;
+        if (f != null) { f.Resize -= OnResize; f.FormClosed -= OnClosed; }
+        // lay the real controls out under the snapshot, then drop the snapshot
+        if (f != null && !f.IsDisposed) { try { f.ResumeLayout(true); } catch { } }
+        if (f != null && cover != null && !f.IsDisposed) { f.Controls.Remove(cover); cover.Dispose(); }
+        cover = null;
+        if (shot != null) { shot.Dispose(); shot = null; }
+        if (f != null && !f.IsDisposed) f.Invalidate(true);
+    }
+    public static void Blit(Graphics g, Bitmap bm, Rectangle dest, Rectangle src) {
+        var im = g.InterpolationMode; var po = g.PixelOffsetMode;
+        g.InterpolationMode = InterpolationMode.NearestNeighbor; g.PixelOffsetMode = PixelOffsetMode.Half;
+        g.DrawImage(bm, dest, src, GraphicsUnit.Pixel);
+        g.InterpolationMode = im; g.PixelOffsetMode = po;
+    }
+    void OnResize(object s, EventArgs e) { Track(); }
+    void OnClosed(object s, FormClosedEventArgs e) { End(); }
+    [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
+    static Bitmap Capture(Form f) {
+        int w = Math.Max(1, f.ClientSize.Width), h = Math.Max(1, f.ClientSize.Height);
+        Bitmap bm = null;
+        try {
+            bm = new Bitmap(w, h, PixelFormat.Format32bppPArgb);
+            bool ok = false;
+            using (var g = Graphics.FromImage(bm)) {
+                var hdc = g.GetHdc();
+                try { ok = PrintWindow(f.Handle, hdc, 2); } finally { g.ReleaseHdc(hdc); }
+            }
+            if (!ok || Blank(bm)) {
+                bm.Dispose(); bm = null;
+                bm = new Bitmap(w, h, PixelFormat.Format32bppPArgb);
+                f.DrawToBitmap(bm, new Rectangle(0, 0, w, h));
+            }
+            var done = bm; bm = null; return done;
+        } catch {
+            if (bm != null) bm.Dispose();
+            return null;
+        }
+    }
+    static bool Blank(Bitmap b) {
+        if (b.Width < 2 || b.Height < 2) return true;
+        var c0 = b.GetPixel(b.Width / 2, b.Height / 2); int same = 0;
+        for (int i = 1; i < 8; i++) { var c = b.GetPixel(b.Width * i / 8, b.Height * i / 8); if (c.ToArgb() == c0.ToArgb()) same++; }
+        return same == 7 && (c0.A == 0 || c0.ToArgb() == Color.Black.ToArgb());
+    }
+}
+class GlideCover : Control {
+    readonly Bitmap shot;
+    public GlideCover(Bitmap b) {
+        shot = b; TabStop = false;
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+    }
+    protected override void OnPaintBackground(PaintEventArgs e) {
+        using (var br = new SolidBrush(Color.FromArgb(15, 15, 27))) e.Graphics.FillRectangle(br, ClientRectangle);
+    }
+    protected override void OnPaint(PaintEventArgs e) {
+        if (shot == null) return;
+        var g = e.Graphics;
+        g.InterpolationMode = InterpolationMode.Bilinear;
+        g.PixelOffsetMode = PixelOffsetMode.HighSpeed;
+        g.CompositingQuality = CompositingQuality.HighSpeed;
+        g.DrawImage(shot, ClientRectangle);
+    }
+}
+
 class NoteForm : Form {
     public NoteMeta M; public bool Discard;
     Panel rtbHost;
-    // paints the note's one-piece gradient for any child (title, paper, toolbar) at its own offset
+    readonly ResizeGlide glide = new ResizeGlide();
+    Bitmap surfBm; int surfW, surfH, surfKey;
+    // one cached gradient for the whole note; children blit their own slice (no per-control brush, no PointToScreen)
     public void PaintSurface(Graphics g, Control c) {
-        var o = PointToClient(c.PointToScreen(Point.Empty)); var st = g.Save(); g.TranslateTransform(-o.X, -o.Y);
-        FillSurface(g); g.Restore(st);
+        if (glide.On) return;
+        int x = 0, y = 0;
+        for (var p = c; p != null && !(p is Form); p = p.Parent) { x += p.Left; y += p.Top; }
+        if (!glide.Armed) {
+            EnsureSurf();
+            if (surfBm != null) {
+                var src = Rectangle.Intersect(new Rectangle(x, y, c.Width, c.Height), new Rectangle(0, 0, surfW, surfH));
+                if (src.Width > 0 && src.Height > 0) ResizeGlide.Blit(g, surfBm, new Rectangle(src.X - x, src.Y - y, src.Width, src.Height), src);
+                return;
+            }
+        }
+        var st = g.Save(); g.TranslateTransform(-x, -y); FillSurface(g); g.Restore(st);
+    }
+    void DropSurf() { if (surfBm != null) { surfBm.Dispose(); surfBm = null; } }
+    int SurfKey() { return titleA.ToArgb() ^ (titleB.ToArgb() * 17) ^ (Paper.ToArgb() * 31) ^ (title == null ? 0 : title.Bottom); }
+    void EnsureSurf() {
+        int w = Math.Max(1, Width), h = Math.Max(1, Height), k = SurfKey();
+        if (surfBm != null && surfW == w && surfH == h && surfKey == k) return;
+        DropSurf();
+        surfBm = new Bitmap(w, h, PixelFormat.Format32bppPArgb);
+        using (var g = Graphics.FromImage(surfBm)) FillSurface(g);
+        surfW = w; surfH = h; surfKey = k;
     }
     // paper colour everywhere; the note's gradient runs across the title and melts into the paper (no seam line)
     public Color Paper { get { return NoteColors.Mix(surfA, surfB, .5f); } }
     void FillSurface(Graphics g) {
         var r = new Rectangle(0, 0, Math.Max(1, Width), Math.Max(1, Height));
         using (var pb = new SolidBrush(Paper)) g.FillRectangle(pb, r);
-        int fh = title.Bottom; var top = new Rectangle(0, 0, r.Width, fh);
+        int fh = Math.Max(1, title == null ? 1 : title.Bottom); var top = new Rectangle(0, 0, r.Width, fh);
         using (var br = new LinearGradientBrush(new Rectangle(0, 0, r.Width, fh), titleA, titleB, 0f)) g.FillRectangle(br, top);
         using (var fade = new LinearGradientBrush(new Rectangle(0, -1, r.Width, fh + 2), Color.FromArgb(0, Paper), Color.FromArgb(255, Paper), 90f)) {
             var bl = new Blend { Positions = new[] { 0f, .35f, 1f }, Factors = new[] { 0f, .15f, 1f } }; fade.Blend = bl; g.FillRectangle(fade, top);
@@ -3032,6 +3188,7 @@ class NoteForm : Form {
         Color t = NoteColors.TitleA(M.Color), t2 = NoteColors.TitleB(M.Color), b = NoteColors.Body(M.Color);
         frameA = t; frameB = NoteColors.BodyEdge(M.Color);
         surfA = NoteColors.SurfA(M.Color); surfB = NoteColors.SurfB(M.Color); titleA = t; titleB = t2;
+        DropSurf();
         BackColor = Paper; title.A = t; title.B = t2; title.Seamless = this; rtb.BackColor = Paper;
         if (rtbHost != null) rtbHost.BackColor = Paper;
         foreach (var sbar in rtbHost == null ? new SlimBar[0] : rtbHost.Controls.OfType<SlimBar>().ToArray()) sbar.Back = Paper;
@@ -3040,13 +3197,21 @@ class NoteForm : Form {
     }
     Color frameA, frameB;
     protected override void OnPaintBackground(PaintEventArgs e) {
-        FillSurface(e.Graphics);
+        if (glide.On) return;
+        if (glide.Armed) FillSurface(e.Graphics);
+        else {
+            EnsureSurf();
+            if (surfBm != null) {
+                var clip = Rectangle.Intersect(e.ClipRectangle, new Rectangle(0, 0, surfW, surfH));
+                if (clip.Width > 0 && clip.Height > 0) ResizeGlide.Blit(e.Graphics, surfBm, clip, clip);
+            } else FillSurface(e.Graphics);
+        }
         using (var p = new Pen(Color.FromArgb(34, 255, 255, 255))) e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
     }
     public void ApplyOpacity() { double o = Math.Max(0.3, Math.Min(1.0, Notes.Cfg.Opacity / 100.0)); if (Math.Abs(Opacity - o) > 0.001) Opacity = o; }
     void OnDisp(object s, EventArgs e) { try { BeginInvoke((Action)ClampToScreens); } catch { } }
     public void ClampToScreens() { var nb = Notes.Clamp(Bounds, Notes.Areas(), UI.S(32)); if (nb != Bounds) { Bounds = nb; dirtyMeta = true; Kick(); } }
-    protected override void OnFormClosed(FormClosedEventArgs e) { SystemEvents.DisplaySettingsChanged -= OnDisp; save.Stop(); base.OnFormClosed(e); }
+    protected override void OnFormClosed(FormClosedEventArgs e) { SystemEvents.DisplaySettingsChanged -= OnDisp; save.Stop(); DropSurf(); glide.End(); base.OnFormClosed(e); }
     protected override void OnFormClosing(FormClosingEventArgs e) { if (!Discard) Flush(); base.OnFormClosing(e); }
 
     public void Toggle(FontStyle st) {
@@ -3142,6 +3307,9 @@ class NoteForm : Form {
         return base.ProcessCmdKey(ref msg, k);
     }
     protected override void WndProc(ref Message m) {
+        if (m.Msg == 0x0231) glide.Arm(this); // WM_ENTERSIZEMOVE (resize or move)
+        else if (m.Msg == 0x0232) { base.WndProc(ref m); glide.End(); return; } // WM_EXITSIZEMOVE
+        if (m.Msg == 0x0005 && glide.SizeChanging(m.WParam.ToInt32(), m.LParam.ToInt32())) glide.Begin(this);
         if (m.Msg == 0x84) {
             base.WndProc(ref m);
             long lp = m.LParam.ToInt64();
@@ -3165,10 +3333,13 @@ class ChromeForm : Form {
     [StructLayout(LayoutKind.Sequential)] struct MARGINS { public int L, R, T, B; }
     [StructLayout(LayoutKind.Sequential)] struct NCCALC { public Native.RECT r0, r1, r2; public IntPtr pos; }
     public readonly TitleBar Bar;
+    readonly ResizeGlide glide = new ResizeGlide();
     protected override bool ShowWithoutActivation { get { return TestEnv.Off; } }
     protected override CreateParams CreateParams { get { var c = base.CreateParams; if (TestEnv.Off) c.ExStyle |= 0x08000000 | 0x80; return c; } }
     public ChromeForm() {
         FormBorderStyle = FormBorderStyle.Sizable;
+        DoubleBuffered = true;
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
         Bar = new TitleBar(this) { Dock = DockStyle.Top };
         Controls.Add(Bar);
         Padding = new Padding(UI.S(3), 0, UI.S(3), UI.S(3));
@@ -3182,9 +3353,17 @@ class ChromeForm : Form {
         SetWindowPos(Handle, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020);
     }
     protected override void OnLoad(EventArgs e) { Bar.SendToBack(); base.OnLoad(e); }
-    protected override void OnPaintBackground(PaintEventArgs e) { using (var b = new SolidBrush(Color.FromArgb(22, 21, 40))) e.Graphics.FillRectangle(b, ClientRectangle); }
-    protected override void OnResize(EventArgs e) { base.OnResize(e); var p = WindowState == FormWindowState.Maximized ? new Padding(0) : new Padding(UI.S(3), 0, UI.S(3), UI.S(3)); if (Padding != p) Padding = p; Bar.Invalidate(true); }
+    protected override void OnPaintBackground(PaintEventArgs e) { if (glide.On) return; using (var b = new SolidBrush(Color.FromArgb(22, 21, 40))) e.Graphics.FillRectangle(b, ClientRectangle); }
+    protected override void OnResize(EventArgs e) {
+        base.OnResize(e);
+        if (glide.On) return; // snapshot covers the client; don't repaint the title bar on every pixel
+        var p = WindowState == FormWindowState.Maximized ? new Padding(0) : new Padding(UI.S(3), 0, UI.S(3), UI.S(3)); if (Padding != p) Padding = p; Bar.Invalidate();
+    }
+    protected override void OnFormClosed(FormClosedEventArgs e) { glide.End(); base.OnFormClosed(e); }
     protected override void WndProc(ref Message m) {
+        if (m.Msg == 0x0231) glide.Arm(this);
+        else if (m.Msg == 0x0232) { base.WndProc(ref m); glide.End(); return; }
+        if (m.Msg == 0x0005 && glide.SizeChanging(m.WParam.ToInt32(), m.LParam.ToInt32())) glide.Begin(this);
         if (m.Msg == 0x0083 && m.WParam != IntPtr.Zero) { // WM_NCCALCSIZE: whole window is client area
             if (IsZoomed(Handle)) {
                 var p = (NCCALC)Marshal.PtrToStructure(m.LParam, typeof(NCCALC));
@@ -3215,10 +3394,29 @@ class ChromeForm : Form {
     }
 }
 class TitleBar : Control {
-    readonly ChromeForm f; int hot = -1, down = -1;
+    readonly ChromeForm f; int hot = -1, down = -1; Bitmap fill; int fillW, fillH;
     public TitleBar(ChromeForm form) {
         f = form; Height = UI.S(38);
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        Disposed += (s, e) => { if (fill != null) fill.Dispose(); };
+    }
+    void EnsureFill(int w, int h) {
+        w = Math.Max(1, w); h = Math.Max(1, h);
+        if (fill != null && fillW == w && fillH == h) return;
+        if (fill != null) fill.Dispose();
+        fill = new Bitmap(w, h, PixelFormat.Format32bppPArgb);
+        using (var g = Graphics.FromImage(fill))
+            using (var b = new LinearGradientBrush(new Rectangle(0, 0, w, h), Color.FromArgb(27, 25, 54), Color.FromArgb(18, 17, 34), 0f))
+                g.FillRectangle(b, 0, 0, w, h);
+        fillW = w; fillH = h;
+    }
+    void PaintFill(Graphics g) {
+        if (ResizeGlide.Live && (fill == null || fillW != Math.Max(1, Width) || fillH != Math.Max(1, Height))) {
+            using (var b = new LinearGradientBrush(new Rectangle(0, 0, Math.Max(1, Width), Math.Max(1, Height)), Color.FromArgb(27, 25, 54), Color.FromArgb(18, 17, 34), 0f))
+                g.FillRectangle(b, ClientRectangle);
+            return;
+        }
+        EnsureFill(Width, Height); g.DrawImageUnscaled(fill, 0, 0);
     }
     int BW { get { return UI.S(46); } }
     bool Shown(int i) { return i == 2 || (i == 1 ? f.MaximizeBox : f.MinimizeBox); }
@@ -3250,7 +3448,7 @@ class TitleBar : Control {
     }
     protected override void OnPaint(PaintEventArgs e) {
         var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias; g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-        using (var b = new LinearGradientBrush(new Rectangle(0, 0, Math.Max(1, Width), Height), Color.FromArgb(27, 25, 54), Color.FromArgb(18, 17, 34), 0f)) g.FillRectangle(b, ClientRectangle);
+        PaintFill(g);
         using (var b = UI.Grad(new RectangleF(0, Height - 1, Width, 1), f.ContainsFocus ? 90 : 40)) g.FillRectangle(b, 0, Height - 1, Width, 1);
         int isz = UI.S(18); g.DrawImage(Program.IconThumb(), new Rectangle(UI.S(12), (Height - isz) / 2, isz, isz));
         TextRenderer.DrawText(g, f.Text, UI.Base, new Rectangle(UI.S(40), 0, Width - BW * 3 - UI.S(48), Height), f.ContainsFocus ? UI.Text : UI.Hint, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
@@ -4483,16 +4681,42 @@ class SettingsForm : ChromeForm {
 
 class DbPanel : Panel { public DbPanel() { SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true); } }
 class SidePanel : Panel {
-    public SidePanel() { SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true); BackColor = UI.Side; }
+    Bitmap bm; Size bmSz;
+    public SidePanel() {
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true); BackColor = UI.Side;
+        Disposed += (s, e) => { if (bm != null) bm.Dispose(); };
+    }
     public static SidePanel Of(Control c) { for (var p = c.Parent; p != null; p = p.Parent) { var s = p as SidePanel; if (s != null) return s; } return null; }
+    void PaintInto(Graphics g, int w, int h) {
+        using (var b = new LinearGradientBrush(new Rectangle(0, 0, w, h), Color.FromArgb(27, 25, 54), Color.FromArgb(15, 15, 28), 90f)) g.FillRectangle(b, 0, 0, w, h);
+        using (var b = UI.Grad(new RectangleF(0, 0, 1, h), 60, 90f)) g.FillRectangle(b, w - 1, 0, 1, h);
+    }
+    void Ensure() {
+        int w = Math.Max(1, Width), h = Math.Max(1, Height);
+        if (bm != null && bmSz.Width == w && bmSz.Height == h) return;
+        if (ResizeGlide.Live) return;
+        if (bm != null) bm.Dispose();
+        bm = new Bitmap(w, h, PixelFormat.Format32bppPArgb);
+        using (var g = Graphics.FromImage(bm)) PaintInto(g, w, h);
+        bmSz = new Size(w, h);
+    }
+    bool Fresh() { return bm != null && bmSz.Width == Math.Max(1, Width) && bmSz.Height == Math.Max(1, Height); }
     public void PaintBg(Graphics g, Control c) {
-        var o = PointToClient(c.PointToScreen(Point.Empty)); var st = g.Save(); g.TranslateTransform(-o.X, -o.Y);
-        using (var b = new LinearGradientBrush(new Rectangle(0, 0, Math.Max(1, Width), Math.Max(1, Height)), Color.FromArgb(27, 25, 54), Color.FromArgb(15, 15, 28), 90f)) g.FillRectangle(b, new Rectangle(o, c.Size));
-        g.Restore(st);
+        Ensure();
+        int x = 0, y = 0;
+        for (var p = c; p != null && p != this; p = p.Parent) { x += p.Left; y += p.Top; }
+        if (!Fresh()) {
+            var st = g.Save(); g.TranslateTransform(-x, -y); PaintInto(g, Math.Max(1, Width), Math.Max(1, Height)); g.Restore(st); return;
+        }
+        var src = Rectangle.Intersect(new Rectangle(x, y, c.Width, c.Height), new Rectangle(0, 0, bmSz.Width, bmSz.Height));
+        if (src.Width <= 0 || src.Height <= 0) return;
+        ResizeGlide.Blit(g, bm, new Rectangle(src.X - x, src.Y - y, src.Width, src.Height), src);
     }
     protected override void OnPaintBackground(PaintEventArgs e) {
-        using (var b = new LinearGradientBrush(new Rectangle(0, 0, Math.Max(1, Width), Math.Max(1, Height)), Color.FromArgb(27, 25, 54), Color.FromArgb(15, 15, 28), 90f)) e.Graphics.FillRectangle(b, ClientRectangle);
-        using (var b = UI.Grad(new RectangleF(0, 0, 1, Math.Max(1, Height)), 60, 90f)) e.Graphics.FillRectangle(b, Width - 1, 0, 1, Height);
+        Ensure();
+        if (!Fresh()) { PaintInto(e.Graphics, Math.Max(1, Width), Math.Max(1, Height)); return; }
+        var clip = Rectangle.Intersect(e.ClipRectangle, new Rectangle(0, 0, bmSz.Width, bmSz.Height));
+        if (clip.Width > 0 && clip.Height > 0) ResizeGlide.Blit(e.Graphics, bm, clip, clip);
     }
 }
 class BrandHeader : Control {
