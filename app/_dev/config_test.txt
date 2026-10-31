@@ -1,0 +1,15 @@
+﻿PASS defaults round-trip (4269 chars)
+PASS two default presets
+PASS work enable list/order
+PASS work primary/layout/retries/delays/refresh
+PASS away primary/disable/delays/refresh
+PASS hotkeys
+PASS hotkey parse Ctrl+Alt+1 -> mods 3 vk D1
+PASS idle defaults
+PASS CLI legacy aliases
+PASS rules round-trip (escaping, negatives, nested)
+PASS old icon keys ignored, desk defaults
+PASS partial/old JSON gets defaults
+PASS live config.json round-trip
+PASS live config has default presets
+ALL PASS
