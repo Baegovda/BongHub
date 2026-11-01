@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.3.7.0")]
-[assembly: AssemblyFileVersion("3.3.7.0")]
-[assembly: AssemblyInformationalVersion("3.3.7")]
+[assembly: AssemblyVersion("3.3.8.0")]
+[assembly: AssemblyFileVersion("3.3.8.0")]
+[assembly: AssemblyInformationalVersion("3.3.8")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -586,8 +586,9 @@ static class TestEnv {
     }
 }
 static class AppInfo {
-    public const string Version = "3.3.7";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.3.8";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.3.8  이미지 이동 후 스크롤 선택 장식 재처리 제거 · 메모 상단 항상 위 고정 버튼",
         "3.3.7  이미지 뷰어 닫기·창 이동 조작 추가 · 전체 창 실시간 크기 조절 · 트레이 설정 창 먼저 표시",
         "3.3.6  이미지 선택 해제 검색 최적화 · 텍스트/제목1~4 스타일 · 평면 그라데이션 색상 복원",
         "3.3.5  스티커 메모 상단·본문 평면 통일 · 입력 커서 고정 · 크기 조절 중 실제 본문 즉시 배치",
@@ -2759,8 +2760,9 @@ class RichBox : RichTextBox {
     public class PictInfo { public int Start, End, GoalW, GoalH, PixW, PixH; public string Hex; }
 
     float Dpi { get { if (cachedDpi <= 0) using (var g = CreateGraphics()) cachedDpi = g.DpiX; return cachedDpi; } }
+    public int PictureParseCount;
     public List<PictInfo> Pictures() {
-        if (cache == null) cache = ParsePicts(Rtf);
+        if (cache == null) { PictureParseCount++; cache = ParsePicts(Rtf); }
         return cache;
     }
     // finds \pict groups that hold png/jpeg data (skips \nonshppict fallbacks)
@@ -2870,7 +2872,7 @@ class RichBox : RichTextBox {
         imgMenu.Show(this, at);
     }
     public void OpenViewer(int ci) { var im = ImageOf(ci); if (im != null) ImageViewer.Open(im, FindForm()); }
-    void MoveImage(int ci, int target) {
+    public void MoveImage(int ci, int target) {
         if (ci < 0 || ci >= TextLength) return;
         target = Math.Max(0, Math.Min(TextLength, target));
         if (target == ci || target == ci + 1) return;
@@ -2883,7 +2885,7 @@ class RichBox : RichTextBox {
             if (target > ci) target--;
             target = Math.Max(0, Math.Min(TextLength, target));
             Select(target, 0); SelectedRtf = imageRtf;
-            Select(target, 1); SelImage = target; cache = null; objectCache = null;
+            Select(Math.Min(TextLength, target + 1), 0); SelImage = -1; cache = null; objectCache = null;
         } finally { SendMessage(Handle, 0x000B, (IntPtr)1, IntPtr.Zero); Invalidate(); }
 
         if (ImagesChanged != null) ImagesChanged();
@@ -2891,6 +2893,8 @@ class RichBox : RichTextBox {
 
     protected override void WndProc(ref Message m) {
         if (ImageTools) {
+            // Scrolling never needs picture payload parsing or a full-control adorner repaint.
+            if ((m.Msg == 0x0115 || m.Msg == 0x020A) && handle < 0 && imageDrag < 0 && SelImage >= 0) { SelImage = -1; Invalidate(); }
             switch (m.Msg) {
                 case 0x0201: { // LBUTTONDOWN
                     var p = Pt(m); int h = HandleAt(p);
@@ -2956,7 +2960,7 @@ class RichBox : RichTextBox {
         base.WndProc(ref m);
         if (PaintBack != null && (m.Msg == 0x0115 || m.Msg == 0x020A || m.Msg == 0x0005)) Invalidate();
         if (m.Msg == 0x000F && ImageTools && SelImage >= 0) PaintSelection();
-        if (ImageTools && SelImage >= 0 && (m.Msg == 0x0115 || m.Msg == 0x020A)) Invalidate();
+
     }
     protected override void OnSelectionChanged(EventArgs e) { if (SelImage >= 0 && !(SelectionStart == SelImage && SelectionLength == 1) && handle < 0) { SelImage = -1; Cursor = Cursors.IBeam; Invalidate(); } base.OnSelectionChanged(e); }
     protected override void OnTextChanged(EventArgs e) { cache = null; objectCache = null; base.OnTextChanged(e); if (PaintBack != null) Invalidate(); }
@@ -3216,6 +3220,7 @@ class NoteForm : Form {
     }
     Color titleA, titleB;
     Color surfA, surfB;
+    NoteBtn pinButton;
     RichTextBox rtb; GradPanel title; Panel body; FlowLayoutPanel bar; WTimer save; bool dirtyText, dirtyMeta, loading = true;
     public RichTextBox Box { get { return rtb; } }
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
@@ -3243,7 +3248,9 @@ class NoteForm : Form {
         bMenu.Click += (s, e) => ShowMenu(bMenu);
         var bClose = new NoteBtn("✕", new Font("Segoe UI", 9f * UI.Scale), "메모 닫기 (목록에는 남아요)") { Dock = DockStyle.Right };
         bClose.Click += (s, e) => Notes.Close(M);
-        title.Controls.Add(bAdd); title.Controls.Add(bMenu); title.Controls.Add(bClose);
+        pinButton = new NoteBtn("↑", new Font("Segoe UI", 12f * UI.Scale, FontStyle.Bold), "항상 위 고정 켜기/끄기") { Dock = DockStyle.Right, On = TopMost };
+        pinButton.Click += (s, e) => TogglePinned();
+        title.Controls.Add(bAdd); title.Controls.Add(pinButton); title.Controls.Add(bMenu); title.Controls.Add(bClose);
 
         bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = UI.S(32), WrapContents = false, Padding = new Padding(UI.S(6), UI.S(2), 0, 0), Visible = false };
         Func<string, FontStyle, string, Action, NoteBtn> tb = (gl, st, tip, act) => { var b = new NoteBtn(gl, new Font("Segoe UI", 10f * UI.Scale, st), tip); b.Click += (s, e) => { act(); rtb.Focus(); }; bar.Controls.Add(b); return b; };
@@ -3422,6 +3429,7 @@ class NoteForm : Form {
     void AskDelete() {
         if (rtb.TextLength == 0 || DarkBox.Show(this, "이 메모를 삭제할까요?", "스티커 메모", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) Notes.Delete(M);
     }
+    void TogglePinned() { TopMost = !TopMost; pinButton.On = TopMost; pinButton.Invalidate(); dirtyMeta = true; Flush(); }
     void ShowMenu(Control at) {
         var menu = new ContextMenuStrip { Renderer = new DarkRenderer(), Font = UI.Base };
         menu.Items.Add(new ToolStripMenuItem("색상…  (" + NoteColors.Name(M.Color) + ")", NoteColors.SwatchImage(M.Color, UI.S(14)), (s, e) => BeginInvoke((Action)(() => {
@@ -3431,7 +3439,7 @@ class NoteForm : Form {
         }))));
         menu.Items.Add(new ToolStripMenuItem("이미지 넣기…", null, (s, e) => PickImage()));
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("항상 위에 표시", null, (s, e) => { TopMost = !TopMost; dirtyMeta = true; Flush(); }) { Checked = TopMost });
+        menu.Items.Add(new ToolStripMenuItem("항상 위에 표시", null, (s, e) => TogglePinned()) { Checked = TopMost });
         menu.Items.Add("새 메모", null, (s, e) => Notes.New(true));
         menu.Items.Add("메모 목록 열기", null, (s, e) => { if (Notes.OpenList != null) Notes.OpenList(2); });
         menu.Items.Add(new ToolStripSeparator());
@@ -3747,7 +3755,7 @@ class SettingsForm : ChromeForm {
         if (redraw) SendMessage(content.Handle, 0x000B, IntPtr.Zero, IntPtr.Zero); // WM_SETREDRAW off
         var sw = Stopwatch.StartNew(); double tb = 0, tr = 0, tv = 0;
         try {
-            var np = EnsurePage(i); tb = sw.Elapsed.TotalMilliseconds;
+            var np = EnsurePage(i); if (map != null && !monitorLoadStarted) LoadMonitorsAsync(); tb = sw.Elapsed.TotalMilliseconds;
             int old = page; page = i;
             if (i == 1) RefreshScopes(); if (i == 2) FillNotes(); if (i == 3) RefreshKakaoStatus(); if (i == 4) RefreshDesk(); if (i == 5) { RefreshIdlePresets(); ShowCloud(); } if (i == 6) RefreshAbout(); if (i == 7) { if (PtOpen != null) PtShow(null); PtRefresh(); }
             tr = sw.Elapsed.TotalMilliseconds;
@@ -4048,7 +4056,9 @@ class SettingsForm : ChromeForm {
         monSummary.Text = sel + "    ·    켜기 " + (cur.Enable.Count == 0 ? "-" : string.Join(", ", cur.Enable)) +
             "    ·    끄기 " + (cur.Disable.Count == 0 ? "-" : string.Join(", ", cur.Disable)) + "    ·    주 모니터 " + (cur.Primary == "" ? "변경 없음" : cur.Primary);
     }
+    bool monitorLoadStarted;
     void LoadMonitorsAsync() {
+        if (map == null || monitorLoadStarted) return; monitorLoadStarted = true;
         map.Status = "모니터 정보를 불러오는 중…"; map.Invalidate();
         ThreadPool.QueueUserWorkItem(_ => {
             List<MonInfo> l; string err = null;
@@ -6590,7 +6600,7 @@ class TrayApp : Form {
         ShowInTaskbar = false; WindowState = FormWindowState.Minimized; FormBorderStyle = FormBorderStyle.FixedToolWindow; Opacity = 0;
         cfg = Config.Load();
         icon = new NotifyIcon { Icon = Program.AppIcon, Text = "BongHub", Visible = true };
-        icon.DoubleClick += (s, e) => OpenSettings();
+        icon.MouseDoubleClick += (s, e) => { if (e.Button == MouseButtons.Left) BeginInvoke((Action)(() => { try { OpenSettings(); } catch (Exception ex) { try { File.WriteAllText(Path.Combine(Core.Dir, "settings_open_error.txt"), ex.ToString()); } catch { } Balloon("설정 창을 열지 못했어요: " + ex.Message, ToolTipIcon.Warning); } })); };
         idleTimer = new WTimer { Interval = 30000 }; idleTimer.Tick += (s, e) => CheckIdle(); idleTimer.Start();
         deskAuto = new WTimer { Interval = 60000 }; deskAuto.Tick += (s, e) => DeskAutoTick(); deskAuto.Start();
         deskRestore = new WTimer { Interval = 4000 }; deskRestore.Tick += (s, e) => DeskRestoreTick();
@@ -6860,9 +6870,10 @@ class TrayApp : Form {
             finally { w.DestroyHandle(); }
         }
     }
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
     void OpenSettings() { OpenSettings(0); }
     void OpenSettings(int pg) {
-        if (settings != null && !settings.IsDisposed) { settings.WindowState = FormWindowState.Normal; settings.ShowPage(pg); settings.Activate(); return; }
+        if (settings != null && !settings.IsDisposed) { settings.Show(); settings.WindowState = FormWindowState.Normal; Native.ShowWindow(settings.Handle, 9); settings.BringToFront(); settings.Activate(); SetForegroundWindow(settings.Handle); settings.ShowPage(pg); return; }
         UnregisterAll();
         SettingsForm.HotkeyOwner = HotkeyTaken;
         settings = new SettingsForm(cfg, Startup.IsEnabled(), true);
@@ -6877,7 +6888,7 @@ class TrayApp : Form {
             if (kChanged) { var k = Config.CloneObj(cfg.Kakao); ThreadPool.QueueUserWorkItem(_ => { try { Kakao.Sync(k); } catch { } }); }
         };
         settings.FormClosed += (s, e) => { settings = null; if (cloudCfgPending) { cloudCfgPending = false; cfg = Config.Load(); } ApplyConfig(false); };
-        settings.Show(); settings.Activate(); settings.Update();
+        settings.Show(); Native.ShowWindow(settings.Handle, 9); settings.BringToFront(); settings.Activate(); SetForegroundWindow(settings.Handle); settings.Update();
         var opened = settings; opened.BeginInvoke((Action)(() => { if (!opened.IsDisposed) opened.ShowPage(pg); }));
     }
 
@@ -7308,6 +7319,21 @@ static class Program {
             using (var bmp = TestEnv.Render(f)) { int lit = 0; for (int y = UI.S(40); y < f.Height - UI.S(40); y += 2) for (int x = UI.S(12); x < f.Width - UI.S(30); x += 2) { var px = bmp.GetPixel(x, y); if (px.R + px.G + px.B > 600) lit++; } check(lit > 40, "text visible after scrolling (" + lit + " bright px)"); }
             rb.SelectionStart = 0; rb.ScrollToCaret(); rb.Refresh(); Pump(300);
             using (var bmp = TestEnv.Render(f)) { int lit = 0; for (int y = UI.S(40); y < f.Height - UI.S(40); y += 2) for (int x = UI.S(12); x < f.Width - UI.S(30); x += 2) { var px = bmp.GetPixel(x, y); if (px.R + px.G + px.B > 600) lit++; } check(lit > 40, "text visible at top (" + lit + " bright px)"); }
+            // Regression: move an embedded picture, then repeatedly scroll/repaint without re-reading the RTF payload.
+            string textBeforeMove = rb.RawText().Replace("\uFFFC", "");
+            rb.MoveImage(ci, rb.TextLength); Pump(100);
+            ci = rb.ObjectChars().Single();
+            check(rb.RawText().Replace("\uFFFC", "") == textBeforeMove, "move keeps surrounding text");
+            check(rb.SelImage < 0, "move releases picture adorner before scrolling");
+            int parses = rb.PictureParseCount; var scrollWatch = Stopwatch.StartNew();
+            for (int n = 0; n < 40; n++) { rb.Select(n % 2 == 0 ? 0 : rb.TextLength, 0); rb.ScrollToCaret(); rb.Refresh(); }
+            check(rb.PictureParseCount == parses, "move + 40 scroll/repaint cycles do not parse image RTF");
+            sb.AppendLine("INFO post-move scroll/repaint ms " + scrollWatch.ElapsedMilliseconds);
+            using (var deferred = new SettingsForm(Config.Load(), false, true)) {
+                deferred.OnSave = (c, x) => { }; TestEnv.Place(deferred); deferred.Show(); deferred.Update();
+                check(deferred.Visible && deferred.IsHandleCreated, "deferred settings shell visible before page build");
+                deferred.ShowPage(0); Pump(100); check(deferred.Visible, "deferred settings page builds after shell"); deferred.Close();
+            }
             // viewer
             using (var im = rb.ImageOf(ci)) { var v = new ImageViewer(new Bitmap(im)); TestEnv.Place(v); v.Size = new Size(UI.S(900), UI.S(620)); v.Show(); Pump(600);
                 check(v.Canvas.Zoom < 1f, "viewer fits large image (" + Math.Round(v.Canvas.Zoom * 100) + "%)");
