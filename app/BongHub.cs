@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.4.6.0")]
-[assembly: AssemblyFileVersion("3.4.6.0")]
-[assembly: AssemblyInformationalVersion("3.4.6")]
+[assembly: AssemblyVersion("3.4.7.0")]
+[assembly: AssemblyFileVersion("3.4.7.0")]
+[assembly: AssemblyInformationalVersion("3.4.7")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -695,8 +695,9 @@ static class BlankAutoLogon {
     public static int Run(string[] args){if(args.Length!=2||(args[1]!="enable"&&args[1]!="restore"))return 2;try{Set(args[1]=="enable");return 0;}catch(Exception ex){DarkBox.Show(ex.Message,"무암호 부팅 자동 로그인");return 1;}}
 }
 static class AppInfo {
-    public const string Version = "3.4.6";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.4.7";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.4.7  메모 첫 창 드래그 활성화 지연 제거 · 이동 중 저장 타이머 재시작 제거 · 이미지 메타데이터 미리 준비",
         "3.4.6  메모 이미지/디자인 전면 개선 · 무암호 로컬 계정 부팅 자동 로그인 설정·복원",
         "3.4.5  숨겨진 절전 복귀 로그인 메뉴 대신 실제 전원 정책 적용·복원 · 이미지 보기 종료 후 타이머 예외 수정",
         "3.4.4  일반 설정에서 Windows 절전 복귀 로그인 옵션·Microsoft Autologon 공식 안내 바로 열기",
@@ -2979,6 +2980,7 @@ class RichBox : RichTextBox {
         if (cache == null) { PictureParseCount++; cache = ParsePicts(Rtf); }
         return cache;
     }
+    public void PrimePictures(string rtf){if(!string.IsNullOrEmpty(rtf)){cache=ParsePicts(rtf);PictureParseCount++;}}
     // finds \pict groups that hold png/jpeg data (skips \nonshppict fallbacks)
     public static List<PictInfo> ParsePicts(string r) {
         var res = new List<PictInfo>(); int i = 0;
@@ -3456,7 +3458,7 @@ class NoteForm : Form {
     Color titleA, titleB;
     Color surfA, surfB;
     NoteBtn pinButton;
-    RichTextBox rtb; GradPanel title; Panel body; FlowLayoutPanel bar; WTimer save; bool dirtyText, dirtyMeta, loading = true;
+    RichTextBox rtb; GradPanel title; Panel body; FlowLayoutPanel bar; WTimer save; bool dirtyText, dirtyMeta, loading = true, interactiveMove;
     public RichTextBox Box { get { return rtb; } }
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
@@ -3515,7 +3517,7 @@ class NoteForm : Form {
         Controls.Add(body); Controls.Add(bar); Controls.Add(title); body.BringToFront();
 
         string rtf = Notes.LoadRtf(m.Id);
-        if (!string.IsNullOrEmpty(rtf)) { try { rtb.Rtf = rtf; } catch { rtb.Text = m.Text ?? ""; } }
+        if (!string.IsNullOrEmpty(rtf)) { try { rtb.Rtf = rtf; ((RichBox)rtb).PrimePictures(rtf); } catch { rtb.Text = m.Text ?? ""; } }
         else if (!string.IsNullOrEmpty(m.Text)) rtb.Text = m.Text;
         if (m.Zoom > 0.5f && m.Zoom < 5f) rtb.ZoomFactor = m.Zoom;
         rtb.SelectionColor = NoteColors.Text;
@@ -3532,8 +3534,9 @@ class NoteForm : Form {
             } catch { }
         };
         save = new WTimer { Interval = 1800 }; save.Tick += (s, e) => Flush();
-        Move += (s, e) => { if (!loading && Visible) { dirtyMeta = true; Kick(); } };
-        Resize += (s, e) => { if (!loading && Visible) { dirtyMeta = true; Kick(); } };
+        Move += (s, e) => { if (!loading && Visible) { dirtyMeta = true; if(!interactiveMove)Kick(); } };
+        Resize += (s, e) => { if (!loading && Visible) { dirtyMeta = true; if(!interactiveMove)Kick(); } };
+        Shown+=(s,e)=>{try{BeginInvoke((Action)AllowActivation);}catch{}};
         Activated += (s, e) => bar.Visible = true;
         Deactivate += (s, e) => bar.Visible = false;
         SystemEvents.DisplaySettingsChanged += OnDisp;
@@ -3709,8 +3712,8 @@ class NoteForm : Form {
     protected override void WndProc(ref Message m) {
         if (m.Msg == WM_MOUSEACTIVATE) { AllowActivation(); m.Result = (IntPtr)1; return; } // MA_ACTIVATE: startup notes stay quiet until clicked
         // RichEdit stays live; defer background bitmap caches until the drag ends.
-        if(m.Msg==0x0231) ResizeGlide.Live=true;
-        if(m.Msg==0x0232) { ResizeGlide.Live=false; Invalidate(true); }
+        if(m.Msg==0x0231){interactiveMove=true;save.Stop();ResizeGlide.Live=true;}
+        if(m.Msg==0x0232){interactiveMove=false;ResizeGlide.Live=false;if(dirtyMeta||dirtyText)Kick();Invalidate(true);}
         if (m.Msg == 0x84) {
             base.WndProc(ref m);
             long lp = m.LParam.ToInt64();
@@ -8054,6 +8057,7 @@ static class Program {
             FillDemo(fs);
             Pump(1200);
             IntPtr fg = Native.GetForegroundWindow(); check(!fs.Any(f => f.Handle == fg), "notes appear without stealing focus");
+            check(fs.All(f=>(Native.GetWindowLongPtr(f.Handle,-20).ToInt64()&0x08000000)==0),"notes pre-arm activation before first drag click");
             check(fs.All(f => f.Left < -20000), "test notes stay off-screen");
             using (var bm = DemoImage(1400, 820)) fs[2].InsertImage(bm);
             Pump(800);
