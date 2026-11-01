@@ -194,7 +194,7 @@
     "Peek": {
       "Enabled": true,
       "Hotkey": "Ctrl+Shift+Space",
-      "CloseOnFocusLoss": false,
+      "CloseOnFocusLoss": true,
       "RenderHtml": true
     },
     "Resizer": {
