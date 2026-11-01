@@ -1,0 +1,242 @@
+{
+  "Version": 2,
+  "Presets": [
+    {
+      "Brightness": [],
+      "DeskLayout": "",
+      "Workspace": "",
+      "Name": "작업",
+      "Hotkey": "Ctrl+Alt+1",
+      "Enable": [
+        "SAM747A",
+        "SAM73D3",
+        "GSM76F5",
+        "SAM100B",
+        "DRS2555"
+      ],
+      "Disable": [],
+      "Primary": "SAM73D3",
+      "Layout": "work_layout.cfg",
+      "Retries": 4,
+      "EnableDelay": 1500,
+      "StepDelay": 2000,
+      "LayoutDelay": 3000,
+      "RulesDelay": 3000,
+      "RefreshTaskbar": true,
+      "Overlay": true,
+      "OverlayMessage": "",
+      "Rules": []
+    },
+    {
+      "Brightness": [],
+      "DeskLayout": "",
+      "Workspace": "",
+      "Name": "자리비움",
+      "Hotkey": "Ctrl+Alt+0",
+      "Enable": [],
+      "Disable": [
+        "SAM747A",
+        "SAM73D3",
+        "SAM100B",
+        "DRS2555"
+      ],
+      "Primary": "GSM76F5",
+      "Layout": "",
+      "Retries": 1,
+      "EnableDelay": 1500,
+      "StepDelay": 2000,
+      "LayoutDelay": 3000,
+      "RulesDelay": 3000,
+      "RefreshTaskbar": true,
+      "Overlay": true,
+      "OverlayMessage": "",
+      "Rules": []
+    },
+    {
+      "Brightness": [],
+      "DeskLayout": "",
+      "Workspace": "",
+      "Name": "게임",
+      "Hotkey": "Ctrl+Alt+5",
+      "Enable": [
+        "DRS2555",
+        "SAM73D3",
+        "SAM747A"
+      ],
+      "Disable": [
+        "GSM76F5",
+        "SAM100B"
+      ],
+      "Primary": "SAM73D3",
+      "Layout": "",
+      "Retries": 1,
+      "EnableDelay": 1500,
+      "StepDelay": 2000,
+      "LayoutDelay": 3000,
+      "RulesDelay": 3000,
+      "RefreshTaskbar": true,
+      "Overlay": true,
+      "OverlayMessage": "",
+      "Rules": []
+    }
+  ],
+  "General": {
+    "TabOrder": [],
+    "IdleEnabled": true,
+    "IdleMinutes": 15,
+    "IdlePreset": "자리비움",
+    "SkipIfAudio": true,
+    "AudioThreshold": 0.001,
+    "OverlayEnabled": true,
+    "OverlayOpacity": 70
+  },
+  "Kakao": {
+    "AdBlock": true,
+    "Compact": true,
+    "Dark": false,
+    "AutoApply": true
+  },
+  "GlobalRules": [
+    {
+      "Enabled": true,
+      "Name": "Discord",
+      "Process": "Discord",
+      "Title": "",
+      "TitleRegex": false,
+      "Class": "Chrome_WidgetWin_1",
+      "Monitor": "",
+      "Action": "restore",
+      "X": -9,
+      "Y": 0,
+      "W": 978,
+      "H": 1045,
+      "Pin": false,
+      "Keep": false,
+      "Zone": 0
+    }
+  ],
+  "Notes": {
+    "DefaultColor": "g:aurora",
+    "Gradient": true,
+    "ColorVer": 2,
+    "FontSize": 11,
+    "Opacity": 100,
+    "Hotkey": "Ctrl+Alt+N",
+    "OpenOnStartup": true
+  },
+  "Desk": {
+    "AutoSave": true,
+    "AutoSaveMinutes": 10,
+    "SaveOnExit": true,
+    "SaveBeforeSwitch": true,
+    "RestoreOnChange": true,
+    "RestoreOnStartup": false,
+    "HotkeySave": "",
+    "HotkeyRestore": ""
+  },
+  "Cloud": {
+    "Enabled": true,
+    "Repo": "https://github.com/Baegovda/BongHub.git",
+    "Branch": "main",
+    "PullMinutes": 2
+  },
+  "Pt": {
+    "Zones": {
+      "Enabled": false,
+      "ShiftDrag": true,
+      "ShowOnDrag": false,
+      "Span": true,
+      "WinArrows": false,
+      "RestoreSize": true,
+      "AllMonitors": false,
+      "Opacity": 55,
+      "Color": "#5A6CFF",
+      "HotColor": "#6EC6FF",
+      "Numbers": true,
+      "Exclude": [],
+      "Layouts": []
+    },
+    "Grab": {
+      "Enabled": false,
+      "Modifier": "Alt",
+      "Resize": true,
+      "SkipFullscreen": true
+    },
+    "Work": {
+      "Enabled": true,
+      "LaunchMissing": true,
+      "MoveExisting": true,
+      "Items": []
+    },
+    "Palette": {
+      "Enabled": false,
+      "Hotkey": "Ctrl+Alt+Space",
+      "Apps": true,
+      "Calc": true,
+      "Web": true,
+      "Units": true,
+      "Time": true,
+      "Windows": true,
+      "Files": true,
+      "Shell": true,
+      "Terminal": true,
+      "System": true,
+      "Settings": true
+    },
+    "Paste": {
+      "Enabled": true,
+      "Hotkey": "Ctrl+Alt+V",
+      "PlainHotkey": "Ctrl+Alt+Shift+V",
+      "JsonHotkey": "",
+      "MarkdownHotkey": "",
+      "Custom": []
+    },
+    "Peek": {
+      "Enabled": false,
+      "Hotkey": "Ctrl+Shift+Space",
+      "CloseOnFocusLoss": false,
+      "RenderHtml": true
+    },
+    "Resizer": {
+      "Enabled": true,
+      "ContextMenu": false,
+      "Presets": [
+        {
+          "Name": "작게",
+          "W": 854,
+          "H": 480,
+          "Unit": "px"
+        },
+        {
+          "Name": "중간",
+          "W": 1366,
+          "H": 768,
+          "Unit": "px"
+        },
+        {
+          "Name": "크게",
+          "W": 1920,
+          "H": 1080,
+          "Unit": "px"
+        },
+        {
+          "Name": "휴대폰",
+          "W": 320,
+          "H": 568,
+          "Unit": "px"
+        }
+      ],
+      "Preset": 1,
+      "Fit": "fit",
+      "ShrinkOnly": true,
+      "Replace": false,
+      "Quality": 90,
+      "IgnoreOrientation": true,
+      "KeepDate": false,
+      "RemoveMeta": false,
+      "NameFormat": "%1 (%2)",
+      "Fallback": "png",
+      "PngInterlace": 0
+    }
+  }
+}
