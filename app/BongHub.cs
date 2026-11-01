@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.3.4.0")]
-[assembly: AssemblyFileVersion("3.3.4.0")]
-[assembly: AssemblyInformationalVersion("3.3.4")]
+[assembly: AssemblyVersion("3.3.5.0")]
+[assembly: AssemblyFileVersion("3.3.5.0")]
+[assembly: AssemblyInformationalVersion("3.3.5")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -586,8 +586,9 @@ static class TestEnv {
     }
 }
 static class AppInfo {
-    public const string Version = "3.3.4";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.3.5";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.3.5  스티커 메모 상단·본문 평면 통일 · 입력 커서 고정 · 크기 조절 중 실제 본문 즉시 배치",
         "3.3.4  스티커 메모 이미지 드래그 이동 · 글자 크기 빠른 선택 · 색상 호버 미리보기와 차분한 팔레트 · 선택 핸들 커서 안정화 · 더블클릭 이미지 뷰어 제목 표시줄/작업 표시줄 숨김 · 모달 창에서도 메모 선택 · 입력 후 조용할 때 자동 저장",
         "3.3.3  크기 조절 중 확대 제거: 글자·사이드바·목록·카드는 1:1로 두고 빈 곳은 배경색. 제목 단추는 오른쪽, 메모 도구막대는 아래에 붙임. 놓으면 한 번만 배치",
         "3.3.2  창 크기 조절을 부드럽게: 테두리를 끄는 동안은 화면을 늘려 보여주고 놓을 때 한 번만 배치. 설정 창·스티커 메모·이미지 보기·창 고르기. 그라데이션은 크기가 바뀔 때만 다시 그림",
@@ -2733,6 +2734,7 @@ static class Notes {
 // a picture context menu and double-click viewer. Pictures keep their stored pixels; only the display size
 // (\picwgoal/\pichgoal) changes, so quality is preserved and the size is saved/synced with the note.
 class RichBox : RichTextBox {
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr LoadLibrary(string n);
     static bool ok = LoadLibrary("msftedit.dll") != IntPtr.Zero;
     public Action<Graphics, Control> PaintBack;   // when set, the control is transparent and the owner paints its surface
@@ -2743,14 +2745,13 @@ class RichBox : RichTextBox {
     public int SelImage = -1;            // char index of the selected picture
     Rectangle dragRect; int handle = -1; Point dragStart; Rectangle startRect; ToolTip tip; float aspect = 1;
     int imageDrag = -1, dropIndex = -1; Point imageDown; bool movingImage;
-    List<PictInfo> cache; string cacheKey;
+    List<PictInfo> cache; List<int> objectCache; float cachedDpi;
     public class PictInfo { public int Start, End, GoalW, GoalH, PixW, PixH; public string Hex; }
 
-    float Dpi { get { using (var g = CreateGraphics()) return g.DpiX; } }
+    float Dpi { get { if (cachedDpi <= 0) using (var g = CreateGraphics()) cachedDpi = g.DpiX; return cachedDpi; } }
     public List<PictInfo> Pictures() {
-        string r = Rtf; string key = r.Length + ":" + r.GetHashCode();
-        if (cache != null && key == cacheKey) return cache;
-        cache = ParsePicts(r); cacheKey = key; return cache;
+        if (cache == null) cache = ParsePicts(Rtf);
+        return cache;
     }
     // finds \pict groups that hold png/jpeg data (skips \nonshppict fallbacks)
     public static List<PictInfo> ParsePicts(string r) {
@@ -2802,7 +2803,7 @@ class RichBox : RichTextBox {
         var sb = new StringBuilder(n + 2); var gt = new GETTEXTEX { cb = (n + 2) * 2, flags = 4, codepage = 1200 };
         SendMessage(Handle, 0x045E, ref gt, sb); return sb.ToString();
     }
-    public List<int> ObjectChars() { var t = RawText(); var l = new List<int>(); for (int k = 0; k < t.Length; k++) if (t[k] == '\uFFFC') l.Add(k); return l; }
+    public List<int> ObjectChars() { if (objectCache != null) return objectCache; var t = RawText(); var l = new List<int>(); for (int k = 0; k < t.Length; k++) if (t[k] == '\uFFFC') l.Add(k); return objectCache = l; }
     public Rectangle ImageRect(int ci) {
         var objs = ObjectChars(); int nth = objs.IndexOf(ci); var ps = Pictures(); if (nth < 0 || nth >= ps.Count) return Rectangle.Empty;
         var p0 = GetPositionFromCharIndex(ci); float k = Dpi / 1440f * ZoomFactor;
@@ -2862,12 +2863,16 @@ class RichBox : RichTextBox {
         if (target == ci || target == ci + 1) return;
         Select(ci, 1); string imageRtf = SelectedRtf;
         if (string.IsNullOrEmpty(imageRtf) || !imageRtf.Contains(@"\pict")) return;
-        SelImage = -1;
-        Select(ci, 1); SelectedText = "";
-        if (target > ci) target--;
-        target = Math.Max(0, Math.Min(TextLength, target));
-        Select(target, 0); SelectedRtf = imageRtf;
-        Select(target, 1); SelImage = target; cache = null; Invalidate();
+        SendMessage(Handle, 0x000B, IntPtr.Zero, IntPtr.Zero);
+        try {
+            SelImage = -1;
+            Select(ci, 1); SelectedText = "";
+            if (target > ci) target--;
+            target = Math.Max(0, Math.Min(TextLength, target));
+            Select(target, 0); SelectedRtf = imageRtf;
+            Select(target, 1); SelImage = target; cache = null; objectCache = null;
+        } finally { SendMessage(Handle, 0x000B, (IntPtr)1, IntPtr.Zero); Invalidate(); }
+
         if (ImagesChanged != null) ImagesChanged();
     }
 
@@ -2908,14 +2913,14 @@ class RichBox : RichTextBox {
                         return;
                     }
                     int hv = HandleAt(p); if (hv >= 0) { Cursor = HCur[hv]; return; }
-                    Cursor = SelImage >= 0 && ImageAt(p) == SelImage ? Cursors.SizeAll : Cursors.IBeam;
+
                     break;
                 }
                 case 0x0020:
                     if (handle >= 0) { Cursor = HCur[handle]; System.Windows.Forms.Cursor.Current = HCur[handle]; m.Result = (IntPtr)1; return; }
                     if (imageDrag >= 0 && movingImage) { Cursor = Cursors.SizeAll; System.Windows.Forms.Cursor.Current = Cursors.SizeAll; m.Result = (IntPtr)1; return; }
                     { var pt = PointToClient(Cursor.Position); int hv = HandleAt(pt); if (hv >= 0) { Cursor = HCur[hv]; System.Windows.Forms.Cursor.Current = HCur[hv]; m.Result = (IntPtr)1; return; } if (SelImage >= 0 && ImageAt(pt) == SelImage) { Cursor = Cursors.SizeAll; System.Windows.Forms.Cursor.Current = Cursors.SizeAll; m.Result = (IntPtr)1; return; } }
-                    break; // SETCURSOR
+                    System.Windows.Forms.Cursor.Current = Cursors.IBeam; m.Result = (IntPtr)1; return; // native text area has one stable cursor
                 case 0x0202:
                     if (imageDrag >= 0) {
                         int ci = imageDrag, dest = dropIndex; bool move = movingImage;
@@ -2941,7 +2946,7 @@ class RichBox : RichTextBox {
         if (ImageTools && SelImage >= 0 && (m.Msg == 0x0115 || m.Msg == 0x020A)) Invalidate();
     }
     protected override void OnSelectionChanged(EventArgs e) { base.OnSelectionChanged(e); if (SelImage >= 0 && !(SelectionStart == SelImage && SelectionLength == 1) && handle < 0) { SelImage = -1; Invalidate(); } }
-    protected override void OnTextChanged(EventArgs e) { cache = null; base.OnTextChanged(e); if (PaintBack != null) Invalidate(); }
+    protected override void OnTextChanged(EventArgs e) { cache = null; objectCache = null; base.OnTextChanged(e); if (PaintBack != null) Invalidate(); }
     static Point Pt(Message m) { long l = (long)m.LParam; return new Point(unchecked((short)(l & 0xFFFF)), unchecked((short)((l >> 16) & 0xFFFF))); }
     void PaintSelection() {
         if (SelImage >= TextLength) { SelImage = -1; return; }
@@ -3171,20 +3176,7 @@ class NoteForm : Form {
     readonly ResizeGlide glide = new ResizeGlide();
     Bitmap surfBm; int surfW, surfH, surfKey;
     // one cached gradient for the whole note; children blit their own slice (no per-control brush, no PointToScreen)
-    public void PaintSurface(Graphics g, Control c) {
-        if (glide.On) return;
-        int x = 0, y = 0;
-        for (var p = c; p != null && !(p is Form); p = p.Parent) { x += p.Left; y += p.Top; }
-        if (!glide.Armed) {
-            EnsureSurf();
-            if (surfBm != null) {
-                var src = Rectangle.Intersect(new Rectangle(x, y, c.Width, c.Height), new Rectangle(0, 0, surfW, surfH));
-                if (src.Width > 0 && src.Height > 0) ResizeGlide.Blit(g, surfBm, new Rectangle(src.X - x, src.Y - y, src.Width, src.Height), src);
-                return;
-            }
-        }
-        var st = g.Save(); g.TranslateTransform(-x, -y); FillSurface(g); g.Restore(st);
-    }
+    public void PaintSurface(Graphics g, Control c) { g.Clear(Paper); }
     void DropSurf() { if (surfBm != null) { surfBm.Dispose(); surfBm = null; } }
     int SurfKey() { return titleA.ToArgb() ^ (titleB.ToArgb() * 17) ^ (Paper.ToArgb() * 31) ^ (title == null ? 0 : title.Bottom); }
     void EnsureSurf() {
@@ -3200,11 +3192,7 @@ class NoteForm : Form {
     void FillSurface(Graphics g) {
         var r = new Rectangle(0, 0, Math.Max(1, Width), Math.Max(1, Height));
         using (var pb = new SolidBrush(Paper)) g.FillRectangle(pb, r);
-        int fh = Math.Max(1, title == null ? 1 : title.Bottom); var top = new Rectangle(0, 0, r.Width, fh);
-        using (var br = new LinearGradientBrush(new Rectangle(0, 0, r.Width, fh), titleA, titleB, 0f)) g.FillRectangle(br, top);
-        using (var fade = new LinearGradientBrush(new Rectangle(0, -1, r.Width, fh + 2), Color.FromArgb(0, Paper), Color.FromArgb(255, Paper), 90f)) {
-            var bl = new Blend { Positions = new[] { 0f, .35f, 1f }, Factors = new[] { 0f, .15f, 1f } }; fade.Blend = bl; g.FillRectangle(fade, top);
-        }
+
     }
     Color titleA, titleB;
     Color surfA, surfB;
@@ -3324,16 +3312,8 @@ class NoteForm : Form {
     }
     Color frameA, frameB;
     protected override void OnPaintBackground(PaintEventArgs e) {
-        if (glide.On) return;
-        if (glide.Armed) FillSurface(e.Graphics);
-        else {
-            EnsureSurf();
-            if (surfBm != null) {
-                var clip = Rectangle.Intersect(e.ClipRectangle, new Rectangle(0, 0, surfW, surfH));
-                if (clip.Width > 0 && clip.Height > 0) ResizeGlide.Blit(e.Graphics, surfBm, clip, clip);
-            } else FillSurface(e.Graphics);
-        }
-        using (var p = new Pen(Color.FromArgb(34, 255, 255, 255))) e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
+        FillSurface(e.Graphics);
+        using (var p = new Pen(Color.FromArgb(24, 255, 255, 255))) e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
     }
     // snapshot chrome: title strip (right-docked buttons pinned later) and the bottom toolbar, in client pixels
     public void CopyGlideChrome(GlideCover c) {
@@ -3461,9 +3441,7 @@ class NoteForm : Form {
     }
     protected override void WndProc(ref Message m) {
         if (m.Msg == WM_MOUSEACTIVATE) { AllowActivation(); m.Result = (IntPtr)1; return; } // MA_ACTIVATE: startup notes stay quiet until clicked
-        if (m.Msg == 0x0231) glide.Arm(this); // WM_ENTERSIZEMOVE (resize or move)
-        else if (m.Msg == 0x0232) { base.WndProc(ref m); glide.End(); return; } // WM_EXITSIZEMOVE
-        if (m.Msg == 0x0005 && glide.SizeChanging(m.WParam.ToInt32(), m.LParam.ToInt32())) glide.Begin(this);
+        // Notes use live native RichEdit layout while resizing; no snapshot cover.
         if (m.Msg == 0x84) {
             base.WndProc(ref m);
             long lp = m.LParam.ToInt64();
