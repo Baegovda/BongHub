@@ -100,6 +100,58 @@ public sealed class TestKit
         }
         return (best, "#" + bestK.ToString("X6"), "#" + bgk.ToString("X6"));
     }
+    /// <summary>Renders a free element (menu chrome, balloon) at 96dpi and composites it over <paramref name="under"/>.</summary>
+    public static (byte[] px, int w, int h, double s) RenderElement(FrameworkElement el, Color under)
+    {
+        ApplyTemplates(el);
+        el.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        el.Arrange(new Rect(0, 0, Math.Max(1, el.DesiredSize.Width), Math.Max(1, el.DesiredSize.Height)));
+        el.UpdateLayout();
+        int w = Math.Max(1, (int)Math.Ceiling(el.RenderSize.Width));
+        int h = Math.Max(1, (int)Math.Ceiling(el.RenderSize.Height));
+        var layer = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+        layer.Render(el);
+        var dv = new DrawingVisual();
+        using (var dc = dv.RenderOpen())
+        {
+            dc.DrawRectangle(new SolidColorBrush(under), null, new Rect(0, 0, w, h));
+            dc.DrawImage(layer, new Rect(0, 0, w, h));
+        }
+        var rtb = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(dv);
+        var px = new byte[w * h * 4];
+        rtb.CopyPixels(px, w * 4, 0);
+        return (px, w, h, 1);
+    }
+    static void ApplyTemplates(DependencyObject node)
+    {
+        if (node is FrameworkElement fe) fe.ApplyTemplate();
+        foreach (var child in LogicalTreeHelper.GetChildren(node).OfType<DependencyObject>()) ApplyTemplates(child);
+    }
+
+    public static (double ratio, string fg, string bg) ContrastElement(FrameworkElement root, FrameworkElement el, Color under)
+    {
+        var r = RenderElement(root, under);
+        Rect box;
+        try { box = el.TransformToAncestor(root).TransformBounds(new Rect(0, 0, el.ActualWidth, el.ActualHeight)); }
+        catch { return (0, "-", "-"); }
+        int x0 = Math.Max(0, (int)box.X), y0 = Math.Max(0, (int)box.Y);
+        int x1 = Math.Min(r.w, (int)Math.Ceiling(box.Right)), y1 = Math.Min(r.h, (int)Math.Ceiling(box.Bottom));
+        if (x1 <= x0 || y1 <= y0) return (0, "-", "-");
+        var hist = new Dictionary<int, int>();
+        for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++) { int i = (y * r.w + x) * 4; int k = (r.px[i + 2] << 16) | (r.px[i + 1] << 8) | r.px[i]; hist[k] = hist.GetValueOrDefault(k) + 1; }
+        int bgk = hist.MaxBy(kv => kv.Value).Key;
+        var bg = Color.FromRgb((byte)(bgk >> 16), (byte)(bgk >> 8), (byte)bgk);
+        double lb = NoteColors.Lum(bg), best = 1; int bestK = bgk;
+        foreach (var k in hist.Keys)
+        {
+            var c = Color.FromRgb((byte)(k >> 16), (byte)(k >> 8), (byte)k); double lc = NoteColors.Lum(c);
+            double ratio = (Math.Max(lb, lc) + 0.05) / (Math.Min(lb, lc) + 0.05);
+            if (ratio > best) { best = ratio; bestK = k; }
+        }
+        return (best, "#" + bestK.ToString("X6"), "#" + bgk.ToString("X6"));
+    }
+
     public static bool NotForeground(Window w) => Win32.GetForegroundWindow() != Win32.Handle(w) && !w.IsActive;
     public static void Pump() => Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, () => { });
 }

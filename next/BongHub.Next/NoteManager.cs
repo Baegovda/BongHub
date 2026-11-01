@@ -40,9 +40,16 @@ public static class NoteManager
 
     public static void OpenStartup()
     {
-        if (!ConfigStore.Notes.OpenOnStartup) return;
+        if (!ConfigStore.Notes.OpenOnStartup) { AppEnv.NoteStartupNotes(0); return; }
         var queue = new Queue<NoteMeta>(NoteStore.All.Where(m => m.Open).Reverse());
-        void next() { if (queue.Count == 0 || App.ShuttingDown) return; Open(queue.Dequeue().Id, activate: false); Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, next); }
+        int opened = 0;
+        void next()
+        {
+            if (queue.Count == 0 || App.ShuttingDown) { AppEnv.NoteStartupNotes(opened); return; }
+            Open(queue.Dequeue().Id, activate: false);
+            opened++;
+            Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, next);
+        }
         void start() => Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, next);
         // let the settings window reach its first frame first; notes follow one per Background tick (input/render stay responsive)
         var main = App.Instance.MainWin;

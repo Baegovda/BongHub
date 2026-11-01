@@ -292,7 +292,7 @@ public partial class MainWindow : Window
         icon.Child = grid;
         hero.Children.Add(icon);
         hero.Children.Add(new TextBlock { Text = "BongHub Next", FontFamily = (FontFamily)FindResource("DisplayFont"), FontSize = 24, FontWeight = FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 14, 0, 2) });
-        var ver = new TextBlock { Text = $"버전 {AppEnv.Version} · .NET 8 WPF", Foreground = (Brush)FindResource("Secondary"), HorizontalAlignment = HorizontalAlignment.Center };
+        var ver = new TextBlock { Text = $"버전 {AppEnv.Version} · .NET 10 WPF", Foreground = (Brush)FindResource("Secondary"), HorizontalAlignment = HorizontalAlignment.Center };
         FirstSecondary ??= ver;
         hero.Children.Add(ver);
         PageHost.Children.Add(hero);

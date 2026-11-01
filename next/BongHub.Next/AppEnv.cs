@@ -3,7 +3,7 @@ namespace BongHub.Next;
 /// <summary>Process-wide environment: data folder (overridable), test flags, read-only guard.</summary>
 public static class AppEnv
 {
-    public const string Version = "0.2.0";
+    public const string Version = "0.3.0";
     /// <summary>Shared with app/BongHub.cs NotesWriterLock. First live owner is the only writer of the default notes folder.</summary>
     public const string NotesWriterMutexName = @"Local\BongHub_NotesWriter";
     public static string DefaultDataDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BongHub");
@@ -22,6 +22,8 @@ public static class AppEnv
     public static int OffsetY => Off ? -30000 : 0;
     public static bool Smoke { get; private set; }
     public static bool NoteTest { get; private set; }
+    /// <summary>Show the settings window off-screen, then hide it and stay running. Used by the Phase 0 memory baseline.</summary>
+    public static bool IdleHidden { get; private set; }
     public static string? OutDir { get; private set; }
     public static string[] Args { get; private set; } = [];
     public static bool Has(string flag) => Args.Contains(flag, StringComparer.OrdinalIgnoreCase);
@@ -39,6 +41,7 @@ public static class AppEnv
             if (a == "--data" && i + 1 < args.Length) DataDir = args[++i];
             else if (a == "--out" && i + 1 < args.Length) OutDir = args[++i];
             else if (a == "--off") Off = true;
+            else if (a == "--idle-hidden") { IdleHidden = true; Off = true; }
             else if (a == "--smoketest") Smoke = true;
             else if (a == "--notetest") NoteTest = true;
         }
@@ -129,8 +132,71 @@ public static class AppEnv
     }
 
     public static readonly System.Text.StringBuilder Marks = new();
+    public static bool MainWindowCreated { get; private set; }
+    public static double? TrayVisibleMs { get; private set; }
+    public static double? FirstFrameMs { get; private set; }
+    public static int? NotesAtFirstFrame { get; private set; }
+    public static int? RenderTierAtFirstFrame { get; private set; }
+    public static long? HeapMbAtFirstFrame { get; private set; }
+    public static int? StartupNotesOpened { get; private set; }
+    public static bool SettingsHidden { get; private set; }
     /// <summary>Startup phase timestamp (ms since process start).</summary>
     public static void Mark(string what) { try { Marks.Append($"{what}={(DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds:0} "); } catch { } }
+    public static void NoteMainWindowCreated() { MainWindowCreated = true; }
+    /// <summary>Call the moment the tray icon is visible. Writes next_startup.txt when --out is set.</summary>
+    public static void NoteTrayVisible()
+    {
+        try
+        {
+            TrayVisibleMs = ElapsedMs();
+            Mark("tray_visible");
+            WriteStartup();
+        }
+        catch { }
+    }
+    public static void NoteFirstFrame(int notesOpen, int renderTier, long heapMb)
+    {
+        try
+        {
+            FirstFrameMs = ElapsedMs();
+            NotesAtFirstFrame = notesOpen;
+            RenderTierAtFirstFrame = renderTier;
+            HeapMbAtFirstFrame = heapMb;
+            WriteStartup();
+        }
+        catch { }
+    }
+    public static void NoteStartupNotes(int opened)
+    {
+        try { StartupNotesOpened = opened; Mark("startup_notes"); WriteStartup(); }
+        catch { }
+    }
+    public static void NoteSettingsHidden()
+    {
+        try { SettingsHidden = true; Mark("settings_hidden"); WriteStartup(); }
+        catch { }
+    }
+    static double ElapsedMs() => (DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds;
+    /// <summary>Rewrites next_startup.txt so the tray line and the first-frame lines stay in one file.</summary>
+    public static void WriteStartup()
+    {
+        if (OutDir == null) return;
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"main_window_created={(MainWindowCreated ? 1 : 0)}\r\n");
+        if (TrayVisibleMs != null) sb.Append($"tray_visible_ms={TrayVisibleMs:0}\r\n");
+        if (FirstFrameMs != null)
+        {
+            sb.Append($"first_frame_ms={FirstFrameMs:0}\r\n");
+            sb.Append($"notes_open_at_first_frame={NotesAtFirstFrame}\r\n");
+            sb.Append($"readonly={ReadOnly}\r\n");
+            sb.Append($"render_tier={RenderTierAtFirstFrame}\r\n");
+            sb.Append($"managed_heap_mb={HeapMbAtFirstFrame}\r\n");
+        }
+        if (StartupNotesOpened != null) sb.Append($"startup_notes_opened={StartupNotesOpened}\r\n");
+        if (SettingsHidden) sb.Append("settings_hidden=1\r\n");
+        sb.Append($"phases: {Marks}\r\n");
+        File.WriteAllText(Path.Combine(OutDir, "next_startup.txt"), sb.ToString());
+    }
 
     public static void Log(string text)
     {

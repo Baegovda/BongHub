@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace BongHub.Next;
@@ -32,16 +32,21 @@ public partial class App : Application
         bool test = AppEnv.Smoke || AppEnv.NoteTest;
         if (!test)
         {
-            mutex = new Mutex(true, MutexName, out bool first);
-            if (!first)
+            // Off-screen runs (--off, --idle-hidden, the memory baseline) must not signal a running Next to show its window.
+            // They still take the notes writer lock when the data folder is the real one. Temp --data does not.
+            if (!AppEnv.Off)
             {
-                try { using var s = EventWaitHandle.OpenExisting(ShowEventName); s.Set(); } catch { }
-                Shutdown(); return;
+                mutex = new Mutex(true, MutexName, out bool first);
+                if (!first)
+                {
+                    try { using var s = EventWaitHandle.OpenExisting(ShowEventName); s.Set(); } catch { }
+                    Shutdown(); return;
+                }
+                showEvt = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+                showWait = ThreadPool.RegisterWaitForSingleObject(showEvt, (_, _) => Dispatcher.BeginInvoke(() => ShowSettings(null)), null, -1, false);
             }
             quitEvt = new EventWaitHandle(false, EventResetMode.AutoReset, QuitEventName);
-            showEvt = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
             quitWait = ThreadPool.RegisterWaitForSingleObject(quitEvt, (_, _) => Dispatcher.BeginInvoke(RequestShutdown), null, -1, false);
-            showWait = ThreadPool.RegisterWaitForSingleObject(showEvt, (_, _) => Dispatcher.BeginInvoke(() => ShowSettings(null)), null, -1, false);
             AppEnv.ClaimWriterOrReadOnly();
         }
 
@@ -53,29 +58,58 @@ public partial class App : Application
         if (AppEnv.Smoke) { Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => SmokeTest.Run(this)); return; }
         if (AppEnv.NoteTest) { Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => NoteTest.Run(this)); return; }
 
-        if (!AppEnv.Off) tray = new TrayService(this);   // never register a tray icon from a test/off-screen run
+        // Tests never register a shell icon. --off alone is the settings-window baseline (no tray).
+        // --tray --off is the tray-only baseline and does register the icon.
+        if (!AppEnv.Off || AppEnv.Has("--tray")) tray = new TrayService(this, registerShell: true);
         SessionEnding += (_, _) => RequestShutdown();
         // settings window first; notes then open one per idle tick so the first frame is not held up by big RTFs
-        if (!AppEnv.Has("--tray")) ShowSettings(null);
+        if (AppEnv.IdleHidden) ShowThenHide();
+        else if (!AppEnv.Has("--tray")) ShowSettings(null);
         NoteManager.OpenStartup();
     }
 
-    public MainWindow EnsureMain() { if (MainWin == null) { AppEnv.Mark("main_ctor_start"); MainWin = new MainWindow(); AppEnv.Mark("main_ctor_done"); } return MainWin; }
+    void ShowThenHide()
+    {
+        ShowSettings(null);
+        var w = MainWin;
+        if (w == null) return;
+        void HideAfter()
+        {
+            if (!ShuttingDown && w.IsVisible) w.Close();
+            AppEnv.NoteSettingsHidden();
+        }
+        var st = WindowFx.Of(w);
+        if (st.Revealed) HideAfter();
+        else st.AfterFirstFrame += HideAfter;
+    }
+
+    public MainWindow EnsureMain()
+    {
+        if (MainWin == null)
+        {
+            AppEnv.Mark("main_ctor_start");
+            MainWin = new MainWindow();
+            AppEnv.NoteMainWindowCreated();
+            AppEnv.Mark("main_ctor_done");
+        }
+        return MainWin;
+    }
 
     public void ShowSettings(string? page)
     {
         var w = EnsureMain();
         if (page != null) w.Navigate(page);
         bool first = !w.EverShown;
+        if (first)
+            WindowFx.Of(w).AfterFirstFrame += () =>
+            {
+                int tier = 0;
+                try { tier = RenderCapability.Tier >> 16; } catch { }
+                AppEnv.NoteFirstFrame(NoteManager.Windows.Count, tier, GC.GetTotalMemory(false) / 1048576);
+            };
         if (!w.IsVisible) { w.Show(); if (first) AppEnv.Mark("show_returned"); if (!first) w.Reappear(); }
         if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
         if (!AppEnv.Off) w.Activate();
-        if (first && AppEnv.OutDir != null)
-            WindowFx.Of(w).AfterFirstFrame += () =>
-            {
-                var ms = (DateTime.Now - Process.GetCurrentProcess().StartTime).TotalMilliseconds;
-                try { File.WriteAllText(Path.Combine(AppEnv.OutDir, "next_startup.txt"), $"first_frame_ms={ms:0}\r\nnotes_open_at_first_frame={NoteManager.Windows.Count}\r\nreadonly={AppEnv.ReadOnly}\r\nrender_tier={System.Windows.Media.RenderCapability.Tier >> 16}\r\nmanaged_heap_mb={GC.GetTotalMemory(false) / 1048576}\r\nphases: {AppEnv.Marks}\r\n"); } catch { }
-            };
     }
 
     public void RequestShutdown()
