@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.4.5.0")]
-[assembly: AssemblyFileVersion("3.4.5.0")]
-[assembly: AssemblyInformationalVersion("3.4.5")]
+[assembly: AssemblyVersion("3.4.6.0")]
+[assembly: AssemblyFileVersion("3.4.6.0")]
+[assembly: AssemblyInformationalVersion("3.4.6")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -668,9 +668,36 @@ static class SleepResumeAuth {
     }
     public static int Run(string[] args) { if (args.Length != 2 || (args[1] != "disable" && args[1] != "restore")) return 2; try { Set(args[1] == "disable"); return 0; } catch (Exception ex) { DarkBox.Show(ex.Message, "절전 복귀 로그인 설정"); return 1; } }
 }
+static class BlankAutoLogon {
+    const string Winlogon=@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon", Backup=@"SOFTWARE\BongHub\BlankAutoLogonBackup";
+    static readonly string[] Names={"AutoAdminLogon","DefaultUserName","DefaultDomainName","DefaultPassword"};
+    public static bool LocalCurrentAccount { get { return string.Equals(Environment.UserDomainName,Environment.MachineName,StringComparison.OrdinalIgnoreCase); } }
+    public static bool Owned { get { using(var root=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64))using(var k=root.OpenSubKey(Backup))return k!=null&&Equals(k.GetValue("Installed"),1); } }
+    public static string Status() { if(Owned)return "현재 설정: BongHub 무암호 부팅 자동 로그인 사용";return LocalCurrentAccount?"현재 계정: 로컬 계정 · 무암호 전용 자동 로그인 사용 가능":"현재 계정은 로컬 계정이 아니어서 무암호 방식을 사용할 수 없어요."; }
+    static void Save(RegistryKey backup,RegistryKey source,string name){if(backup.GetValue(name+"_Had")!=null)return;object v=source.GetValue(name);backup.SetValue(name+"_Had",v==null?0:1,RegistryValueKind.DWord);if(v!=null){if(source.GetValueKind(name)!=RegistryValueKind.String)throw new InvalidOperationException(name+" 값 형식이 달라 변경하지 않았어요.");backup.SetValue(name,Convert.ToString(v),RegistryValueKind.String);}}
+    static void Set(bool enable){
+        using(var root=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64))using(var win=root.CreateSubKey(Winlogon)){
+            if(enable){
+                if(!LocalCurrentAccount)throw new InvalidOperationException("현재 계정이 로컬 계정이 아니에요.");
+                string oldPass=win.GetValue("DefaultPassword") as string,oldAuto=win.GetValue("AutoAdminLogon") as string;
+                if(!string.IsNullOrEmpty(oldPass)||(oldAuto=="1"&&!Owned))throw new InvalidOperationException("기존 자동 로그인 설정이 있어 덮어쓰지 않았어요.");
+                using(var b=root.CreateSubKey(Backup)){foreach(string n in Names)Save(b,win,n);b.SetValue("Installed",1,RegistryValueKind.DWord);b.SetValue("User",Environment.UserName);b.SetValue("Domain",Environment.MachineName);}
+                win.SetValue("DefaultUserName",Environment.UserName,RegistryValueKind.String);win.SetValue("DefaultDomainName",Environment.MachineName,RegistryValueKind.String);win.SetValue("DefaultPassword","",RegistryValueKind.String);win.SetValue("AutoAdminLogon","1",RegistryValueKind.String);
+            }else{
+                using(var b=root.OpenSubKey(Backup)){if(b==null||!Equals(b.GetValue("Installed"),1))throw new InvalidOperationException("BongHub가 저장한 원래 설정이 없어요.");
+                    string user=Convert.ToString(b.GetValue("User")),domain=Convert.ToString(b.GetValue("Domain"));
+                    if(Convert.ToString(win.GetValue("AutoAdminLogon"))!="1"||Convert.ToString(win.GetValue("DefaultUserName"))!=user||Convert.ToString(win.GetValue("DefaultDomainName"))!=domain||Convert.ToString(win.GetValue("DefaultPassword"))!="")throw new InvalidOperationException("다른 프로그램이나 관리자가 자동 로그인 설정을 변경했어요. 현재 설정을 유지했어요.");
+                    foreach(string n in Names){if(Equals(b.GetValue(n+"_Had"),1))win.SetValue(n,Convert.ToString(b.GetValue(n)),RegistryValueKind.String);else win.DeleteValue(n,false);}
+                }root.DeleteSubKeyTree(Backup,false);
+            }
+        }
+    }
+    public static int Run(string[] args){if(args.Length!=2||(args[1]!="enable"&&args[1]!="restore"))return 2;try{Set(args[1]=="enable");return 0;}catch(Exception ex){DarkBox.Show(ex.Message,"무암호 부팅 자동 로그인");return 1;}}
+}
 static class AppInfo {
-    public const string Version = "3.4.5";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.4.6";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.4.6  메모 이미지/디자인 전면 개선 · 무암호 로컬 계정 부팅 자동 로그인 설정·복원",
         "3.4.5  숨겨진 절전 복귀 로그인 메뉴 대신 실제 전원 정책 적용·복원 · 이미지 보기 종료 후 타이머 예외 수정",
         "3.4.4  일반 설정에서 Windows 절전 복귀 로그인 옵션·Microsoft Autologon 공식 안내 바로 열기",
         "3.4.3  잡아서 이동 요청 적체·종료 좌표 수정 · 마우스 뒤로가기 · Space 누르는 동안 미리보기 · WebP 디코더",
@@ -2652,6 +2679,12 @@ static class NoteColors {
         new[] { "g:plumgray", "플럼 그레이", "8D8294", "665D6B" }, new[] { "g:smoke", "스모크", "9A9DA1", "72767A" }, new[] { "g:terracotta", "테라코타", "AA806B", "805F50" } };
     public static readonly Color Text = Color.FromArgb(240, 240, 246);
     public static IEnumerable<string> PaletteKeys { get { return Gradients.Select(g => g[0]).Concat(Keys); } }
+    static readonly Random random = new Random();
+    public static string Random(string except) {
+        var all = PaletteKeys.ToArray(); if (all.Length == 0) return "g:blocks";
+        lock (random) { int start = random.Next(all.Length); for (int n = 0; n < all.Length; n++) { string k = all[(start + n) % all.Length]; if (all.Length == 1 || k != except) return k; } }
+        return all[0];
+    }
     static int I(string k) { return Array.IndexOf(Keys, k); }
     static Color Hex(string h) { int v = Convert.ToInt32(h, 16); return Color.FromArgb((v >> 16) & 255, (v >> 8) & 255, v & 255); }
     public static string Custom(Color a, Color b) { return "c:" + (a.ToArgb() & 0xFFFFFF).ToString("X6") + ":" + (b.ToArgb() & 0xFFFFFF).ToString("X6"); }
@@ -2821,7 +2854,7 @@ static class Notes {
 
     public static NoteForm New(bool activate) {
         EnsureLoaded();
-        var m = new NoteMeta { Id = Guid.NewGuid().ToString("N").Substring(0, 12), Color = Cfg.DefaultColor, W = UI.S(330), H = UI.S(330) };
+        var m = new NoteMeta { Id = Guid.NewGuid().ToString("N").Substring(0, 12), Color = NoteColors.Random(Cfg.DefaultColor), W = UI.S(330), H = UI.S(330) };
         var area = Screen.FromPoint(Cursor.Position).WorkingArea;
         int n = forms.Count % 6;
         m.X = area.Right - m.W - UI.S(48) - n * UI.S(30); m.Y = area.Y + UI.S(60) + n * UI.S(30);
@@ -2889,13 +2922,32 @@ static class Notes {
 // a picture context menu and double-click viewer. Pictures keep their stored pixels; only the display size
 // (\picwgoal/\pichgoal) changes, so quality is preserved and the size is saved/synced with the note.
 class ImageDragOutline : Form {
+    Bitmap preview; Rectangle originalScreen, targetScreen; Color cover; bool resizing;
     public ImageDragOutline() {
         FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual;
         BackColor = TransparencyKey = Color.Magenta; DoubleBuffered = true; TopMost = false;
     }
     protected override bool ShowWithoutActivation { get { return true; } }
     protected override CreateParams CreateParams { get { var c = base.CreateParams; c.ExStyle |= 0x08000000 | 0x80 | 0x20; return c; } }
-    protected override void OnPaint(PaintEventArgs e) { using (var p = new Pen(UI.G2, 2f)) e.Graphics.DrawRectangle(p, 1, 1, Math.Max(1, Width - 3), Math.Max(1, Height - 3)); }
+    public void BeginResize(Image image, Rectangle original, Control owner, Color background) {
+        if (preview != null) preview.Dispose(); preview = image == null ? null : new Bitmap(image);
+        originalScreen = new Rectangle(owner.PointToScreen(original.Location), original.Size); cover = background; resizing = preview != null;
+    }
+    public void ShowResize(Rectangle target, Control owner) {
+        targetScreen = new Rectangle(owner.PointToScreen(target.Location), target.Size);
+        var u = Rectangle.Union(originalScreen, targetScreen); u.Inflate(3, 3); Bounds = u; Invalidate();
+    }
+    protected override void Dispose(bool disposing) { if (disposing && preview != null) { preview.Dispose(); preview = null; } base.Dispose(disposing); }
+    protected override void OnPaint(PaintEventArgs e) {
+        if (resizing && preview != null) {
+            var src = new Rectangle(originalScreen.X - Left, originalScreen.Y - Top, originalScreen.Width, originalScreen.Height);
+            var dst = new Rectangle(targetScreen.X - Left, targetScreen.Y - Top, targetScreen.Width, targetScreen.Height);
+            using (var b = new SolidBrush(cover)) e.Graphics.FillRectangle(b, src);
+            e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic; e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            e.Graphics.DrawImage(preview, dst);
+            using (var p = new Pen(UI.G2, 2f)) e.Graphics.DrawRectangle(p, dst.X, dst.Y, Math.Max(1, dst.Width - 1), Math.Max(1, dst.Height - 1));
+        } else using (var p = new Pen(UI.G2, 2f)) e.Graphics.DrawRectangle(p, 1, 1, Math.Max(1, Width - 3), Math.Max(1, Height - 3));
+    }
 }
 class RichBox : RichTextBox {
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
@@ -2908,7 +2960,9 @@ class RichBox : RichTextBox {
     public bool ImageTools; public event Action ImagesChanged; public Func<int> MaxImageWidth;
     public int SelImage = -1;            // char index of the selected picture
     Rectangle dragRect; int handle = -1; Point dragStart; Rectangle startRect; ToolTip tip; float aspect = 1;
-    int imageDrag = -1, dropIndex = -1; Point imageDown; bool movingImage; ImageDragOutline outline;
+    int imageDrag = -1, dropIndex = -1; Point imageDown; bool movingImage; ImageDragOutline outline; Rectangle dropMark=Rectangle.Empty;
+    public bool DropIndicatorVisible { get { return movingImage&&!dropMark.IsEmpty; } }
+    void UpdateDropMark(){var old=dropMark;if(movingImage&&dropIndex>=0){var p=GetPositionFromCharIndex(Math.Min(dropIndex,TextLength));dropMark=new Rectangle(p.X-UI.S(3),p.Y-UI.S(2),UI.S(7),Math.Max(Font.Height,UI.S(20))+UI.S(4));}else dropMark=Rectangle.Empty;if(!old.IsEmpty)Invalidate(old);if(!dropMark.IsEmpty)Invalidate(dropMark);}
     void ShowOutline(Rectangle r) {
         if (outline == null) outline = new ImageDragOutline();
         outline.Bounds = new Rectangle(PointToScreen(r.Location), new Size(Math.Max(4, r.Width), Math.Max(4, r.Height)));
@@ -2916,8 +2970,8 @@ class RichBox : RichTextBox {
     }
     void EndOutline() { var old=outline; outline=null; if (old != null) { old.Close(); old.Dispose(); } }
     protected override void Dispose(bool disposing) { if (disposing) { EndOutline(); if (tip != null) tip.Dispose(); if (imgMenu != null) imgMenu.Dispose(); } base.Dispose(disposing); }
-    List<PictInfo> cache; List<int> objectCache; float cachedDpi;
-    public class PictInfo { public int Start, End, GoalW, GoalH, PixW, PixH; public string Hex; }
+    List<PictInfo> cache; List<int> objectCache; List<Tuple<int,int>> linkCache; float cachedDpi;
+    public class PictInfo { public int Start, End, GoalW, GoalH, PixW, PixH; }
 
     float Dpi { get { if (cachedDpi <= 0) using (var g = CreateGraphics()) cachedDpi = g.DpiX; return cachedDpi; } }
     public int PictureParseCount;
@@ -2931,16 +2985,14 @@ class RichBox : RichTextBox {
         while ((i = r.IndexOf(@"{\pict", i, StringComparison.Ordinal)) >= 0) {
             int ns = r.LastIndexOf(@"{\nonshppict", i, StringComparison.Ordinal);
             int depth = 0, j = i; for (; j < r.Length; j++) { if (r[j] == '\\') { j++; continue; } if (r[j] == '{') depth++; else if (r[j] == '}') { depth--; if (depth == 0) break; } }
-            string g = r.Substring(i, Math.Min(r.Length, j + 1) - i);
+            int groupLen = Math.Min(r.Length, j + 1) - i;
+            string g = r.Substring(i, Math.Min(groupLen, 2048));
             bool inNon = ns >= 0 && GroupEnd(r, ns) > i;
             if (!inNon && (g.Contains(@"\pngblip") || g.Contains(@"\jpegblip"))) {
                 var p = new PictInfo { Start = i, End = j };
                 p.GoalW = Num(g, @"\picwgoal"); p.GoalH = Num(g, @"\pichgoal"); p.PixW = Num(g, @"\picw"); p.PixH = Num(g, @"\pich");
                 int sx = Num(g, @"\picscalex"), sy = Num(g, @"\picscaley"); if (sx > 0) p.GoalW = p.GoalW * sx / 100; if (sy > 0) p.GoalH = p.GoalH * sy / 100;
-                // hex payload = text after the last control word / nested group
-                int k = g.Length - 1; var sb = new StringBuilder(); int hs = LastCtl(g);
-                for (int q = hs; q < g.Length - 1; q++) { char c = g[q]; if (Uri.IsHexDigit(c)) sb.Append(c); }
-                p.Hex = sb.ToString(); res.Add(p);
+                res.Add(p);
             }
             i = j + 1;
         }
@@ -2959,8 +3011,13 @@ class RichBox : RichTextBox {
     }
     static int Num(string g, string w) { var m = Regex.Match(g, Regex.Escape(w) + @"(-?\d+)(?![a-z])"); int v; return m.Success && int.TryParse(m.Groups[1].Value, out v) ? v : 0; }
     public Image PictureImage(int nth) {
-        var ps = Pictures(); if (nth < 0 || nth >= ps.Count) return null;
-        var hx = ps[nth].Hex; var b = new byte[hx.Length / 2];
+        if (nth < 0) return null;
+        string r = Rtf; int at = 0;
+        for (int n = 0; n <= nth; n++) { at = r.IndexOf(@"{\pict", at, StringComparison.Ordinal); if (at < 0) return null; if (n < nth) at = GroupEnd(r, at) + 1; }
+        int end = GroupEnd(r, at); if (end <= at) return null;
+        string g = r.Substring(at, end - at + 1); int hs = LastCtl(g); var sb = new StringBuilder(Math.Max(0, g.Length - hs));
+        for (int q = hs; q < g.Length - 1; q++) { char c = g[q]; if (Uri.IsHexDigit(c)) sb.Append(c); }
+        string hx = sb.ToString(); var b = new byte[hx.Length / 2];
         for (int q = 0; q < b.Length; q++) b[q] = Convert.ToByte(hx.Substring(q * 2, 2), 16);
         try { using (var ms = new MemoryStream(b)) using (var im = Image.FromStream(ms)) return new Bitmap(im); } catch { return null; }
     }
@@ -2990,23 +3047,38 @@ class RichBox : RichTextBox {
     }
     Rectangle[] Handles(Rectangle r) {
         int s = UI.S(8), h = s / 2;
-        return new[] { new Rectangle(r.Left - h, r.Top - h, s, s), new Rectangle(r.Right - h, r.Top - h, s, s), new Rectangle(r.Right - h, r.Bottom - h, s, s), new Rectangle(r.Left - h, r.Bottom - h, s, s),
-                       new Rectangle(r.Left + r.Width / 2 - h, r.Top - h, s, s), new Rectangle(r.Right - h, r.Top + r.Height / 2 - h, s, s), new Rectangle(r.Left + r.Width / 2 - h, r.Bottom - h, s, s), new Rectangle(r.Left - h, r.Top + r.Height / 2 - h, s, s) };
+        int minX=h+1, maxX=Math.Max(minX,ClientSize.Width-h-UI.S(5)), minY=h+1, maxY=Math.Max(minY,ClientSize.Height-h-1);
+        Func<int,int,int,int> clamp=(v,lo,hi)=>Math.Max(lo,Math.Min(hi,v));
+        int l=clamp(r.Left,minX,maxX), rr=clamp(r.Right,minX,maxX), t=clamp(r.Top,minY,maxY), b=clamp(r.Bottom,minY,maxY);
+        int mx=clamp(r.Left+r.Width/2,minX,maxX), my=clamp(r.Top+r.Height/2,minY,maxY);
+        return new[] { new Rectangle(l-h,t-h,s,s),new Rectangle(rr-h,t-h,s,s),new Rectangle(rr-h,b-h,s,s),new Rectangle(l-h,b-h,s,s),
+                       new Rectangle(mx-h,t-h,s,s),new Rectangle(rr-h,my-h,s,s),new Rectangle(mx-h,b-h,s,s),new Rectangle(l-h,my-h,s,s) };
     }
     static readonly Cursor[] HCur = { Cursors.SizeNWSE, Cursors.SizeNESW, Cursors.SizeNWSE, Cursors.SizeNESW, Cursors.SizeNS, Cursors.SizeWE, Cursors.SizeNS, Cursors.SizeWE };
     int HandleAt(Point p) { if (SelImage < 0) return -1; var hs = Handles(ImageRect(SelImage)); for (int i = 0; i < hs.Length; i++) { var r = hs[i]; r.Inflate(UI.S(3), UI.S(3)); if (r.Contains(p)) return i; } return -1; }
+    bool LinkAt(Point p) {
+        int ci=GetCharIndexFromPosition(p); if(linkCache==null){linkCache=new List<Tuple<int,int>>();string t=RawText();foreach(Match m in Regex.Matches(t,@"(?i)(?:https?://|mailto:|www\.)[^\s<>]+"))linkCache.Add(Tuple.Create(m.Index,m.Index+m.Length));}
+        return linkCache.Any(x=>ci>=x.Item1&&ci<x.Item2);
+    }
 
     public void SetImageSize(int ci, int wPx, int hPx) {
         int maxW = MaxImageWidth != null ? MaxImageWidth() : ClientSize.Width - UI.S(8);
         if (wPx > maxW) { hPx = (int)(hPx * (maxW / (double)wPx)); wPx = maxW; }
         wPx = Math.Max(UI.S(24), wPx); hPx = Math.Max(UI.S(16), hPx);
         float k = Dpi / 1440f * ZoomFactor; int tw = (int)(wPx / k), th = (int)(hPx / k);
-        int ss = SelectionStart, sl = SelectionLength;
+        var ps = Pictures(); var objs = ObjectChars(); int nth = objs.IndexOf(ci);
         Select(ci, 1); string s = SelectedRtf;
         s = Regex.Replace(s, @"\\picscale[xy]-?\d+", "");
         s = Regex.Replace(s, @"\\picwgoal-?\d+", @"\picwgoal" + tw); s = Regex.Replace(s, @"\\pichgoal-?\d+", @"\pichgoal" + th);
-        SelectedRtf = s; Select(ci, 1); SelImage = ci; cache = null;
+        SelectedRtf = s; Select(ci, 1); SelImage = ci;
+        if (nth >= 0 && nth < ps.Count) { ps[nth].GoalW = tw; ps[nth].GoalH = th; cache = ps; objectCache = objs; }
         Invalidate(); if (ImagesChanged != null) ImagesChanged();
+    }
+    public bool CopySelectedImage() {
+        int ci = SelImage >= 0 ? SelImage : (SelectionLength == 1 && ObjectChars().Contains(SelectionStart) ? SelectionStart : -1);
+        if (ci < 0) return false;
+        using (var im = ImageOf(ci)) { if (im == null) return false; ImageViewer.Copy(im); }
+        return true;
     }
     public void SetImageScale(int ci, double f) {
         var objs = ObjectChars(); int nth = objs.IndexOf(ci); var ps = Pictures(); if (nth < 0) return;
@@ -3053,15 +3125,17 @@ class RichBox : RichTextBox {
 
     protected override void WndProc(ref Message m) {
         if (ImageTools) {
-            // Scrolling never needs picture payload parsing or a full-control adorner repaint.
-            if ((m.Msg == 0x0115 || m.Msg == 0x020A) && handle < 0 && imageDrag < 0 && SelImage >= 0) { SelImage = -1; Invalidate(); }
             switch (m.Msg) {
                 case 0x0215: if (handle >= 0 || imageDrag >= 0) { handle=-1; imageDrag=-1; movingImage=false; EndOutline(); Invalidate(); } break;
                 case 0x0201: { // LBUTTONDOWN
                     var p = Pt(m); int h = HandleAt(p);
-                    if (h >= 0) { handle = h; dragStart = p; startRect = ImageRect(SelImage); dragRect = startRect; aspect = startRect.Width / (float)Math.Max(1, startRect.Height); Capture = true; Focus(); ShowOutline(startRect); Invalidate(Rectangle.Inflate(startRect, UI.S(12), UI.S(12))); return; }
+                    if (h >= 0) { handle = h; dragStart = p; startRect = ImageRect(SelImage); dragRect = startRect; aspect = startRect.Width / (float)Math.Max(1, startRect.Height); Capture = true; Focus(); if (outline == null) outline = new ImageDragOutline(); using (var im = ImageOf(SelImage)) outline.BeginResize(im, startRect, this, BackColor); outline.ShowResize(startRect, this); if (!outline.Visible) outline.Show(FindForm()); Invalidate(Rectangle.Inflate(startRect, UI.S(12), UI.S(12))); return; }
                     int ci = ImageAt(p);
-                    if (ci >= 0) { Focus(); Select(ci, 1); SelImage = ci; imageDrag = ci; imageDown = p; movingImage = false; dropIndex = ci; Capture = true; Cursor = Cursors.SizeAll; Invalidate(); return; }
+                    if (ci >= 0) {
+                        bool extendTextSelection = (ModifierKeys & Keys.Shift) != 0 || (SelectionLength > 1 && ci >= SelectionStart && ci < SelectionStart + SelectionLength);
+                        if (extendTextSelection) break;
+                        Focus(); Select(ci, 1); SelImage = ci; imageDrag = ci; imageDown = p; movingImage = false; dropIndex = ci; Capture = true; Cursor = Cursors.SizeAll; Invalidate(); return;
+                    }
                     if (SelImage >= 0) { SelImage = -1; Invalidate(); }
                     break;
                 }
@@ -3077,7 +3151,7 @@ class RichBox : RichTextBox {
                         if (!free) { if (handle == 4 || handle == 6) w = (int)(hh * aspect); else hh = (int)(w / aspect); }
                         int maxW = MaxImageWidth != null ? MaxImageWidth() : ClientSize.Width - UI.S(8);
                         w = Math.Max(UI.S(24), Math.Min(maxW, w)); hh = Math.Max(UI.S(16), hh); if (!free) hh = (int)(w / aspect);
-                        dragRect = new Rectangle(r.X, r.Y, w, hh); ShowOutline(dragRect);
+                        dragRect = new Rectangle(r.X, r.Y, w, hh); if (outline != null) outline.ShowResize(dragRect, this);
                         if (tip == null) tip = new ToolTip();
                         int nth = ObjectChars().IndexOf(SelImage); var ps = Pictures(); float sc = nth >= 0 && ps[nth].PixW > 0 ? w / (ps[nth].PixW * Dpi / 96f) : 1;
                         tip.Show(w + " × " + hh + " px  ·  " + Math.Round(sc * 100) + "%" + (free ? "  (자유 비율)" : ""), this, p.X + UI.S(14), p.Y + UI.S(18));
@@ -3087,7 +3161,7 @@ class RichBox : RichTextBox {
                     if (imageDrag >= 0) {
                         int dx = p.X - imageDown.X, dy = p.Y - imageDown.Y;
                         if (!movingImage && (Math.Abs(dx) >= SystemInformation.DragSize.Width / 2 || Math.Abs(dy) >= SystemInformation.DragSize.Height / 2)) { movingImage = true; startRect = ImageRect(imageDrag); Invalidate(Rectangle.Inflate(startRect, UI.S(12), UI.S(12))); }
-                        if (movingImage) { dropIndex = p.Y < 0 ? 0 : p.Y > ClientSize.Height ? TextLength : GetCharIndexFromPosition(p); if (dropIndex < 0) dropIndex = TextLength; Cursor = Cursors.SizeAll; ShowOutline(new Rectangle(startRect.X + dx, startRect.Y + dy, startRect.Width, startRect.Height)); }
+                        if (movingImage) { dropIndex = p.Y < 0 ? 0 : p.Y > ClientSize.Height ? TextLength : GetCharIndexFromPosition(p); if (dropIndex < 0) dropIndex = TextLength; UpdateDropMark(); Cursor = Cursors.SizeAll; ShowOutline(new Rectangle(startRect.X + dx, startRect.Y + dy, startRect.Width, startRect.Height)); }
                         return;
                     }
                     int hv = HandleAt(p); if (hv >= 0) { Cursor = HCur[hv]; return; }
@@ -3098,11 +3172,12 @@ class RichBox : RichTextBox {
                     if (handle >= 0) { System.Windows.Forms.Cursor.Current = HCur[handle]; m.Result = (IntPtr)1; return; }
                     if (imageDrag >= 0 && movingImage) { System.Windows.Forms.Cursor.Current = Cursors.SizeAll; m.Result = (IntPtr)1; return; }
                     { var pt = PointToClient(Cursor.Position); int hv = HandleAt(pt); if (hv >= 0) { System.Windows.Forms.Cursor.Current = HCur[hv]; m.Result = (IntPtr)1; return; } if (SelImage >= 0 && ImageAt(pt) == SelImage) { System.Windows.Forms.Cursor.Current = Cursors.SizeAll; m.Result = (IntPtr)1; return; } }
+                    if(LinkAt(PointToClient(Cursor.Position))){System.Windows.Forms.Cursor.Current=Cursors.Hand;m.Result=(IntPtr)1;return;}
                     System.Windows.Forms.Cursor.Current = Cursors.IBeam; m.Result = (IntPtr)1; return; // native text area has one stable cursor
                 case 0x0202:
                     if (imageDrag >= 0) {
                         int ci = imageDrag, dest = dropIndex; bool move = movingImage; EndOutline();
-                        imageDrag = -1; movingImage = false; dropIndex = -1; Capture = false; Cursor = Cursors.IBeam; Invalidate();
+                        imageDrag = -1; movingImage = false; dropIndex = -1; UpdateDropMark(); Capture = false; Cursor = Cursors.IBeam; Invalidate();
                         if (move) MoveImage(ci, dest);
                         return;
                     }
@@ -3119,15 +3194,17 @@ class RichBox : RichTextBox {
             if (m.Msg == 0x000F) { Native.RECT ur; if (GetUpdateRect(Handle, out ur, false)) using (var g = Graphics.FromHwnd(Handle)) { g.SetClip(Rectangle.FromLTRB(ur.L, ur.T, ur.R, ur.B)); PaintBack(g, this); } }
         }
         base.WndProc(ref m);
+        if ((m.Msg == 0x0115 || m.Msg == 0x020A) && ImageTools && SelImage >= 0 && handle < 0 && imageDrag < 0) Invalidate();
         if (PaintBack != null && (m.Msg == 0x0115 || m.Msg == 0x020A || m.Msg == 0x0005)) Invalidate();
         if (m.Msg == 0x000F && ImageTools && SelImage >= 0) PaintSelection();
 
     }
     protected override void OnSelectionChanged(EventArgs e) { if (SelImage >= 0 && !(SelectionStart == SelImage && SelectionLength == 1) && handle < 0) { SelImage = -1; Cursor = Cursors.IBeam; Invalidate(); } base.OnSelectionChanged(e); }
-    protected override void OnTextChanged(EventArgs e) { cache = null; objectCache = null; base.OnTextChanged(e); if (PaintBack != null) Invalidate(); }
+    protected override void OnTextChanged(EventArgs e) { cache = null; objectCache = null; linkCache=null; base.OnTextChanged(e); if (PaintBack != null) Invalidate(); }
     static Point Pt(Message m) { long l = (long)m.LParam; return new Point(unchecked((short)(l & 0xFFFF)), unchecked((short)((l >> 16) & 0xFFFF))); }
     void PaintSelection() {
-        if (movingImage || handle >= 0) return;
+        if(movingImage&&dropIndex>=0){using(var g=CreateGraphics())using(var pen=new Pen(UI.G2,Math.Max(2f,UI.Scale*2f))){int x=dropMark.X+dropMark.Width/2;g.DrawLine(pen,x,dropMark.Top+1,x,dropMark.Bottom-1);}return;}
+        if (handle >= 0) return;
         if (SelImage >= TextLength) { SelImage = -1; return; }
         var r = handle >= 0 ? dragRect : ImageRect(SelImage); if (r.IsEmpty) return;
         using (var g = CreateGraphics()) {
@@ -3135,10 +3212,6 @@ class RichBox : RichTextBox {
             if (handle >= 0) using (var fill = new SolidBrush(Color.FromArgb(40, UI.G2))) g.FillRectangle(fill, r);
             using (var pen = new Pen(UI.G1, Math.Max(1.5f, UI.Scale * 1.5f))) { if (handle >= 0) pen.DashStyle = DashStyle.Dash; g.DrawRectangle(pen, r); }
             foreach (var h in Handles(r)) { using (var b = new SolidBrush(Color.White)) g.FillEllipse(b, h); using (var pen = new Pen(UI.G2, 1.5f)) g.DrawEllipse(pen, h); }
-            if (movingImage && dropIndex >= 0) {
-                var p = GetPositionFromCharIndex(Math.Min(dropIndex, TextLength));
-                using (var pen = new Pen(UI.G2, Math.Max(2f, UI.Scale * 2f))) g.DrawLine(pen, p.X, p.Y, p.X, p.Y + Math.Max(Font.Height, UI.S(18)));
-            }
         }
     }
 }
@@ -3375,9 +3448,8 @@ class NoteForm : Form {
     void FillSurface(Graphics g) {
         var r = new Rectangle(0, 0, Math.Max(1, Width), Math.Max(1, Height));
         using (var pb = new SolidBrush(Paper)) g.FillRectangle(pb, r);
-        int h = title == null ? UI.S(32) : title.Bottom;
-        using (var br = new LinearGradientBrush(new Rectangle(0, 0, r.Width, Math.Max(1, h)), titleA, titleB, 0f)) g.FillRectangle(br, 0, 0, r.Width, h);
-        using (var fade = new LinearGradientBrush(new Rectangle(0, 0, r.Width, Math.Max(1, h)), Color.FromArgb(0, Paper), Paper, 90f)) g.FillRectangle(fade, 0, 0, r.Width, h);
+        // The title controls and editor sit on one uninterrupted plate. Colour is carried by
+        // the slim top accent instead of a separate title strip or editor rectangle.
         using (var accent = new LinearGradientBrush(new Rectangle(0, 0, r.Width, Math.Max(1, UI.S(3))), titleA, titleB, 0f)) g.FillRectangle(accent, 0, 0, r.Width, UI.S(3));
 
     }
@@ -3397,23 +3469,24 @@ class NoteForm : Form {
     public NoteForm(NoteMeta m) {
         M = m;
         FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual; AutoScaleMode = AutoScaleMode.None;
-        DoubleBuffered = true; Text = "스티커 메모"; Icon = Program.AppIcon; MinimumSize = new Size(UI.S(190), UI.S(150));
+        DoubleBuffered = true; Text = "스티커 메모"; Icon = Program.AppIcon; MinimumSize = new Size(UI.S(240), UI.S(150));
         Padding = new Padding(UI.S(4));
         Bounds = Notes.Clamp(new Rectangle(m.X, m.Y, Math.Max(m.W, UI.S(190)), Math.Max(m.H, UI.S(150))), Notes.Areas(), UI.S(32));
         TopMost = m.TopMost;
 
-        title = new GradPanel { Dock = DockStyle.Top, Height = UI.S(32), Line = true };
+        title = new GradPanel { Dock = DockStyle.Top, Height = UI.S(32), Line = false };
         title.MouseDown += (s, e) => { if (e.Button == MouseButtons.Left) { ReleaseCapture(); SendMessage(Handle, 0xA1, (IntPtr)2, IntPtr.Zero); } };
-        var gfont = new Font("Segoe UI", 11f * UI.Scale, FontStyle.Regular);
         var bAdd = new NoteBtn("+", new Font("Segoe UI", 13f * UI.Scale), "새 메모 (Ctrl+N)") { Dock = DockStyle.Left };
         bAdd.Click += (s, e) => Notes.New(true);
-        var bMenu = new NoteBtn("⋯", gfont, "메뉴") { Dock = DockStyle.Right };
-        bMenu.Click += (s, e) => ShowMenu(bMenu);
         var bClose = new NoteBtn("✕", new Font("Segoe UI", 9f * UI.Scale), "메모 닫기 (목록에는 남아요)") { Dock = DockStyle.Right };
         bClose.Click += (s, e) => Notes.Close(M);
-        pinButton = new NoteBtn("↑", new Font("Segoe UI", 12f * UI.Scale, FontStyle.Bold), "항상 위 고정 켜기/끄기") { Dock = DockStyle.Right, On = TopMost };
+        pinButton = new NoteBtn("\uE718", new Font("Segoe MDL2 Assets", 10f * UI.Scale), "항상 위 고정 켜기/끄기") { Dock = DockStyle.Right, On = TopMost };
         pinButton.Click += (s, e) => TogglePinned();
-        title.Controls.Add(bAdd); title.Controls.Add(pinButton); title.Controls.Add(bMenu); title.Controls.Add(bClose);
+        var bSizeTop=new NoteBtn("Aa",new Font("Segoe UI",9f*UI.Scale,FontStyle.Bold),"텍스트 · 제목1 · 제목2 · 제목3 · 제목4"){Dock=DockStyle.Right};
+        bSizeTop.Click+=(s,e)=>ShowFontSizes(bSizeTop);
+        var bColorTop=new NoteBtn("\uE790",new Font("Segoe MDL2 Assets",10f*UI.Scale),"메모 색상"){Dock=DockStyle.Right};bColorTop.Click+=(s,e)=>ShowPalette(bColorTop);
+        var bListTop=new NoteBtn("\uE8FD",new Font("Segoe MDL2 Assets",10f*UI.Scale),"최근 메모 목록"){Dock=DockStyle.Right};bListTop.Click+=(s,e)=>ShowQuickList(bListTop);
+        title.Controls.Add(bAdd); title.Controls.Add(bSizeTop); title.Controls.Add(bColorTop); title.Controls.Add(bListTop); title.Controls.Add(pinButton); title.Controls.Add(bClose);
 
         bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = UI.S(32), WrapContents = false, Padding = new Padding(UI.S(6), UI.S(2), 0, 0), Visible = false };
         Func<string, FontStyle, string, Action, NoteBtn> tb = (gl, st, tip, act) => { var b = new NoteBtn(gl, new Font("Segoe UI", 10f * UI.Scale, st), tip); b.Click += (s, e) => { act(); rtb.Focus(); }; bar.Controls.Add(b); return b; };
@@ -3429,9 +3502,9 @@ class NoteForm : Form {
         tb("↶", FontStyle.Regular, "실행 취소 (Ctrl+Z)", () => { if (rtb.CanUndo) rtb.Undo(); });
         tb("↷", FontStyle.Regular, "다시 실행 (Ctrl+Y)", () => { if (rtb.CanRedo) rtb.Redo(); });
 
-        body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(UI.S(12), UI.S(6), UI.S(4), UI.S(4)) };
+        body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(UI.S(12), 0, UI.S(4), UI.S(4)) };
         rtb = new RichBox { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, ScrollBars = RichTextBoxScrollBars.Vertical, DetectUrls = true,
-            Font = new Font("Malgun Gothic", Math.Max(7f, Notes.Cfg.FontSize)), ForeColor = NoteColors.Text, AcceptsTab = true, BulletIndent = UI.S(14) };
+            Font = new Font("Malgun Gothic", Math.Max(7f, Notes.Cfg.FontSize)), ForeColor = NoteColors.Text, AcceptsTab = true, BulletIndent = UI.S(14), EnableAutoDragDrop = true };
         rtb.HandleCreated += (s, e) => SetWindowTheme(rtb.Handle, "DarkMode_Explorer", null);
         ((RichBox)rtb).ImageTools = true;
         ((RichBox)rtb).MaxImageWidth = () => Math.Max(UI.S(40), rtb.ClientSize.Width - UI.S(28));
@@ -3593,13 +3666,15 @@ class NoteForm : Form {
         if (rtb.TextLength == 0 || DarkBox.Show(this, "이 메모를 삭제할까요?", "스티커 메모", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) Notes.Delete(M);
     }
     void TogglePinned() { TopMost = !TopMost; pinButton.On = TopMost; pinButton.Invalidate(); dirtyMeta = true; Flush(); }
+    void ShowPalette(Control at){var palette=PalettePopup.ShowAt(at,M.Color,k=>Notes.SetColor(M,k));palette.Previewed+=k=>PreviewColor(k);palette.FormClosed+=(a,b)=>PreviewColor(null);}
+    void ShowQuickList(Control at){
+        Notes.EnsureLoaded();var menu=new ContextMenuStrip{Renderer=new DarkRenderer(),Font=UI.Base,ShowImageMargin=true};
+        foreach(var n in Notes.All.OrderByDescending(x=>x.Modified).Take(15)){var mm=n;string text=(n.Text??"").Replace("\r"," ").Replace("\n"," ").Trim();if(text.Length>34)text=text.Substring(0,34)+"…";if(text=="")text="(이미지 또는 빈 메모)";var item=new ToolStripMenuItem(text,NoteColors.SwatchImage(n.Color,UI.S(14)),(s,e)=>Notes.Open(mm,true)){Checked=Notes.IsOpen(n)};menu.Items.Add(item);}
+        if(menu.Items.Count==0)menu.Items.Add("저장된 메모 없음").Enabled=false;menu.Items.Add(new ToolStripSeparator());menu.Items.Add("+ 새 메모",null,(s,e)=>Notes.New(true));menu.Items.Add("전체 메모 목록",null,(s,e)=>{if(Notes.OpenList!=null)Notes.OpenList(2);});menu.Closed+=(s,e)=>menu.Dispose();menu.Show(at,new Point(0,at.Height));
+    }
     void ShowMenu(Control at) {
         var menu = new ContextMenuStrip { Renderer = new DarkRenderer(), Font = UI.Base };
-        menu.Items.Add(new ToolStripMenuItem("색상…  (" + NoteColors.Name(M.Color) + ")", NoteColors.SwatchImage(M.Color, UI.S(14)), (s, e) => BeginInvoke((Action)(() => {
-            var palette = PalettePopup.ShowAt(at, M.Color, k => Notes.SetColor(M, k));
-            palette.Previewed += k => PreviewColor(k);
-            palette.FormClosed += (a, b) => PreviewColor(null);
-        }))));
+        menu.Items.Add(new ToolStripMenuItem("색상…  (" + NoteColors.Name(M.Color) + ")", NoteColors.SwatchImage(M.Color, UI.S(14)), (s, e) => BeginInvoke((Action)(() => ShowPalette(at)))));
         menu.Items.Add(new ToolStripMenuItem("이미지 넣기…", null, (s, e) => PickImage()));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("항상 위에 표시", null, (s, e) => TogglePinned()) { Checked = TopMost });
@@ -3623,6 +3698,7 @@ class NoteForm : Form {
             case Keys.Control | Keys.Oemplus: case Keys.Control | Keys.Shift | Keys.Oemplus: case Keys.Control | Keys.Add: Grow(1); return true;
             case Keys.Control | Keys.OemMinus: case Keys.Control | Keys.Subtract: Grow(-1); return true;
             case Keys.Control | Keys.Y: if (rtb.CanRedo) rtb.Redo(); return true;
+            case Keys.Control | Keys.C: if (((RichBox)rtb).CopySelectedImage()) return true; break;
             case Keys.Control | Keys.V: case Keys.Shift | Keys.Insert:
                 try { if (PasteImage()) return true; } catch { }
                 try { if (Clipboard.ContainsText()) { rtb.SelectionColor = NoteColors.Text; rtb.SelectedText = Clipboard.GetText(); } } catch { }
@@ -4419,7 +4495,7 @@ class SettingsForm : ChromeForm, IMessageFilter {
         nColor = new SwatchGrid(NoteColors.PaletteKeys) { Current = Cfg.Notes.DefaultColor };
         nColor.Picked += k => { if (loading) return; Cfg.Notes.DefaultColor = k; Changed(); };
         var nCustom = UI.Btn("맞춤 색…"); nCustom.Click += (s, e) => PalettePopup.ShowAt(nCustom, Cfg.Notes.DefaultColor, k => { Cfg.Notes.DefaultColor = k; nColor.Current = k; nColor.Invalidate(); Changed(); });
-        sDef.Row("새 메모 색상", nColor);
+        sDef.Row("무작위 제외 색상", nColor, "새 메모는 팔레트에서 무작위 색상으로 열리며, 여기서 고른 색은 다음 새 메모에서 제외해요.");
         sDef.Row("", nCustom);
         nSize = UI.Num(7, 48, 11, 70); nSize.ValueChanged += (s, e) => { if (loading) return; Cfg.Notes.FontSize = (float)nSize.Value; Changed(); };
         sDef.Row("글자 크기", UI.Flow(nSize, UI.L("pt")), "새 메모에 적용돼요 (메모 안에서 Ctrl+휠로 확대/축소)");
@@ -4658,7 +4734,7 @@ class SettingsForm : ChromeForm, IMessageFilter {
         sStart.Full(UI.HintL("시작프로그램 폴더의 ‘" + Startup.LinkName + "’ 바로가기로 관리돼요"));
         UI.AddRow(st, sStart);
 
-        var sLock = new Section("Windows 잠금 화면 숨기기", "잠금 배경 사진을 생략하고 로그인 화면을 바로 표시해요. 암호·PIN 인증은 그대로 필요해요. Windows Pro·Enterprise·Education에서 지원하며 관리 정책에 따라 적용이 제한될 수 있어요.");
+        var sLock = new Section("잠금 배경 사진 건너뛰기 (인증 유지)", "잠금 배경 사진만 생략하고 로그인 화면을 바로 표시해요. 암호·PIN 인증은 그대로 필요해요. Windows Pro·Enterprise·Education에서 지원하며 관리 정책에 따라 적용이 제한될 수 있어요.");
         var lockStatus = UI.HintL(""); var lockButton = UI.Btn("설정");
         Action updateLock = () => { lockStatus.Text = LockScreenPolicy.Hidden ? "현재 정책: 잠금 배경 화면 숨김" : "현재 정책: Windows 기본 잠금 화면"; lockButton.Text = LockScreenPolicy.Owned ? "이전 설정으로 복원…" : "잠금 화면 숨기기…"; };
         updateLock();
@@ -4674,16 +4750,20 @@ class SettingsForm : ChromeForm, IMessageFilter {
         };
         sLock.Full(lockStatus); sLock.Full(lockButton); sLock.Full(UI.HintL("이 PC에만 적용돼요. 변경할 때 관리자 권한이 필요하며, 복원하면 BongHub가 변경하기 전 정책으로 돌아가요.")); UI.AddRow(st, sLock);
 
-        var sSignIn=new Section("부팅·절전 로그인 설정","이 PC에 보이지 않는 Windows 설정 메뉴에 의존하지 않고, 절전 복귀 전원 정책을 직접 적용해요.");
+        var sSignIn=new Section("로그인 인증 생략 (부팅·절전)","절전 복귀 인증은 이 PC의 전원 정책으로 변경하고, 부팅 자동 로그인은 Microsoft 공식 도구를 안내해요.");
         var wakeStatus=UI.HintL(""); var wakeOptions=UI.Btn("설정");
         Action updateWake=()=>{wakeStatus.Text=SleepResumeAuth.Status();wakeOptions.Text=SleepResumeAuth.Owned?"이전 설정으로 복원…":"절전 복귀 인증 생략…";};updateWake();
         wakeOptions.Click+=(a,b)=>{bool restore=SleepResumeAuth.Owned;wakeOptions.Enabled=false;ThreadPool.QueueUserWorkItem(_=>{string result;try{using(var helper=Process.Start(new ProcessStartInfo(Application.ExecutablePath,"sleepauth "+(restore?"restore":"disable")){UseShellExecute=true,Verb="runas",WorkingDirectory=Path.GetDirectoryName(Application.ExecutablePath)})){helper.WaitForExit();result=helper.ExitCode==0?"적용됐어요. 다음 절전 복귀부터 확인해 주세요.":"설정하지 못했어요.";}}catch(System.ComponentModel.Win32Exception ex){result=ex.NativeErrorCode==1223?"관리자 권한 요청을 취소했어요.":ex.Message;}catch(Exception ex){result=ex.Message;}try{BeginInvoke((Action)(()=>{if(IsDisposed)return;updateWake();wakeStatus.Text+=" · "+result;wakeOptions.Enabled=true;}));}catch{}});};
-        var bootOptions=UI.Btn("부팅 자동 로그인 도구 안내");bootOptions.Click+=(a,b)=>{try{Process.Start("https://learn.microsoft.com/en-us/sysinternals/downloads/autologon");}catch(Exception ex){DarkBox.Show(this,ex.Message,"Microsoft Autologon");}};
-        sSignIn.Full(UI.Flow(wakeOptions,bootOptions));
+        var blankStatus=UI.HintL("");var blankOptions=UI.Btn("설정");
+        Action updateBlank=()=>{blankStatus.Text=BlankAutoLogon.Status();blankOptions.Text=BlankAutoLogon.Owned?"무암호 자동 로그인 복원…":"무암호 계정 부팅 자동 로그인…";blankOptions.Enabled=BlankAutoLogon.Owned||BlankAutoLogon.LocalCurrentAccount;};updateBlank();
+        blankOptions.Click+=(a,b)=>{bool restore=BlankAutoLogon.Owned;blankOptions.Enabled=false;ThreadPool.QueueUserWorkItem(_=>{string result;try{using(var helper=Process.Start(new ProcessStartInfo(Application.ExecutablePath,"blankautologon "+(restore?"restore":"enable")){UseShellExecute=true,Verb="runas",WorkingDirectory=Path.GetDirectoryName(Application.ExecutablePath)})){helper.WaitForExit();result=helper.ExitCode==0?"적용됐어요. 다음 Windows 부팅부터 확인해 주세요.":"설정하지 못했어요.";}}catch(System.ComponentModel.Win32Exception ex){result=ex.NativeErrorCode==1223?"관리자 권한 요청을 취소했어요.":ex.Message;}catch(Exception ex){result=ex.Message;}try{BeginInvoke((Action)(()=>{if(IsDisposed)return;updateBlank();blankStatus.Text+=" · "+result;}));}catch{}});};
+        var bootOptions=UI.Btn("암호 있는 계정용 Autologon 안내");bootOptions.Click+=(a,b)=>{try{Process.Start("https://learn.microsoft.com/en-us/sysinternals/downloads/autologon");}catch(Exception ex){DarkBox.Show(this,ex.Message,"Microsoft Autologon");}};
+        sSignIn.Full(UI.Flow(wakeOptions,blankOptions,bootOptions));
         sSignIn.Full(wakeStatus);
+        sSignIn.Full(blankStatus);
         sSignIn.Full(UI.HintL("절전 복귀: 현재 전원 계획의 AC(전원 연결)·DC(배터리) 로그인 요구를 함께 끄고, BongHub가 변경 전 값을 보관해 복원할 수 있어요. 조직 정책이 강제하는 경우에는 적용되지 않을 수 있어요."));
-        sSignIn.Full(UI.HintL("부팅: Microsoft Autologon을 내려받아 실행하고 계정 암호를 직접 입력한 뒤 Enable을 누르세요. PIN 대신 계정 암호가 필요하며, 다시 인증을 요구하려면 Disable을 선택하세요."));
-        sSignIn.Full(UI.HintL("이 버튼은 공식 설정 화면을 열어요. BongHub가 계정 암호를 수집하거나 저장하지 않아요."));UI.AddRow(st,sSignIn);
+        sSignIn.Full(UI.HintL("부팅: 이 PC처럼 암호가 비어 있는 로컬 계정은 전용 버튼을 사용해요. DefaultPassword 값을 빈 문자열로 명시하고 기존 Winlogon 값을 보관해 복원할 수 있어요. 물리적으로 PC에 접근할 수 있는 사람도 바로 로그인할 수 있으니 개인 PC에서만 사용하세요."));
+        sSignIn.Full(UI.HintL("계정 암호가 있는 경우에만 Microsoft Autologon을 사용하세요. BongHub는 암호를 입력받거나 저장하지 않으며, 무암호 계정 설정은 빈 문자열만 기록해요."));UI.AddRow(st,sSignIn);
 
         var sOv = new Section("전환 안내 화면", null);
         gOverlay = UI.Chk("전환 중 로딩 화면 사용 (모든 모니터 프리셋)"); gOverlay.CheckedChanged += (s, e) => { if (loading) return; Cfg.General.OverlayEnabled = gOverlay.Checked; Changed(); };
@@ -7447,6 +7527,8 @@ static class Program {
                 case "interactiontest": TestEnv.Off=true; return InteractionTest(args.Length>1?args[1]:"");
                 case "lockscreen": return LockScreenPolicy.Run(args);
                 case "sleepauth": return SleepResumeAuth.Run(args);
+                case "blankautologon": return BlankAutoLogon.Run(args);
+                case "blankcheck": return BlankAutoLogon.LocalCurrentAccount?0:1;
                 case "lockscreenpolicytest": return LockScreenPolicy.Test(Path.Combine(ExeDir, "lockscreenpolicytest.txt"));
                 case "imagetest": return ImageTest();
                 case "workspace": return WorkspaceCli(args);
@@ -7779,6 +7861,7 @@ static class Program {
         check(Hotkey.Normalize(w.Hotkey) == "Ctrl+Alt+1" && Hotkey.Normalize(a.Hotkey) == "Ctrl+Alt+0", "hotkeys");
         uint m, v; Hotkey.Parse("Ctrl+Alt+1", out m, out v); check(m == 3 && v == (uint)Keys.D1, "hotkey parse Ctrl+Alt+1 -> mods 3 vk D1");
         check(d.General.IdleEnabled && d.General.IdleMinutes == 30 && d.General.IdlePreset == "자리비움" && d.General.SkipIfAudio && Math.Abs(d.General.AudioThreshold - 0.001) < 1e-9, "idle defaults");
+        for(int n=0;n<10;n++){string rc=NoteColors.Random(d.Notes.DefaultColor);check(NoteColors.Valid(rc)&&rc!=d.Notes.DefaultColor,"new note random colour "+n);}
         check(d.FindCli("work") == w && d.FindCli("away") == a && d.FindCli("작업") == w && d.FindCli("WORK") == w, "CLI legacy aliases");
         var x = Config.Clone(d); x.GlobalRules.Add(new WindowRule { Name = "테스트 규칙", Process = "notepad", Title = "제목\"따옴표\\", TitleRegex = true, Monitor = "SAM73D3", Action = "max", X = -5, Pin = true, Keep = true });
         x.Presets[0].Rules.Add(new WindowRule { Name = "r2", Class = "Notepad" });
@@ -7905,10 +7988,11 @@ static class Program {
             check(noteRedraws==0,"unchanged settings do not repaint notes");
             rb.Select(ci,1); rb.SelImage=ci; rb.ScrollToCaret(); Pump(100);
             var dragBounds=rb.ImageRect(ci); int mx=dragBounds.Left+dragBounds.Width/2, my=dragBounds.Top+Math.Min(dragBounds.Height/2,UI.S(50));
-            int invalidations=0; InvalidateEventHandler invalidated=(a,b)=>invalidations++; rb.Invalidated+=invalidated;
+            int invalidations=0; InvalidateEventHandler invalidated=(a,b)=>{if(b.InvalidRect.Width>=rb.ClientSize.Width-2&&b.InvalidRect.Height>=rb.ClientSize.Height-2)invalidations++;}; rb.Invalidated+=invalidated;
             TestSend(rb.Handle,0x0201,(IntPtr)1,MousePoint(mx,my));
             for(int n=1;n<=30;n++) { TestSend(rb.Handle,0x0200,(IntPtr)1,MousePoint(mx+n,my+n)); Application.DoEvents(); }
             check(invalidations<10,"30 drag updates avoid full editor invalidation ("+invalidations+")");
+            check(rb.DropIndicatorVisible,"image drag shows text insertion marker");
             TestSend(rb.Handle,0x0202,IntPtr.Zero,MousePoint(mx+30,my+30)); rb.Invalidated-=invalidated;
             check(!Application.OpenForms.Cast<Form>().Any(w=>w is ImageDragOutline),"drag outline disposed after drop");
             ci=rb.ObjectChars().Single();
@@ -7919,6 +8003,10 @@ static class Program {
             bar.Wake(); rb.Refresh(); Pump(400); Shot(f, "note_scrollbar.png");
             using (var bmp = TestEnv.Render(f)) { int lit = 0; for (int y = UI.S(40); y < f.Height - UI.S(40); y += 2) for (int x = UI.S(12); x < f.Width - UI.S(30); x += 2) { var px = bmp.GetPixel(x, y); if (px.R + px.G + px.B > 600) lit++; } check(lit > 40, "text visible after scrolling (" + lit + " bright px)"); }
             rb.SelectionStart = 0; rb.ScrollToCaret(); rb.Refresh(); Pump(300);
+            ci=rb.ObjectChars().Single(); rb.Select(ci,1); rb.SelImage=ci; rb.Pictures(); int selectedParses=rb.PictureParseCount;
+            TestSend(rb.Handle,0x020A,new IntPtr(unchecked((int)0xFF880000)),IntPtr.Zero);Pump(120);
+            check(rb.SelImage==ci,"mouse wheel keeps selected picture");check(rb.PictureParseCount==selectedParses,"selected picture scroll reuses metadata cache");
+            rb.Select(0,rb.TextLength);check(rb.SelectedRtf.Contains(@"\pict"),"mixed text selection includes picture");rb.Select(0,0);rb.SelImage=-1;
             using (var bmp = TestEnv.Render(f)) { int lit = 0; for (int y = UI.S(40); y < f.Height - UI.S(40); y += 2) for (int x = UI.S(12); x < f.Width - UI.S(30); x += 2) { var px = bmp.GetPixel(x, y); if (px.R + px.G + px.B > 600) lit++; } check(lit > 40, "text visible at top (" + lit + " bright px)"); }
             // Regression: move an embedded picture, then repeatedly scroll/repaint without re-reading the RTF payload.
             string textBeforeMove = rb.RawText().Replace("\uFFFC", "");
