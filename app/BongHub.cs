@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.3.6.0")]
-[assembly: AssemblyFileVersion("3.3.6.0")]
-[assembly: AssemblyInformationalVersion("3.3.6")]
+[assembly: AssemblyVersion("3.3.7.0")]
+[assembly: AssemblyFileVersion("3.3.7.0")]
+[assembly: AssemblyInformationalVersion("3.3.7")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -586,8 +586,9 @@ static class TestEnv {
     }
 }
 static class AppInfo {
-    public const string Version = "3.3.6";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.3.7";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.3.7  이미지 뷰어 닫기·창 이동 조작 추가 · 전체 창 실시간 크기 조절 · 트레이 설정 창 먼저 표시",
         "3.3.6  이미지 선택 해제 검색 최적화 · 텍스트/제목1~4 스타일 · 평면 그라데이션 색상 복원",
         "3.3.5  스티커 메모 상단·본문 평면 통일 · 입력 커서 고정 · 크기 조절 중 실제 본문 즉시 배치",
         "3.3.4  스티커 메모 이미지 드래그 이동 · 글자 크기 빠른 선택 · 색상 호버 미리보기와 차분한 팔레트 · 선택 핸들 커서 안정화 · 더블클릭 이미지 뷰어 제목 표시줄/작업 표시줄 숨김 · 모달 창에서도 메모 선택 · 입력 후 조용할 때 자동 저장",
@@ -931,6 +932,8 @@ static class SlimScroll {
 }
 // ================= Image viewer (photo-viewer style) =================
 class ImageViewer : ChromeForm {
+    [DllImport("user32.dll")] static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
     readonly Image img; readonly ViewCanvas cv;
     public static void Open(Image img, IWin32Window owner) { var v = new ImageViewer(img); v.Show(owner); }
     public ImageViewer(Image image) {
@@ -943,6 +946,12 @@ class ImageViewer : ChromeForm {
         cv = new ViewCanvas(img) { Dock = DockStyle.Fill };
         cv.Changed += () => Text = "이미지 보기  ·  " + img.Width + "×" + img.Height + "  ·  " + Math.Round(cv.Zoom * 100) + "%";
         Controls.Add(cv);
+        var tools = new Panel { Dock = DockStyle.Top, Height = UI.S(30), BackColor = BackColor };
+        var close = new NoteBtn("✕", new Font("Segoe UI", 10f * UI.Scale), "닫기 (Esc)") { Dock = DockStyle.Right, Width = UI.S(38) };
+        close.Click += (s, e) => Close();
+        var grip = new Label { Dock = DockStyle.Fill, Text = "⋮⋮", TextAlign = ContentAlignment.MiddleCenter, ForeColor = UI.Hint, Cursor = Cursors.SizeAll };
+        grip.MouseDown += (s, e) => { if (e.Button == MouseButtons.Left) { ReleaseCapture(); SendMessage(Handle, 0x00A1, (IntPtr)2, IntPtr.Zero); } };
+        tools.Controls.Add(grip); tools.Controls.Add(close); Controls.Add(tools); tools.BringToFront();
         var menu = new ContextMenuStrip { Renderer = new DarkRenderer(), ShowImageMargin = false };
         menu.Items.Add("이미지 복사", null, (s, e) => Copy(img));
         menu.Items.Add("화면에 맞춤", null, (s, e) => cv.FitView(true));
@@ -3515,9 +3524,7 @@ class ChromeForm : Form {
     }
     protected override void OnFormClosed(FormClosedEventArgs e) { glide.End(); base.OnFormClosed(e); }
     protected override void WndProc(ref Message m) {
-        if (m.Msg == 0x0231) glide.Arm(this);
-        else if (m.Msg == 0x0232) { base.WndProc(ref m); glide.End(); return; }
-        if (m.Msg == 0x0005 && glide.SizeChanging(m.WParam.ToInt32(), m.LParam.ToInt32())) glide.Begin(this);
+        // All chrome windows lay out their real controls continuously during resize.
         if (m.Msg == 0x0083 && m.WParam != IntPtr.Zero) { // WM_NCCALCSIZE: whole window is client area
             if (IsZoomed(Handle)) {
                 var p = (NCCALC)Marshal.PtrToStructure(m.LParam, typeof(NCCALC));
@@ -3666,7 +3673,7 @@ class SettingsForm : ChromeForm {
         stack.Controls.SetChildIndex(b, stack.Controls.IndexOf(navs[to]));
         Cfg.General.TabOrder = stack.Controls.OfType<FlatBtn>().Where(x => x.Nav).Select(x => (string)x.Tag).ToList();
     }
-    public SettingsForm(Config cfg, bool startup) {
+    public SettingsForm(Config cfg, bool startup, bool deferPage = false) {
         Cfg = Config.Clone(cfg); StartupEnabled = startup;
         Text = "BongHub 설정"; Font = UI.Base; BackColor = UI.Page; AutoScaleMode = AutoScaleMode.None;
         StartPosition = FormStartPosition.CenterScreen; Icon = Program.AppIcon; KeyPreview = true;
@@ -3698,12 +3705,12 @@ class SettingsForm : ChromeForm {
         saveTimer = new WTimer { Interval = 450 }; saveTimer.Tick += (s, e) => { saveTimer.Stop(); Flush(); };
         statusFade = new WTimer { Interval = 2200 }; statusFade.Tick += (s, e) => { statusFade.Stop(); if (saveError == null) { statusLbl.ForeColor = UI.Hint; statusLbl.Text = "변경 사항은 바로 적용·저장돼요"; } };
         Dark.Theme(this); DoubleBuffered = true;
-        ShowPage(0);
+        if (!deferPage) ShowPage(0);
         ResumeLayout(true);
         content.Resize += (s, e) => FitPages();
         Bar.SendToBack();
         Activated += (s, e) => Bar.Invalidate(); Deactivate += (s, e) => Bar.Invalidate();
-        Shown += (s, e) => Prebuild();
+        Shown += (s, e) => { if (!deferPage) Prebuild(); };
         LoadMonitorsAsync();
     }
 
@@ -6858,7 +6865,7 @@ class TrayApp : Form {
         if (settings != null && !settings.IsDisposed) { settings.WindowState = FormWindowState.Normal; settings.ShowPage(pg); settings.Activate(); return; }
         UnregisterAll();
         SettingsForm.HotkeyOwner = HotkeyTaken;
-        settings = new SettingsForm(cfg, Startup.IsEnabled());
+        settings = new SettingsForm(cfg, Startup.IsEnabled(), true);
         settings.RunPresetNow = p => Trigger(p);
         settings.OnSave = (c, startup) => {
             var ser = new JavaScriptSerializer(); bool kChanged = ser.Serialize(cfg.Kakao) != ser.Serialize(c.Kakao);
@@ -6870,7 +6877,8 @@ class TrayApp : Form {
             if (kChanged) { var k = Config.CloneObj(cfg.Kakao); ThreadPool.QueueUserWorkItem(_ => { try { Kakao.Sync(k); } catch { } }); }
         };
         settings.FormClosed += (s, e) => { settings = null; if (cloudCfgPending) { cloudCfgPending = false; cfg = Config.Load(); } ApplyConfig(false); };
-        settings.Show(); settings.ShowPage(pg); settings.Activate();
+        settings.Show(); settings.Activate(); settings.Update();
+        var opened = settings; opened.BeginInvoke((Action)(() => { if (!opened.IsDisposed) opened.ShowPage(pg); }));
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e) {
