@@ -1,6 +1,6 @@
 # BongHub.Next
 
-**0.3.0** — .NET 10 WPF 프로토타입이에요. 메모·설정 UI는 0.2.0과 같고, 모니터 전환은 아직 3.4.x 트레이가 맡아요. 0단계는 기준선(프레임워크, 트레이, 측정)만 옮겨요.
+**0.4.0** — .NET 10 WPF 프로토타입이에요. 메모·설정 UI는 0.3.0과 같고, 이 버전은 메모리와 설정 첫 프레임만 줄여요. 모니터 전환은 아직 3.4.x 트레이가 맡아요.
 
 ## 경로
 
@@ -23,7 +23,7 @@ dotnet publish next\BongHub.Next\BongHub.Next.csproj -c Release -r win-x64 --sel
 
 같은 설정은 `next/BongHub.Next/Properties/PublishProfiles/ReadyToRun.pubxml`에도 있어요.
 
-대상: `net10.0-windows`, WPF, H.NotifyIcon.Wpf **2.4.1**. WinForms는 쓰지 않아요. 버전은 csproj·`AppEnv.Version` 모두 **0.3.0**. 게시는 ReadyToRun, `win-x64`, 프레임워크 종속이에요. 단일 파일·트림·Native AOT는 꺼져 있어요. `ConcurrentGarbageCollection`은 **false**예요. 기준선 표를 보기 전에는 바꾸지 않아요.
+대상: `net10.0-windows`, WPF, H.NotifyIcon.Wpf **2.4.1**. WinForms는 쓰지 않아요. 버전은 csproj·`AppEnv.Version` 모두 **0.4.0**. 게시는 ReadyToRun, `win-x64`, 프레임워크 종속이에요. 단일 파일·트림·Native AOT는 꺼져 있어요. `ConcurrentGarbageCollection`은 **true**예요.
 
 출력: `next\BongHub.Next\bin\Release\net10.0-windows\win-x64\publish\`.
 
@@ -36,7 +36,7 @@ BongHub.Next.exe --smoketest
 BongHub.Next.exe --notetest --data <notes 복사본>
 ```
 
-0.2.0 기록(`next/test-logs/next_smoketest.txt`, `next_notetest.txt`)은 스모크 **43 PASS**, 노트 **23 PASS**예요. 0.3.0 스모크는 그 43개에 트레이 단언 13개를 더해 **56 PASS**가 기대값이에요. 노트는 그대로 **23 PASS**(읽기 전용 저장 차단 포함)예요. 노트 테스트에는 `data/notes`의 json·rtf 7개를 임시 폴더로 복사해 `--data`로 넘기세요. `data/` 원본은 고치지 마세요.
+0.2.0 기록(`next/test-logs/next_smoketest.txt`, `next_notetest.txt`)은 스모크 **43 PASS**, 노트 **23 PASS**예요. 0.3.0 스모크는 그 43개에 트레이 단언 13개를 더해 **56 PASS**예요. 0.4.0 스모크도 **56 PASS**예요. 노트는 그 23개에 표시용 이미지 크기·원본 pict 바이트 유지 2개를 더해 **25 PASS**예요(읽기 전용 저장 차단 포함). 노트 테스트에는 `data/notes`의 json·rtf 7개를 임시 폴더로 복사해 `--data`로 넘기세요. `data/` 원본은 고치지 마세요.
 
 ## 메모리 기준선
 
@@ -46,7 +46,15 @@ powershell -ExecutionPolicy Bypass -File next\measure-baseline.ps1
 
 BongHub.Next가 이미 켜져 있으면 그 Next만 종료한 뒤에 실행하세요. `BongHub.exe`(3.4.x)는 끄지 마세요. 프리셋 CLI, MMT, 실제 모니터, `%LOCALAPPDATA%\BongHub`, `data/` 쓰기는 하지 않아요. 트레이만·숨긴 설정 창 구간에는 알림 영역 아이콘이 잠깐 보였다가 그 프로세스가 끝나면 사라져요. 창은 화면 밖에 있어요.
 
-결과 파일: `next/test-logs/baseline_memory.txt`. 시나리오 4개(트레이만, 설정 창, 숨긴 설정 창, 메모 7개) × GC 동시 수집 꺼짐/켜짐 × 3회, 각 중앙값. 준비된 뒤 20초 유휴의 `WorkingSet64`·`PrivateMemorySize64`예요. 이 저장소에는 아직 그 숫자가 없어요.
+결과 파일: `next/test-logs/baseline_memory.txt`. 시나리오 4개(트레이만, 설정 창, 숨긴 설정 창, 메모 7개) × GC 동시 수집 꺼짐/켜짐 × 3회, 각 중앙값. 준비된 뒤 20초 유휴의 `WorkingSet64`·`PrivateMemorySize64`예요. 판정은 **gc_concurrent=true**(csproj 기본값) 중앙값이에요.
+
+0.3.0을 주인 PC에서 잰 값(2026-11-02, `ConcurrentGarbageCollection=false`): 트레이만 작업 집합 57MB / private 15MB, `tray_visible_ms` 341. 설정 창 192 / 162MB, `first_frame_ms` 중앙값 1648(1648 / 1522 / 3795). 메모 7개 276 / 250MB. 같은 날 동시 GC를 켜면 설정 첫 프레임 684ms, 메모 7개 264MB, 트레이 56MB / 293ms였어요. 0.4.0은 그 동시 GC를 기본으로 두고, 설정·메모가 잡고 있던 버퍼를 줄여요. 이 저장소에는 0.4.0을 다시 잰 파일은 아직 없어요. 기대값:
+
+| 시나리오 (`gc_concurrent=true` 중앙값) | 작업 집합 | 시각 |
+|---|---|---|
+| 트레이만 | ≤ 120MB | `tray_visible_ms` ≤ 500 |
+| 설정 창 | ≤ 150MB | `first_frame_ms` 중앙값 ≤ 700 |
+| 메모 7개 | ≤ 180MB | — |
 
 `next_startup.txt`(`--out`) 줄:
 

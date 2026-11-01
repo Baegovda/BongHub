@@ -1,5 +1,6 @@
-using System.Runtime.InteropServices;
+using System.Runtime;
 using System.Windows;
+using System.Windows.Threading;
 
 namespace BongHub.Next;
 
@@ -8,8 +9,7 @@ public static class NoteManager
     static readonly Dictionary<string, StickyNoteWindow> open = new();
     public static IReadOnlyCollection<StickyNoteWindow> Windows => open.Values;
     public static event Action? Changed;
-    [DllImport("user32.dll")] static extern uint GetDpiForSystem();
-    static double SysScale { get { try { return GetDpiForSystem() / 96.0; } catch { return 1; } } }
+    static double SysScale => Win32.SystemScale;
 
     public static bool IsOpen(string id) => open.ContainsKey(id);
 
@@ -40,12 +40,12 @@ public static class NoteManager
 
     public static void OpenStartup()
     {
-        if (!ConfigStore.Notes.OpenOnStartup) { AppEnv.NoteStartupNotes(0); return; }
+        if (!ConfigStore.Notes.OpenOnStartup) { AppEnv.NoteStartupNotes(0); ScheduleIdleTrim(); return; }
         var queue = new Queue<NoteMeta>(NoteStore.All.Where(m => m.Open).Reverse());
         int opened = 0;
         void next()
         {
-            if (queue.Count == 0 || App.ShuttingDown) { AppEnv.NoteStartupNotes(opened); return; }
+            if (queue.Count == 0 || App.ShuttingDown) { AppEnv.NoteStartupNotes(opened); ScheduleIdleTrim(); return; }
             Open(queue.Dequeue().Id, activate: false);
             opened++;
             Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, next);
@@ -54,6 +54,24 @@ public static class NoteManager
         // let the settings window reach its first frame first; notes follow one per Background tick (input/render stay responsive)
         var main = App.Instance.MainWin;
         if (main != null && main.IsVisible && !WindowFx.Of(main).Revealed) WindowFx.Of(main).AfterFirstFrame += start; else start();
+    }
+
+    static int trimScheduled;
+    /// <summary>One compacting collection after startup, so discarded bitmaps are gone before the 20s idle sample. Runs after the first frame is recorded.</summary>
+    static void ScheduleIdleTrim()
+    {
+        if (Interlocked.Exchange(ref trimScheduled, 1) != 0) return;
+        Application.Current.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
+        {
+            try
+            {
+                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+                GC.WaitForPendingFinalizers();
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+            }
+            catch (Exception e) { AppEnv.Log("trim: " + e.Message); }
+        });
     }
 
     internal static void Forget(StickyNoteWindow w) { if (open.TryGetValue(w.Meta.Id, out var x) && x == w) { open.Remove(w.Meta.Id); Changed?.Invoke(); } }

@@ -32,13 +32,23 @@ public static class Fx
         var tt = new TranslateTransform(); el.RenderTransform = tt; return tt;
     }
 
-    /// <summary>Window/content open: fade in + scale 0.965 → 1 with a soft spring (≈240ms).</summary>
+    /// <summary>
+    /// Window/content open: fade in + scale 0.965 → 1 with a soft spring (≈240ms).
+    /// The clock is removed when it finishes. A held opacity animation keeps a full-window intermediate surface.
+    /// </summary>
     public static void Appear(UIElement el, double fromScale = 0.965, int ms = 240)
     {
         var st = EnsureScale(el);
-        el.BeginAnimation(UIElement.OpacityProperty, Anim(0, 1, (int)(ms * 0.7)));
-        st.BeginAnimation(ScaleTransform.ScaleXProperty, Anim(fromScale, 1, ms, Spring));
-        st.BeginAnimation(ScaleTransform.ScaleYProperty, Anim(fromScale, 1, ms, Spring));
+        el.Opacity = 1;
+        st.ScaleX = 1;
+        st.ScaleY = 1;
+        var fade = Anim(0, 1, (int)(ms * 0.7));
+        var sx = Anim(fromScale, 1, ms, Spring);
+        var sy = Anim(fromScale, 1, ms, Spring);
+        fade.FillBehavior = sx.FillBehavior = sy.FillBehavior = FillBehavior.Stop;
+        el.BeginAnimation(UIElement.OpacityProperty, fade);
+        st.BeginAnimation(ScaleTransform.ScaleXProperty, sx);
+        st.BeginAnimation(ScaleTransform.ScaleYProperty, sy);
     }
 
     /// <summary>Close: fade out + scale to 0.97 (≈150ms), then <paramref name="done"/>.</summary>
@@ -56,8 +66,13 @@ public static class Fx
     public static void SlideIn(UIElement el, double dy = 14, int ms = 260)
     {
         var t = EnsureTranslate(el);
-        el.BeginAnimation(UIElement.OpacityProperty, Anim(0, 1, (int)(ms * 0.8)));
-        t.BeginAnimation(TranslateTransform.YProperty, Anim(dy, 0, ms, OutQuint));
+        el.Opacity = 1;
+        t.Y = 0;
+        var fade = Anim(0, 1, (int)(ms * 0.8));
+        var move = Anim(dy, 0, ms, OutQuint);
+        fade.FillBehavior = move.FillBehavior = FillBehavior.Stop;
+        el.BeginAnimation(UIElement.OpacityProperty, fade);
+        t.BeginAnimation(TranslateTransform.YProperty, move);
     }
 
     public static void Fade(UIElement el, double to, int ms = 150) => el.BeginAnimation(UIElement.OpacityProperty, Anim(to, ms));
@@ -94,7 +109,7 @@ public static class WindowFx
         {
             st.FirstFrameMs = st.Clock.Elapsed.TotalMilliseconds;
             if (w is MainWindow) AppEnv.Mark("main_content_rendered");
-            if (Fx.Enabled) { content.Opacity = 0; Fx.Appear(content); }
+            if (Fx.Enabled) Fx.Appear(content);
             // reveal after one more render pass so the compositor surely has a painted frame
             w.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
             {

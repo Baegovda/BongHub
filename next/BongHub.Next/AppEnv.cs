@@ -3,7 +3,7 @@ namespace BongHub.Next;
 /// <summary>Process-wide environment: data folder (overridable), test flags, read-only guard.</summary>
 public static class AppEnv
 {
-    public const string Version = "0.3.0";
+    public const string Version = "0.4.0";
     /// <summary>Shared with app/BongHub.cs NotesWriterLock. First live owner is the only writer of the default notes folder.</summary>
     public const string NotesWriterMutexName = @"Local\BongHub_NotesWriter";
     public static string DefaultDataDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BongHub");

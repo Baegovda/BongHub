@@ -51,8 +51,8 @@ $lines.Add('publish_winforms=0')
 $lines.Add('publish_notifyicon=1')
 $lines.Add('idle_seconds=20')
 $lines.Add('runs_per_cell=3')
-$lines.Add('gc_default=false')
-$lines.Add('note=ConcurrentGarbageCollection stays false until these medians are reviewed. This script does not change the csproj.')
+$lines.Add('gc_default=true')
+$lines.Add('note=0.4.0 csproj default is ConcurrentGarbageCollection=true. This script still measures both and restores true.')
 
 function Set-Gc([bool]$On) {
     $raw = [IO.File]::ReadAllText($rt)
@@ -216,10 +216,10 @@ finally {
     if ($null -ne $proc) {
         try { if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue } } catch { }
     }
-    try { Set-Gc $false } catch { }
+    try { Set-Gc $true } catch { }
     Remove-Item Env:DOTNET_gcConcurrent -ErrorAction SilentlyContinue
 }
 
 [IO.File]::WriteAllText($logPath, (($lines -join "`r`n") + "`r`n"), $utf8)
 Write-Host "wrote $logPath"
-Write-Host 'Done. Leave ConcurrentGarbageCollection=false until the medians above are reviewed.'
+Write-Host 'Done. csproj default is ConcurrentGarbageCollection=true. Judge gc_concurrent=true medians against the plan targets.'

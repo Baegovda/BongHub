@@ -62,7 +62,7 @@ public partial class MainWindow : Window
         Navigate("presets");
     }
 
-    public void Reappear() { Root.Opacity = 0; Fx.Appear(Root); }
+    public void Reappear() => Fx.Appear(Root);
 
     // ---------- navigation ----------
     Border NavRow((string Key, string Label, string Glyph, string Hex) p, int index)

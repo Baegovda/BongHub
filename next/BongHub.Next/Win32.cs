@@ -18,6 +18,8 @@ internal static class Win32
     [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern uint GetDpiForSystem();
+    public static double SystemScale { get { try { return GetDpiForSystem() / 96.0; } catch { return 1; } } }
     public const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_NOOWNERZORDER = 0x200;
     public const int WM_MOVE = 0x3, WM_SIZE = 0x5, WM_EXITSIZEMOVE = 0x232;
 
