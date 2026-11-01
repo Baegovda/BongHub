@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.4.0.0")]
-[assembly: AssemblyFileVersion("3.4.0.0")]
-[assembly: AssemblyInformationalVersion("3.4.0")]
+[assembly: AssemblyVersion("3.4.1.0")]
+[assembly: AssemblyFileVersion("3.4.1.0")]
+[assembly: AssemblyInformationalVersion("3.4.1")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -632,8 +632,9 @@ static class LockScreenPolicy {
     }
 }
 static class AppInfo {
-    public const string Version = "3.4.0";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.4.1";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.4.1  설정 화면 최초 표시/탭 전환 시 자식 컨트롤이 비어 보이는 다시 그리기 회귀 수정",
         "3.4.0  전체 다크 UI 개편 · 반응형 카드/줄바꿈 · 드래그 깜빡임 개선 · 잠금 화면 숨기기 · 잡아서 이동 전용 입력 스레드 · Peek/공식 단축키",
         "3.3.8  이미지 이동 후 스크롤 선택 장식 재처리 제거 · 메모 상단 항상 위 고정 버튼",
         "3.3.7  이미지 뷰어 닫기·창 이동 조작 추가 · 전체 창 실시간 크기 조절 · 트레이 설정 창 먼저 표시",
@@ -1908,19 +1909,16 @@ static class UI {
     }
 }
 
-class PageHeading : Control {
-    readonly string heading, description;
+class PageHeading : Panel {
     public PageHeading(string title) {
-        heading=title; Height=UI.S(90); Margin=new Padding(0,0,0,UI.S(12));
+        Height=UI.S(90); MinimumSize=new Size(UI.S(80),UI.S(90)); Margin=new Padding(0,0,0,UI.S(12));
+        Anchor=AnchorStyles.Left|AnchorStyles.Right|AnchorStyles.Top; BackColor=UI.Page;
         var descriptions=new Dictionary<string,string> { {"모니터 프리셋","화면과 작업 환경을 한 번에 전환하세요."},{"창 위치","앱마다 편안한 자리를 지정하세요."},{"스티커 메모","생각과 이미지를 가까이에 두세요."},{"카톡 광고 제거","대화에 집중할 수 있는 깔끔한 화면."},{"바탕화면 아이콘","정리한 바탕화면을 그대로 기억하세요."},{"일반","BongHub를 내 작업 방식에 맞춰보세요."},{"정보","석봉이의 유틸 창고 · BongHub " + AppInfo.Version},{"PowerToys","매일 반복하는 작업을 가볍게."} };
-        description=descriptions.ContainsKey(title)?descriptions[title]:"작업 환경을 세밀하게 조정하세요.";
-        SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);
-    }
-    protected override void OnPaint(PaintEventArgs e) {
-        e.Graphics.Clear(UI.Page);
-        TextRenderer.DrawText(e.Graphics,"BONGHUB  /  WORKSPACE",UI.Small,new Rectangle(0,0,Width,UI.S(18)),UI.Hint,TextFormatFlags.NoPadding);
-        TextRenderer.DrawText(e.Graphics,heading,UI.Title,new Rectangle(0,UI.S(22),Width,UI.S(34)),UI.Text,TextFormatFlags.NoPadding|TextFormatFlags.EndEllipsis);
-        TextRenderer.DrawText(e.Graphics,description,UI.Base,new Rectangle(0,UI.S(62),Width,UI.S(22)),UI.Text2,TextFormatFlags.NoPadding|TextFormatFlags.EndEllipsis);
+        string description=descriptions.ContainsKey(title)?descriptions[title]:"작업 환경을 세밀하게 조정하세요.";
+        var brand=new Label { Text="BONGHUB  /  WORKSPACE", Font=UI.Small, ForeColor=UI.Hint, Bounds=new Rectangle(0,0,Width,UI.S(18)), Anchor=AnchorStyles.Left|AnchorStyles.Right|AnchorStyles.Top };
+        var heading=new Label { Text=title, Font=UI.Title, ForeColor=UI.Text, Bounds=new Rectangle(0,UI.S(22),Width,UI.S(34)), Anchor=AnchorStyles.Left|AnchorStyles.Right|AnchorStyles.Top, AutoEllipsis=true };
+        var hint=new Label { Text=description, Font=UI.Base, ForeColor=UI.Text2, Bounds=new Rectangle(0,UI.S(62),Width,UI.S(22)), Anchor=AnchorStyles.Left|AnchorStyles.Right|AnchorStyles.Top, AutoEllipsis=true };
+        Controls.AddRange(new Control[]{brand,heading,hint});
     }
 }
 class ResponsiveTable : TableLayoutPanel {
@@ -3864,20 +3862,21 @@ class SettingsForm : ChromeForm {
     }
     public void ShowPage(int i) {
         if (i == page) return;
-        bool redraw = content.IsHandleCreated && Visible;
-        if (redraw) SendMessage(content.Handle, 0x000B, IntPtr.Zero, IntPtr.Zero); // WM_SETREDRAW off
+        content.SuspendLayout();
         var sw = Stopwatch.StartNew(); double tb = 0, tr = 0, tv = 0;
         try {
             var np = EnsurePage(i); if (map != null && !monitorLoadStarted) LoadMonitorsAsync(); tb = sw.Elapsed.TotalMilliseconds;
             int old = page; page = i;
             if (i == 1) RefreshScopes(); if (i == 2) FillNotes(); if (i == 3) RefreshKakaoStatus(); if (i == 4) RefreshDesk(); if (i == 5) { RefreshIdlePresets(); ShowCloud(); } if (i == 6) RefreshAbout(); if (i == 7) { if (PtOpen != null) PtShow(null); PtRefresh(); }
             tr = sw.Elapsed.TotalMilliseconds;
-            np.Bounds = new Rectangle(0, 0, content.ClientSize.Width, content.ClientSize.Height); np.BringToFront();
-            if (old >= 0 && pages[old] != null) pages[old].Location = new Point(OffX, 0);
+            np.Bounds = new Rectangle(0, 0, content.ClientSize.Width, content.ClientSize.Height); np.Visible = true; np.BringToFront();
+            if (old >= 0 && pages[old] != null) { pages[old].Visible = false; pages[old].Location = new Point(OffX, 0); }
             for (int k = 0; k < nav.Count; k++) ((FlatBtn)nav[k]).Selected = k == i;
             tv = sw.Elapsed.TotalMilliseconds;
         } finally {
-            if (redraw) { SendMessage(content.Handle, 0x000B, (IntPtr)1, IntPtr.Zero); content.Invalidate(false); }
+            content.ResumeLayout(true);
+            if (page >= 0 && pages[page] != null) { pages[page].Invalidate(true); pages[page].Update(); }
+            RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, 0x0001 | 0x0020 | 0x0080 | 0x0100);
             Prof.AppendLine("  page " + i + ": build " + tb.ToString("0") + " refresh " + (tr - tb).ToString("0") + " swap " + (tv - tr).ToString("0") + " paint " + (sw.Elapsed.TotalMilliseconds - tv).ToString("0"));
         }
     }
@@ -4809,6 +4808,10 @@ class SettingsForm : ChromeForm {
         sec.Row(label, UI.Flow(hb, clr)); return hb;
     }
     CheckBox PtChk(Section sec, string text, bool val, Action<bool> set) { var c = UI.Chk(text); c.Checked = val; c.CheckedChanged += (s, e) => { if (loading) return; set(c.Checked); Changed(); PtRefresh(); }; sec.Full(c); return c; }
+    public void SyncPasteShortcut(string key) {
+        Cfg.Pt.Paste.Hotkey=key;bool previous=loading;loading=true;
+        try { foreach(var panel in ptSubs.Values) foreach(var box in panel.Controls.Find("pasteActivation",true).OfType<HotkeyBox>())box.Value=key; } finally {loading=previous;}
+    }
     ListView wsList; Label wsStatus;
     Control PtBuildSub(string key) {
         var st = UI.Stack(); st.Dock = DockStyle.Top; st.AutoSize = true; var x = Cfg.Pt;
@@ -4895,7 +4898,7 @@ class SettingsForm : ChromeForm {
                 sec.Full(UI.HintL("앱 목록은 처음 쓸 때 백그라운드에서 만들어 캐시해요. 창은 한 번 만든 뒤 숨겨 두고 다시 써요."));
                 break; }
             case "paste": {
-                PtHk(sec, "붙여넣기 메뉴", x.Paste.Hotkey, v => x.Paste.Hotkey = v);
+                PtHk(sec, "붙여넣기 메뉴", x.Paste.Hotkey, v => x.Paste.Hotkey = v).Name="pasteActivation";
                 PtHk(sec, "바로 서식 없이", x.Paste.PlainHotkey, v => x.Paste.PlainHotkey = v);
                 PtHk(sec, "바로 JSON으로", x.Paste.JsonHotkey, v => x.Paste.JsonHotkey = v);
                 PtHk(sec, "바로 마크다운으로", x.Paste.MarkdownHotkey, v => x.Paste.MarkdownHotkey = v);
@@ -7047,7 +7050,20 @@ class TrayApp : Form {
         var x = cfg.Pt; wsKeys.Clear();
         Action<string, int, string> reg = (hk, id, what) => { uint m, vk; if (Hotkey.Parse(hk, out m, out vk) && !Native.RegisterHotKey(Handle, id, m | MOD_NOREPEAT, vk)) failed.Add(Hotkey.Normalize(hk) + " (" + what + ")"); };
         if (x.Palette.Enabled) reg(x.Palette.Hotkey, 910, "명령 팔레트");
-        if (x.Paste.Enabled) { reg(x.Paste.Hotkey, 911, "고급 붙여넣기"); reg(x.Paste.PlainHotkey, 912, "서식 없이 붙여넣기"); reg(x.Paste.JsonHotkey, 914, "JSON으로 붙여넣기"); reg(x.Paste.MarkdownHotkey, 915, "마크다운으로 붙여넣기"); }
+        if (x.Paste.Enabled) {
+            int failureCount=failed.Count; reg(x.Paste.Hotkey,911,"고급 붙여넣기");
+            if(failed.Count>failureCount && Hotkey.Normalize(x.Paste.Hotkey)=="Win+Shift+V") {
+                foreach(string fallback in new[]{"Ctrl+Alt+V","Ctrl+Alt+Shift+V","Win+Ctrl+Shift+V"}) {
+                    var assigned=cfg.Presets.Select(p=>p.Hotkey).Concat(new[]{cfg.Notes.Hotkey,cfg.Desk.HotkeySave,cfg.Desk.HotkeyRestore,x.Palette.Hotkey,x.Paste.PlainHotkey,x.Paste.JsonHotkey,x.Paste.MarkdownHotkey,x.Peek.Hotkey}).Concat(x.Work.Items.Select(w=>w.Hotkey));
+                    if(assigned.Any(k=>Hotkey.Normalize(k)==Hotkey.Normalize(fallback)))continue;
+                    uint mods,vk;Hotkey.Parse(fallback,out mods,out vk);
+                    if(!Native.RegisterHotKey(Handle,911,mods|MOD_NOREPEAT,vk))continue;
+                    failed.RemoveAt(failed.Count-1);x.Paste.Hotkey=fallback;
+                    if(settings!=null&&!settings.IsDisposed)settings.SyncPasteShortcut(fallback);
+                    try{cfg.Save();File.WriteAllText(Path.Combine(Core.Dir,"hotkeys_fallback.txt"),"Win+Shift+V is occupied; Advanced Paste uses "+fallback);}catch{}
+                    break;
+                }
+            } reg(x.Paste.PlainHotkey, 912, "서식 없이 붙여넣기"); reg(x.Paste.JsonHotkey, 914, "JSON으로 붙여넣기"); reg(x.Paste.MarkdownHotkey, 915, "마크다운으로 붙여넣기"); }
         if (x.Peek.Enabled && Hotkey.Normalize(x.Peek.Hotkey) != "Space") reg(x.Peek.Hotkey, 913, "미리보기");
         if (x.Work.Enabled) { int id = 920; foreach (var w in x.Work.Items.Take(60)) { if (Hotkey.Normalize(w.Hotkey) != "") { reg(w.Hotkey, id, "작업 영역 " + w.Name); wsKeys[id] = w; } id++; } }
     }
@@ -7548,7 +7564,15 @@ static class Program {
             } finally { Directory.Delete(temp,true); }
             string queue; check(GrabMove.TestQueue(out queue), "grab queue coalesces atomically without hooks or real window moves ("+queue+")");
             using(var form=new SettingsForm(defaults,false,true)) {
-                form.OnSave=(c,x)=>{}; TestEnv.Place(form); form.Show(); form.ShowPage(7); form.PtShow("paste"); Pump(300); check(Desc(form).OfType<FlatBtn>().Count(b=>b.Nav && b.Selected)==1,"exactly one selected navigation item");
+                form.OnSave=(c,x)=>{}; TestEnv.Place(form); form.Show();
+                foreach(int firstPage in new[]{0,1,2,7,0}) {
+                    form.ShowPage(firstPage); Application.DoEvents();
+                    check(Desc(form).OfType<PageHeading>().Any(h=>h.Visible && h.Width>UI.S(70) && h.Height>=UI.S(90) && h.Controls.OfType<Label>().Count(l=>l.Visible)==3),"page heading visible on page "+firstPage);
+                    var visibleLabels=Desc(form).OfType<Label>().Where(c=>c.Visible).ToList();
+                    check(firstPage==7 ? Desc(form).OfType<PtCard>().Count(c=>c.Visible)==7 : visibleLabels.Count>3,"first-paint content exists on page "+firstPage);
+                    using(var initial=TestEnv.Render(form)) initial.Save(Path.Combine(ExeDir,"firstpaint_"+firstPage+".png"));
+                }
+                form.ShowPage(7); form.PtShow("paste"); Pump(300); check(Desc(form).OfType<FlatBtn>().Count(b=>b.Nav && b.Selected)==1,"exactly one selected navigation item");
                 foreach(int width in new[]{880,1080}) {
                     form.Size=new Size(UI.S(width),UI.S(700)); Pump(150);
                     foreach(var section in Desc(form).OfType<Section>().Where(c=>c.Visible)) {

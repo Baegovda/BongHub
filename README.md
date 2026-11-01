@@ -4,7 +4,7 @@ Windows 트레이 유틸리티입니다. 부제는 "석봉이의 유틸 창고"�
 
 ## 구성
 
-- `app/` — 트레이 앱 소스 v3.4.0 (`BongHub.cs`, `build.ps1`, `CHANGELOG.md`, `res/`, `_dev/`)
+- `app/` — 트레이 앱 소스 v3.4.1 (`BongHub.cs`, `build.ps1`, `CHANGELOG.md`, `res/`, `_dev/`)
 - `legacy/BongAd/` — 카카오톡 광고 제거 도우미 원본
 - `docs/HANDOFF.md` — 인수인계 문서
 
