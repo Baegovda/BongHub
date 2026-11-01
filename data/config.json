@@ -157,7 +157,7 @@
       "Layouts": []
     },
     "Grab": {
-      "Enabled": false,
+      "Enabled": true,
       "Modifier": "Alt",
       "Resize": true,
       "SkipFullscreen": true
