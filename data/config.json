@@ -154,7 +154,53 @@
       "HotColor": "#6EC6FF",
       "Numbers": true,
       "Exclude": [],
-      "Layouts": []
+      "Layouts": [
+        {
+          "Monitor": "GSM76F5",
+          "Kind": "cols",
+          "A": 2,
+          "B": 2,
+          "Spacing": 8,
+          "Custom": [],
+          "Canvas": []
+        },
+        {
+          "Monitor": "DRS2555",
+          "Kind": "cols",
+          "A": 2,
+          "B": 2,
+          "Spacing": 8,
+          "Custom": [],
+          "Canvas": []
+        },
+        {
+          "Monitor": "SAM73D3",
+          "Kind": "priority",
+          "A": 3,
+          "B": 2,
+          "Spacing": 8,
+          "Custom": [],
+          "Canvas": []
+        },
+        {
+          "Monitor": "SAM747A",
+          "Kind": "priority",
+          "A": 3,
+          "B": 2,
+          "Spacing": 8,
+          "Custom": [],
+          "Canvas": []
+        },
+        {
+          "Monitor": "SAM100B",
+          "Kind": "cols",
+          "A": 2,
+          "B": 2,
+          "Spacing": 8,
+          "Custom": [],
+          "Canvas": []
+        }
+      ]
     },
     "Grab": {
       "Enabled": true,
