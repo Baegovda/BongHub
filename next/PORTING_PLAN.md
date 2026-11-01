@@ -53,7 +53,7 @@
 
 | 기능 | 3.4.8 | Next |
 |---|---|---|
-| 트레이 아이콘, 블록 아이콘 | `TrayApp` `app/BongHub.cs:7126`, `Program.InitIcon` `:7508` | **있음.** `TrayService.cs:10`. WinForms `NotifyIcon` |
+| 트레이 아이콘, 블록 아이콘 | `TrayApp` `app/BongHub.cs:7126`, `Program.InitIcon` `:7508` | **있음.** `TrayService` — H.NotifyIcon.Wpf 2.4.1 (0.3.0). WinForms `NotifyIcon`는 0단계에서 뺐어요 |
 | 왼쪽 더블클릭 → 설정 | `:7138` | **일부.** 왼쪽 클릭 한 번 (`TrayService.cs:20`) |
 | 메뉴: 프리셋 실행, 체크 표시, 단축키 표시 | `:7213` | **없음.** 메뉴는 열기·새 메모·종료뿐 |
 | 새 스티커 메모 / 모두 보이기 / 모두 숨기기 | `:7226` | **일부.** 새 메모만 (`TrayService.cs:16`, `NoteManager.NewNote`) |
@@ -418,7 +418,7 @@ Next 전용(공유 파일이 아님): `ReduceMotion` (`ConfigStore.cs` `NextSett
 | `blankcheck` | 현재 계정이 로컬인지 종료 코드만 | 허용(상태를 바꾸지 않음) |
 | `paritytest` | `TestEnv.Off`만 켜고 case 없음 → 9 | 그대로 두기(실수 전환 방지) |
 
-Next 테스트: `--smoketest`(43 PASS), `--notetest`(23 PASS). `--data`, `BONGHUB_NEXT_DATA`, `--out`, `--off`, `--tray`, `--quit`. 테스트는 임시 폴더라 저장 잠금을 잡지 않아요 (`App.xaml.cs:32`, `AppEnv.cs:45`).
+Next 테스트: `--smoketest`, `--notetest`. 0.2.0 기록은 스모크 43, 노트 23이에요. 0.3.0 스모크는 그 43개에 트레이 단언 13개(다크 메뉴, 메뉴로 열기, 왼쪽 클릭, 종료, 풍선, 셸 아이콘을 만들지 않음)를 더해 **56**이에요. `--data`, `BONGHUB_NEXT_DATA`, `--out`, `--off`, `--tray`, `--quit`, `--idle-hidden`(화면 밖 설정 창을 만든 뒤 숨김. 메모리 기준선용). 테스트와 `--off` 측정은 임시 폴더라 `Local\BongHub_NotesWriter`를 잡지 않아요. `--off`는 Next 단일 실행 뮤텍스를 잡지 않아, 이미 켜진 Next 창을 끌어올리지 않아요.
 
 ---
 
@@ -501,7 +501,9 @@ Stop-Process -Id $p.Id
 
 같은 방법으로 설정 창(`--off`만, `--tray` 없음)과, 메모 7개 복사본을 연 경우를 각 3회 재고 중앙값을 `next/test-logs/`에 남겨요. 로그 파일은 결과 txt만 커밋하고 `bin/`은 커밋하지 않아요.
 
-시작은 기존 `next_startup.txt`와 같이 프로세스 시작 시각부터 첫 `ContentRendered`까지예요 (`App.xaml.cs:73`). 트레이 시점은 아이콘 `Visible=true` 직후 한 줄을 같은 파일에 남겨요.
+이 절차는 `next/measure-baseline.ps1`에 있어요. 시나리오는 네 가지예요. 계획의 3종(트레이만, 설정 창, 메모 7개)에, 설정 창을 만든 뒤 숨긴 상태(`--tray --off --idle-hidden`)를 더해요. 목표 표의 “트레이만”은 MainWindow를 아직 만들지 않은 상태이고, 숨긴 창 행은 그 트리를 그대로 들고 있는 상태예요. 스크립트는 준비 줄(`next_startup.txt`)이 생긴 뒤 20초를 쉬고 재요. `data/`와 `%LOCALAPPDATA%\BongHub`는 쓰지 않아요. `ConcurrentGarbageCollection`은 끈 경우와 켠 경우를 각 3회 재고, csproj 기본값(false)은 그 표를 보기 전에는 바꾸지 않아요. 창을 끄는 동안의 멈춤은 이 스크립트가 재지 않아요. 실모니터에서 드래그하지 않아요.
+
+시작은 기존 `next_startup.txt`와 같이 프로세스 시작 시각부터 첫 `ContentRendered`까지예요 (`first_frame_ms`). 트레이 시점은 아이콘이 보인 직후 `tray_visible_ms`로 같은 파일에 남겨요. `--out`이 있을 때만 써요. 트레이만이면 `main_window_created=0`이고 `first_frame_ms`는 없어요.
 
 부가로 `dotnet-counters monitor --process-id <pid> System.Runtime`을 쓸 수 있어요. 없어도 목표 판정은 WorkingSet64와 PrivateMemorySize64로 해요.
 
@@ -527,14 +529,28 @@ Stop-Process -Id $p.Id
 
 ### 0단계 — 기준선과 .NET 10
 
+**상태: 코드 반영됨 (0.3.0). Windows 측정·합격 숫자는 아직 비어 있음.** 이 환경에서는 Windows 빌드와 트레이를 실행하지 않았어요. 주인 PC에서 아래 “Windows에서 돌릴 것”을 실행한 뒤 `next/test-logs/baseline_memory.txt`의 중앙값을 이 표에 적어요. `app/`은 그대로예요.
+
+| 항목 | 코드 | Windows에서 채울 것 |
+|---|---|---|
+| TFM `net10.0-windows`, SDK 10.0.403(또는 같은 10 기능 대역의 더 높은 SDK) | `global.json`, csproj | `dotnet publish` 종료 코드 0 |
+| H.NotifyIcon.Wpf 2.4.1, `UseWindowsForms` 제거 | `TrayService` | 스모크 56 PASS (0.2.0의 43 + 트레이 13) |
+| ReadyToRun, 프레임워크 종속, 단일 파일·트림·AOT 끔 | csproj, `Properties/PublishProfiles/ReadyToRun.pubxml` | publish 폴더에 `coreclr.dll` 없음, dll에 ReadyToRun |
+| 트레이만 / 설정 창 / 숨긴 설정 창 / 메모 7개, GC 동시 켜짐·꺼짐 각 3회 중앙값 | `next/measure-baseline.ps1` | `next/test-logs/baseline_memory.txt` |
+| `ConcurrentGarbageCollection` | **false 유지** (0.2.0과 같음) | 표를 보기 전에는 바꾸지 않음 |
+| 3.4.8 `build.ps1` 경고 0 | `app/` 변경 없음 | 오류 0, 경고 0. exe를 배포 폴더에 복사하지 않음 |
+| 노트 23, 읽기 전용 저장 차단, extrastest 26/0, settingstest | 노트 테스트는 그대로 | 각 종료 코드 0 |
+
+채택하지 않음 (0단계 범위 밖): CommunityToolkit.Mvvm(기존 화면을 ViewModel로 옮기지 않음), CsWin32(새 P/Invoke가 없음), Microsoft.Extensions.Hosting·Logging(켜진 기능 서비스는 뒤 단계), Serilog, Octokit, WPF-UI, WinUI 3.
+
 선적 가능: 지금과 같은 메모·설정 프로토타입. 기능 추가는 없어요.
 
 - TFM `net10.0-windows`. SDK 10.0.403으로 `dotnet publish` PASS.
-- H.NotifyIcon.Wpf 2.4.1. `UseWindowsForms` 제거. 다크 메뉴·왼쪽 클릭·종료가 스모크에서 통과.
+- H.NotifyIcon.Wpf 2.4.1. `UseWindowsForms` 제거. 다크 메뉴·왼쪽 클릭·종료·풍선이 스모크에서 통과. 스모크는 셸 트레이 아이콘을 만들지 않아요.
 - ReadyToRun, 프레임워크 종속.
-- 위 측정 3종을 `next/test-logs/`에 기록.
+- 측정 3종과 숨긴 설정 창을 `next/test-logs/baseline_memory.txt`에 기록.
 - 3.4.8 `build.ps1`은 동작 변경 없이 경고 0인지만 확인(HANDOFF에 남은 확인). 소스를 기능 쪽으로 고치지 않아요.
-- 합격: 기존 스모크 43, 노트 23, 읽기 전용 저장 차단, extrastest 26/0, settingstest PASS.
+- 합격: 스모크 56(기존 43은 유지, 트레이 단언 13이 늘었음), 노트 23, 읽기 전용 저장 차단, extrastest 26/0, settingstest PASS.
 
 ### 1단계 — 메모를 3.4.8과 같게
 
@@ -636,7 +652,7 @@ Stop-Process -Id $p.Id
 
 | 단계 | 매번 돌릴 것 | 그 단계에 더할 것 | 돌리지 말 것 |
 |---|---|---|---|
-| 0 | 3.4.8 `extrastest`, `settingstest`. Next `--smoketest`, `--notetest` | 메모리 3종 txt. `version`으로 3.4.8 문자열 확인 | 프리셋 CLI, 실모니터 |
+| 0 | 3.4.8 `extrastest`, `settingstest`. Next `--smoketest`(56), `--notetest`(23) | `next/measure-baseline.ps1` → `baseline_memory.txt`. `version`으로 3.4.8 문자열 확인 | 프리셋 CLI, 실모니터, `ConcurrentGarbageCollection`을 숫자 없이 바꾸기 |
 | 1 | 위 + 3.4.8 `notestest`, `imagetest` | Next 노트 테스트에 이미지 라운드트립, 삭제, 단축키 등록은 테스트 창의 메시지 흉내(전역 후킹 설치 없음), 읽기 전용 | 실제 메모 폴더, 전역 핫키가 사용자 키를 가로채는 실행 |
 | 2 | 위 + `configtest` | 화면 밖 탭 순회, 패치 후 Pt/Presets 키 보존 | 시작프로그램 lnk 생성 |
 | 3 | 위 + `icontest`(탐색기에 쓰지 않는 범위) | layouts.json 병합 픽스처 | 실제 바탕화면, `Desk.Apply`의 실리스트뷰 |
@@ -649,7 +665,7 @@ Stop-Process -Id $p.Id
 
 `lockscreen` / `sleepauth` / `blankautologon`의 실인자는 어느 단계에서도 자동 실행하지 않아요. 로직은 `lockscreenpolicytest`처럼 프로세스 밖 정책을 건드리지 않는 복제품으로만 옮겨요. `blankcheck`는 종료 코드만 보므로 허용이에요.
 
-스모크가 이미 하는 일(대비, 포커스 안 가져감, Mica 클로크, Alt+F4는 숨기기)은 셸을 건드리는 단계마다 유지해요. 43이라는 개수는 단언이 늘면 늘어나요. 줄어들면 이유를 계획 개정에 적어요.
+스모크가 이미 하는 일(대비, 포커스 안 가져감, Mica 클로크, Alt+F4는 숨기기)은 셸을 건드리는 단계마다 유지해요. 0.2.0은 43개였어요. 0.3.0은 트레이(다크 메뉴, 메뉴로 열기, 왼쪽 클릭, 종료 연결, 풍선 크롬, 스모크가 셸 아이콘을 만들지 않음)를 더해 56개예요. 개수가 줄면 이유를 계획 개정에 적어요.
 
 CI는 저장소에 아직 없어요. 이 계획도 GitHub Actions를 필수로 두지 않아요. 시험 장소는 지금처럼 주인 PC의 격리 폴더예요. 봇 환경은 Windows 트레이를 띄울 수 있으면 화면 밖 스모크까지, 없으면 스크립트 컴파일과 문서 검토까지예요. 못 한 실사용(모니터 전환, 카톡, FancyZones, 잡아서 이동)은 “직접 확인해 주세요”로 남겨요.
 

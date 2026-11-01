@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 
@@ -9,6 +10,7 @@ namespace BongHub.Next;
 /// <summary>--smoketest: settings window + sticky note, rendered off-screen and never activated.</summary>
 public static class SmokeTest
 {
+    static TrayService? tray;
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
     static readonly Color DarkUnder = Color.FromRgb(0x1C, 0x1C, 0x1E);   // stand-in for dark Mica
     static readonly Color LightUnder = Color.FromRgb(0xD8, 0xD8, 0xD8);  // worst case: very light wallpaper bleeding through Mica
@@ -19,7 +21,8 @@ public static class SmokeTest
         try { await Body(app, t); }
         catch (Exception e) { t.Check("no exception", false, e.ToString()); }
         t.Save("next_smoketest.txt");
-        app.RequestShutdown();
+        if (tray != null) tray.OnExit();
+        else app.RequestShutdown();
     }
 
     static void ContrastCheck(TestKit t, Window w, FrameworkElement? el, string name, double need)
@@ -117,10 +120,53 @@ public static class SmokeTest
         TestKit.SavePng(note, DarkUnder, "note_aurora.png");
         note.SetColor("g:peach"); await TestKit.Delay(260); TestKit.SavePng(note, DarkUnder, "note_peach.png");
 
+        await TrayChecks(app, t, w);
+
         // timings
         var p = Process.GetCurrentProcess(); p.Refresh();
         t.Info($"memory: working set {p.WorkingSet64 / 1048576} MB, private {p.PrivateMemorySize64 / 1048576} MB");
         t.Info($"settings ContentRendered {renderedAt:0} ms after test start; process uptime {(DateTime.Now - p.StartTime).TotalMilliseconds:0} ms");
         t.Info("hidden-desktop limitation: DWM does not compose a hidden desktop, so what DWM itself shows in the very first frame cannot be captured here; the checks above verify the cloak/background mechanism and WPF's own first render.");
+    }
+
+    /// <summary>Dark menu, left click, 종료, and balloon chrome. No shell icon, so nothing is added to the notification area.</summary>
+    static async Task TrayChecks(App app, TestKit t, MainWindow w)
+    {
+        tray = new TrayService(app, registerShell: false);
+        var style = Application.Current.FindResource(typeof(ContextMenu)) as Style;
+        t.Check("tray menu uses the dark ContextMenu style", ReferenceEquals(tray.Menu.Style, style));
+        bool entries = tray.Menu.Items.Count == 4
+            && tray.Menu.Items[0] is MenuItem open && (open.Header as string) == "BongHub 열기"
+            && tray.Menu.Items[1] is MenuItem newer && (newer.Header as string) == "새 스티커 메모"
+            && tray.Menu.Items[2] is Separator
+            && tray.Menu.Items[3] is MenuItem quit && (quit.Header as string) == "종료";
+        t.Check("tray menu entries", entries, "BongHub 열기, 새 스티커 메모, separator, 종료");
+        var (chrome, sample) = tray.CreateChromeVisual();
+        var shot = TestKit.RenderElement(chrome, DarkUnder);
+        t.Check("tray menu chrome is dark", TestKit.WhitePercent(shot) < 1 && TestKit.DominantLum(shot) < 0.08, $"pure-white {TestKit.WhitePercent(shot):0.00}%, background luminance {TestKit.DominantLum(shot):0.000}");
+        var mc = TestKit.ContrastElement(chrome, sample, DarkUnder);
+        t.Check("tray menu text contrast ≥ 7", mc.ratio >= 7, $"{mc.ratio:0.0}:1 ({mc.fg} on {mc.bg})");
+
+        Win32.SendMessage(Win32.Handle(w), 0x0010, IntPtr.Zero, IntPtr.Zero);
+        await TestKit.Until(() => !w.IsVisible, 2000);
+        t.Check("tray menu 열기 opens settings", tray.RaiseHeader("BongHub 열기") && await TestKit.Until(() => w.IsVisible, 2000));
+        await TestKit.Delay(350);
+        t.Check("tray menu 열기 did not take focus", TestKit.NotForeground(w));
+
+        Win32.SendMessage(Win32.Handle(w), 0x0010, IntPtr.Zero, IntPtr.Zero);
+        await TestKit.Until(() => !w.IsVisible, 2000);
+        tray.OnLeftClick();
+        t.Check("tray left click opens settings", await TestKit.Until(() => w.IsVisible, 2000));
+        await TestKit.Delay(350);
+        t.Check("tray left click did not take focus", TestKit.NotForeground(w));
+        t.Check("tray 종료 requests shutdown", tray.ExitRequestsShutdown);
+
+        tray.ShowBalloon("기준선");
+        t.Check("balloon text", tray.LastBalloonTitle == TrayService.BalloonTitle && tray.LastBalloonMessage == "기준선" && tray.LastBalloonVisual != null);
+        var balloon = TestKit.RenderElement(tray.LastBalloonVisual!, DarkUnder);
+        t.Check("balloon chrome is dark", TestKit.WhitePercent(balloon) < 1 && TestKit.DominantLum(balloon) < 0.08, $"pure-white {TestKit.WhitePercent(balloon):0.00}%, background luminance {TestKit.DominantLum(balloon):0.000}");
+        var bc = TestKit.ContrastElement(tray.LastBalloonVisual!, tray.LastBalloonSample!, DarkUnder);
+        t.Check("balloon text contrast ≥ 7", bc.ratio >= 7, $"{bc.ratio:0.0}:1 ({bc.fg} on {bc.bg})");
+        t.Check("smoketest does not register a shell tray icon", !tray.ShellIconCreated && tray.NativeBalloonCalls == 0);
     }
 }

@@ -1,23 +1,35 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>BongHub.Next</AssemblyName>
     <RootNamespace>BongHub.Next</RootNamespace>
     <ApplicationIcon>..\..\app\res\icon_blocks.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.2.0</Version>
-    <FileVersion>0.2.0.0</FileVersion>
+    <Version>0.3.0</Version>
+    <FileVersion>0.3.0.0</FileVersion>
     <Product>BongHub Next</Product>
     <SatelliteResourceLanguages>ko</SatelliteResourceLanguages>
     <TieredPGO>true</TieredPGO>
+    <!-- 0.2.0 choice. Phase 0 measures true and false; do not flip this until next/test-logs/baseline_memory.txt is filled on Windows. -->
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <DefaultItemExcludes>$(DefaultItemExcludes);publish\**</DefaultItemExcludes>
-    <!-- WPF needs the PerMonitorV2 manifest; WFAC010 only applies to WinForms Application.Run, which this app never calls -->
-    <NoWarn>$(NoWarn);WFAC010</NoWarn>
   </PropertyGroup>
+
+  <!-- Framework-dependent ReadyToRun. Single-file, trim, and Native AOT stay off (WPF cannot AOT). -->
+  <PropertyGroup Label="Publish">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.4.1" />
+  </ItemGroup>
 </Project>

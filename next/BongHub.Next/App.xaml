@@ -22,6 +22,9 @@
       <SolidColorBrush x:Key="Separator" Color="#1FFFFFFF"/>
       <SolidColorBrush x:Key="Fill" Color="#2A2E3A"/>
       <SolidColorBrush x:Key="FillHover" Color="#343948"/>
+      <SolidColorBrush x:Key="MenuBg" Color="#F2232733"/>
+      <SolidColorBrush x:Key="MenuStroke" Color="#24FFFFFF"/>
+      <SolidColorBrush x:Key="MenuHover" Color="#3A4B6EFF"/>
       <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,1">
         <GradientStop Color="{StaticResource AccentColor}" Offset="0"/>
         <GradientStop Color="{StaticResource Accent2Color}" Offset="1"/>
@@ -207,7 +210,7 @@
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="ContextMenu">
-              <Border Background="#F2232733" BorderBrush="#24FFFFFF" BorderThickness="1" CornerRadius="12" Padding="5" MinWidth="180">
+              <Border Background="{StaticResource MenuBg}" BorderBrush="{StaticResource MenuStroke}" BorderThickness="1" CornerRadius="12" Padding="5" MinWidth="180">
                 <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
               </Border>
             </ControlTemplate>
@@ -223,7 +226,7 @@
                 <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
               </Border>
               <ControlTemplate.Triggers>
-                <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="B" Property="Background" Value="#3A4B6EFF"/></Trigger>
+                <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="B" Property="Background" Value="{StaticResource MenuHover}"/></Trigger>
               </ControlTemplate.Triggers>
             </ControlTemplate>
           </Setter.Value>
