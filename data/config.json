@@ -107,7 +107,7 @@
   },
   "GlobalRules": [
     {
-      "Enabled": true,
+      "Enabled": false,
       "Name": "Discord",
       "Process": "Discord",
       "Title": "",
