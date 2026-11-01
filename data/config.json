@@ -142,7 +142,7 @@
   },
   "Pt": {
     "Zones": {
-      "Enabled": false,
+      "Enabled": true,
       "ShiftDrag": true,
       "ShowOnDrag": false,
       "Span": true,
