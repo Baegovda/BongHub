@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.4.1.0")]
-[assembly: AssemblyFileVersion("3.4.1.0")]
-[assembly: AssemblyInformationalVersion("3.4.1")]
+[assembly: AssemblyVersion("3.4.2.0")]
+[assembly: AssemblyFileVersion("3.4.2.0")]
+[assembly: AssemblyInformationalVersion("3.4.2")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -632,8 +632,9 @@ static class LockScreenPolicy {
     }
 }
 static class AppInfo {
-    public const string Version = "3.4.1";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.4.2";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.4.2  탭 전환 전체 강제 그리기 제거 · 레이아웃 측정 캐시 · 실시간 크기 변경 요청 병합 · 배경 캐시 재생성 억제",
         "3.4.1  설정 화면 최초 표시/탭 전환 시 자식 컨트롤이 비어 보이는 다시 그리기 회귀 수정",
         "3.4.0  전체 다크 UI 개편 · 반응형 카드/줄바꿈 · 드래그 깜빡임 개선 · 잠금 화면 숨기기 · 잡아서 이동 전용 입력 스레드 · Peek/공식 단축키",
         "3.3.8  이미지 이동 후 스크롤 선택 장식 재처리 제거 · 메모 상단 항상 위 고정 버튼",
@@ -1922,14 +1923,23 @@ class PageHeading : Panel {
     }
 }
 class ResponsiveTable : TableLayoutPanel {
+    public static long LayoutCalls;
     bool fitting;
+    readonly Dictionary<Size,Size> preferred=new Dictionary<Size,Size>();
+    public override Size GetPreferredSize(Size proposed) {
+        Size value;if(preferred.TryGetValue(proposed,out value))return value;
+        value=base.GetPreferredSize(proposed);if(preferred.Count>32)preferred.Clear();preferred[proposed]=value;return value;
+    }
     public ResponsiveTable() { DoubleBuffered = true; }
     protected override void OnLayout(LayoutEventArgs e) {
-        if (!fitting && ClientSize.Width > Padding.Horizontal) {
-            fitting = true;
+        LayoutCalls++; preferred.Clear();
+        if (!fitting && ColumnStyles.Count>=ColumnCount && ClientSize.Width > Padding.Horizontal) {
+            fitting = true; SuspendLayout();
             try {
                 int available = ClientSize.Width - Padding.Horizontal;
-                int[] cols = GetColumnWidths();
+                int[] cols=new int[ColumnCount];float percent=0;int fixedWidth=0;
+                for(int col=0;col<ColumnCount;col++) {var style=ColumnStyles[col];if(style.SizeType==SizeType.Absolute){cols[col]=(int)style.Width;fixedWidth+=cols[col];}else if(style.SizeType==SizeType.Percent)percent+=style.Width;}
+                for(int col=0;col<ColumnCount;col++)if(ColumnStyles[col].SizeType==SizeType.Percent)cols[col]=(int)(Math.Max(0,available-fixedWidth)*ColumnStyles[col].Width/Math.Max(1,percent));
                 foreach (Control c in Controls) {
                     int width = available;
                     if (ColumnCount > 1) {
@@ -1938,17 +1948,17 @@ class ResponsiveTable : TableLayoutPanel {
                         if (width <= 0) width = available;
                     }
                     width = Math.Max(UI.S(32), width - c.Margin.Horizontal);
-                    if (c is Label || c is FlowLayoutPanel || c is TableLayoutPanel || (c is TextBox && ((TextBox)c).Multiline)) {
+                    if (c is Label || c is FlowLayoutPanel || (c is TextBox && ((TextBox)c).Multiline)) {
                         var max = new Size(width, 0); if (c.MaximumSize != max) c.MaximumSize = max;
                         if (c is FlowLayoutPanel) ((FlowLayoutPanel)c).WrapContents = true;
                     }
                 }
-            } finally { fitting = false; }
+            } finally { ResumeLayout(false); fitting = false; }
         }
         base.OnLayout(e);
     }
 }
-class BufferedPanel : Panel { public BufferedPanel() { DoubleBuffered = true; ResizeRedraw = true; } }
+class BufferedPanel : Panel { public BufferedPanel() { DoubleBuffered = true; } }
 
 // card-like section with title, hint and a 2-column label/field grid
 class Section : ResponsiveTable {
@@ -2247,7 +2257,7 @@ static class Dark {
 
 class FlatBtn : Button {
     public bool Primary, Nav; public string Glyph = ""; bool sel, hover, down;
-    public bool Selected { get { return sel; } set { if (sel == value) return; sel = value; Invalidate(); if (IsHandleCreated && Visible) Update(); } }
+    public bool Selected { get { return sel; } set { if (sel == value) return; sel = value; Invalidate(); if(IsHandleCreated && Visible)Update(); } }
     public FlatBtn() {
         SetStyle(ControlStyles.Opaque | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; UseVisualStyleBackColor = false; Cursor = Cursors.Hand; ForeColor = UI.Text;
@@ -3580,7 +3590,9 @@ class NoteForm : Form {
     }
     protected override void WndProc(ref Message m) {
         if (m.Msg == WM_MOUSEACTIVATE) { AllowActivation(); m.Result = (IntPtr)1; return; } // MA_ACTIVATE: startup notes stay quiet until clicked
-        // Notes use live native RichEdit layout while resizing; no snapshot cover.
+        // RichEdit stays live; defer background bitmap caches until the drag ends.
+        if(m.Msg==0x0231) ResizeGlide.Live=true;
+        if(m.Msg==0x0232) { ResizeGlide.Live=false; Invalidate(true); }
         if (m.Msg == 0x84) {
             base.WndProc(ref m);
             long lp = m.LParam.ToInt64();
@@ -3643,7 +3655,9 @@ class ChromeForm : Form {
     }
     protected override void OnFormClosed(FormClosedEventArgs e) { glide.End(); base.OnFormClosed(e); }
     protected override void WndProc(ref Message m) {
-        // All chrome windows lay out their real controls continuously during resize.
+        // Real controls continue to lay out; only avoid rebuilding background bitmaps during a drag.
+        if(m.Msg==0x0231) ResizeGlide.Live=true;
+        if(m.Msg==0x0232) { ResizeGlide.Live=false; Invalidate(true); }
         if (m.Msg == 0x0083 && m.WParam != IntPtr.Zero) { // WM_NCCALCSIZE: whole window is client area
             if (IsZoomed(Handle)) {
                 var p = (NCCALC)Marshal.PtrToStructure(m.LParam, typeof(NCCALC));
@@ -3826,18 +3840,22 @@ class SettingsForm : ChromeForm {
         Dark.Theme(this); DoubleBuffered = true;
         if (!deferPage) ShowPage(0);
         ResumeLayout(true);
-        content.Resize += (s, e) => FitPages();
+        content.Resize += (s, e) => QueuePageFit();
         Bar.SendToBack();
         Activated += (s, e) => Bar.Invalidate(); Deactivate += (s, e) => Bar.Invalidate();
         Shown += (s, e) => { if (!deferPage) Prebuild(); };
         LoadMonitorsAsync();
     }
 
-    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
-    [DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr h, IntPtr r, IntPtr rgn, uint f);
+    static void SolidPageBackgrounds(Control root,Color background) {
+        Color childBackground=root is Section?UI.Card:background;
+        if(root.BackColor.A<255 && (root is Panel || root is Label))root.BackColor=background;
+        foreach(Control child in root.Controls)SolidPageBackgrounds(child,childBackground);
+    }
     Control EnsurePage(int i) {
         if (pages[i] != null) return pages[i];
         var p = builders[i]();
+        SolidPageBackgrounds(p,UI.Page);
         SlimScroll.WrapAll(p);
         if (p is Panel && ((Panel)p).AutoScroll) { var host = SlimScroll.Wrap(p, UI.Page); p = host; }
         p.Dock = DockStyle.None; p.Bounds = new Rectangle(OffX, 0, content.ClientSize.Width, content.ClientSize.Height);
@@ -3846,14 +3864,29 @@ class SettingsForm : ChromeForm {
     }
     public static StringBuilder Prof = new StringBuilder();
     const int OffX = -32000;
+    WTimer resizeFrame;
+    void QueuePageFit() {
+        if(!ResizeGlide.Live){FitPages();return;}
+        if(resizeFrame==null) { resizeFrame=new WTimer{Interval=16};resizeFrame.Tick+=(s,e)=>{resizeFrame.Stop();if(!IsDisposed)FitPages();};Disposed+=(s,e)=>resizeFrame.Dispose(); }
+        // Keep one pending frame. Read current ClientSize when it runs rather than queueing stale sizes.
+        if(!resizeFrame.Enabled)resizeFrame.Start();
+    }
+    protected override void OnResizeEnd(EventArgs e) {
+        if(resizeFrame!=null)resizeFrame.Stop();FitPages();base.OnResizeEnd(e);
+    }
+    public bool PageFitsViewport { get {return page>=0 && pages[page]!=null && pages[page].Bounds==new Rectangle(Point.Empty,content.ClientSize);} }
     void FitPages() {
         var sz = content.ClientSize;
         if (page >= 0 && pages[page] != null) pages[page].Bounds = new Rectangle(0, 0, sz.Width, sz.Height);
     }
     // builds the remaining pages one by one while idle so the first visit is instant too
+    bool prebuildStarted;
     void Prebuild() {
-        var t = new WTimer { Interval = 40 };
+        if(prebuildStarted)return;prebuildStarted=true;
+        var t = new WTimer { Interval = 180 };
         t.Tick += (s, e) => {
+            if(IsDisposed){t.Stop();t.Dispose();return;}
+            if(ResizeGlide.Live || MouseButtons!=MouseButtons.None)return;
             int n = pages.FindIndex(x => x == null);
             if (n < 0 || IsDisposed) { t.Stop(); t.Dispose(); return; }
             content.SuspendLayout(); try { EnsurePage(n); } finally { content.ResumeLayout(false); }
@@ -3869,14 +3902,14 @@ class SettingsForm : ChromeForm {
             int old = page; page = i;
             if (i == 1) RefreshScopes(); if (i == 2) FillNotes(); if (i == 3) RefreshKakaoStatus(); if (i == 4) RefreshDesk(); if (i == 5) { RefreshIdlePresets(); ShowCloud(); } if (i == 6) RefreshAbout(); if (i == 7) { if (PtOpen != null) PtShow(null); PtRefresh(); }
             tr = sw.Elapsed.TotalMilliseconds;
-            np.Bounds = new Rectangle(0, 0, content.ClientSize.Width, content.ClientSize.Height); np.Visible = true; np.BringToFront();
-            if (old >= 0 && pages[old] != null) { pages[old].Visible = false; pages[old].Location = new Point(OffX, 0); }
+            np.Bounds = new Rectangle(0, 0, content.ClientSize.Width, content.ClientSize.Height); np.BringToFront();
+            if (old >= 0 && pages[old] != null) { pages[old].Location = new Point(OffX, 0); }
             for (int k = 0; k < nav.Count; k++) ((FlatBtn)nav[k]).Selected = k == i;
             tv = sw.Elapsed.TotalMilliseconds;
         } finally {
             content.ResumeLayout(true);
-            if (page >= 0 && pages[page] != null) { pages[page].Invalidate(true); pages[page].Update(); }
-            RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, 0x0001 | 0x0020 | 0x0080 | 0x0100);
+            if (page >= 0 && pages[page] != null) pages[page].Invalidate(true);
+            if(IsHandleCreated)Prebuild();
             Prof.AppendLine("  page " + i + ": build " + tb.ToString("0") + " refresh " + (tr - tb).ToString("0") + " swap " + (tv - tr).ToString("0") + " paint " + (sw.Elapsed.TotalMilliseconds - tv).ToString("0"));
         }
     }
@@ -7221,6 +7254,7 @@ static class Program {
             string ml = m.ToLowerInvariant();
             if (ml == "settingstest" || ml == "tabbench" || ml == "notestest" || ml == "imagetest" || ml == "pttest" || ml == "jittertest" || ml == "perfbench" || ml == "paritytest") TestEnv.Off = true;
             switch (ml) {
+                case "uiperf": TestEnv.Off=true; return UiPerf();
                 case "interactiontest": TestEnv.Off=true; return InteractionTest(args.Length>1?args[1]:"");
                 case "lockscreen": return LockScreenPolicy.Run(args);
                 case "lockscreenpolicytest": return LockScreenPolicy.Test(Path.Combine(ExeDir, "lockscreenpolicytest.txt"));
@@ -7351,6 +7385,33 @@ static class Program {
         return File.Exists(Path.Combine(ExeDir, "settingstest_error.txt")) ? 1 : 0;
     }
 
+
+    // Real controls, changing width every frame; no snapshots or user desktop interaction.
+    static int UiPerf() {
+        UI.Init(1f); var report=new StringBuilder(); bool ok=true;
+        using(var f=new SettingsForm(Config.Defaults(),false,true)) {
+            f.OnSave=(c,x)=>{}; TestEnv.Place(f);f.Show();
+            foreach(int page in new[]{0,2,5,7}) {
+                f.ShowPage(page);if(page==7)f.PtShow("paste");Pump(100);
+                TestSend(f.Handle,0x0231,IntPtr.Zero,IntPtr.Zero);
+                // A burst must not perform a content layout for every stale native size message.
+                for(int burst=0;burst<40;burst++)f.Size=new Size(UI.S(1100+burst%20),UI.S(740));
+                Pump(60);if(!f.PageFitsViewport){ok=false;report.AppendLine("FAIL queued latest size on page "+page);}
+                var samples=new List<double>();double layoutMs=0,paintMs=0;ResponsiveTable.LayoutCalls=0;
+                for(int i=0;i<24;i++) {
+                    var sw=Stopwatch.StartNew();f.Size=new Size(UI.S(1100+(i<12?i:24-i)*8),UI.S(740+i%3*4));
+                    layoutMs+=sw.Elapsed.TotalMilliseconds;var paint=Stopwatch.StartNew();f.Update();Pump(20);paintMs+=paint.Elapsed.TotalMilliseconds;samples.Add(sw.Elapsed.TotalMilliseconds);
+                }
+                TestSend(f.Handle,0x0232,IntPtr.Zero,IntPtr.Zero);Pump(60);
+                if(!f.PageFitsViewport){ok=false;report.AppendLine("FAIL final page bounds on page "+page);}
+                report.AppendLine("page "+page+" resize avg "+samples.Average().ToString("0.0")+" max "+samples.Max().ToString("0.0")+" ms; layouts "+ResponsiveTable.LayoutCalls+" native size dispatch "+(layoutMs/24).ToString("0.0")+" pending layout, paint and 20ms message pump "+(paintMs/24).ToString("0.0"));
+                using(var shot=TestEnv.Render(f))shot.Save(Path.Combine(ExeDir,"resize_page_"+page+".png"));
+                if(f.Controls.Count<2)ok=false;
+            }
+            f.Close();
+        }
+        report.AppendLine(ok?"PASS latest and final resize geometry":"FAIL resize geometry");File.WriteAllText(Path.Combine(ExeDir,"uiperf.txt"),report.ToString());return ok?0:1;
+    }
 
     // tabbench [percent] : measures settings window build + tab switch times (no saving)
     static int TabBench(string pct) {
@@ -7567,19 +7628,19 @@ static class Program {
                 form.OnSave=(c,x)=>{}; TestEnv.Place(form); form.Show();
                 foreach(int firstPage in new[]{0,1,2,7,0}) {
                     form.ShowPage(firstPage); Application.DoEvents();
-                    check(Desc(form).OfType<PageHeading>().Any(h=>h.Visible && h.Width>UI.S(70) && h.Height>=UI.S(90) && h.Controls.OfType<Label>().Count(l=>l.Visible)==3),"page heading visible on page "+firstPage);
-                    var visibleLabels=Desc(form).OfType<Label>().Where(c=>c.Visible).ToList();
+                    check(Desc(form).OfType<PageHeading>().Any(h=>h.Visible && h.RectangleToScreen(h.ClientRectangle).IntersectsWith(form.RectangleToScreen(form.ClientRectangle)) && h.Width>UI.S(70) && h.Height>=UI.S(90) && h.Controls.OfType<Label>().Count(l=>l.Visible)==3),"page heading visible on page "+firstPage);
+                    var visibleLabels=Desc(form).OfType<Label>().Where(c=>c.Visible && c.RectangleToScreen(c.ClientRectangle).IntersectsWith(form.RectangleToScreen(form.ClientRectangle))).ToList();
                     check(firstPage==7 ? Desc(form).OfType<PtCard>().Count(c=>c.Visible)==7 : visibleLabels.Count>3,"first-paint content exists on page "+firstPage);
                     using(var initial=TestEnv.Render(form)) initial.Save(Path.Combine(ExeDir,"firstpaint_"+firstPage+".png"));
                 }
                 form.ShowPage(7); form.PtShow("paste"); Pump(300); check(Desc(form).OfType<FlatBtn>().Count(b=>b.Nav && b.Selected)==1,"exactly one selected navigation item");
                 foreach(int width in new[]{880,1080}) {
                     form.Size=new Size(UI.S(width),UI.S(700)); Pump(150);
-                    foreach(var section in Desc(form).OfType<Section>().Where(c=>c.Visible)) {
+                    foreach(var section in Desc(form).OfType<Section>().Where(c=>c.Visible && c.RectangleToScreen(c.ClientRectangle).IntersectsWith(form.RectangleToScreen(form.ClientRectangle)))) {
                         var screen=section.RectangleToScreen(section.ClientRectangle);
                         check(screen.Right <= form.Right + UI.S(2) && screen.Width >= UI.S(400), "card fits horizontal viewport at "+width+": "+screen.Width);
                     }
-                    foreach(var editor in Desc(form).OfType<TextBox>().Where(t=>t.Visible && t.Multiline)) check(editor.Height >= UI.S(100), "multiline editor retains readable height at "+width);
+                    foreach(var editor in Desc(form).OfType<TextBox>().Where(t=>t.Visible && t.Multiline && t.RectangleToScreen(t.ClientRectangle).IntersectsWith(form.RectangleToScreen(form.ClientRectangle)))) check(editor.Height >= UI.S(100), "multiline editor retains readable height at "+width);
                     Shot(form,"redesign_paste_"+width+(percent==""?"":"_"+percent)+".png");
                 }
                 form.Close();
