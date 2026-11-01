@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.4.3.0")]
-[assembly: AssemblyFileVersion("3.4.3.0")]
-[assembly: AssemblyInformationalVersion("3.4.3")]
+[assembly: AssemblyVersion("3.4.4.0")]
+[assembly: AssemblyFileVersion("3.4.4.0")]
+[assembly: AssemblyInformationalVersion("3.4.4")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -632,8 +632,9 @@ static class LockScreenPolicy {
     }
 }
 static class AppInfo {
-    public const string Version = "3.4.3";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.4.4";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.4.4  일반 설정에서 Windows 절전 복귀 로그인 옵션·Microsoft Autologon 공식 안내 바로 열기",
         "3.4.3  잡아서 이동 요청 적체·종료 좌표 수정 · 마우스 뒤로가기 · Space 누르는 동안 미리보기 · WebP 디코더",
         "3.4.2  탭 전환 전체 강제 그리기 제거 · 레이아웃 측정 캐시 · 실시간 크기 변경 요청 병합 · 배경 캐시 재생성 억제",
         "3.4.1  설정 화면 최초 표시/탭 전환 시 자식 컨트롤이 비어 보이는 다시 그리기 회귀 수정",
@@ -4632,6 +4633,14 @@ class SettingsForm : ChromeForm, IMessageFilter {
             });
         };
         sLock.Full(lockStatus); sLock.Full(lockButton); sLock.Full(UI.HintL("이 PC에만 적용돼요. 변경할 때 관리자 권한이 필요하며, 복원하면 BongHub가 변경하기 전 정책으로 돌아가요.")); UI.AddRow(st, sLock);
+
+        var sSignIn=new Section("부팅·절전 로그인 설정","Windows 공식 설정과 Microsoft 도구에서 로그인 요구 여부를 설정할 수 있어요.");
+        var wakeOptions=UI.Btn("절전 복귀 로그인 설정 열기");wakeOptions.Click+=(a,b)=>{try{Process.Start("ms-settings:signinoptions");}catch(Exception ex){DarkBox.Show(this,ex.Message,"Windows 로그인 옵션");}};
+        var bootOptions=UI.Btn("부팅 자동 로그인 도구 안내");bootOptions.Click+=(a,b)=>{try{Process.Start("https://learn.microsoft.com/en-us/sysinternals/downloads/autologon");}catch(Exception ex){DarkBox.Show(this,ex.Message,"Microsoft Autologon");}};
+        sSignIn.Full(UI.Flow(wakeOptions,bootOptions));
+        sSignIn.Full(UI.HintL("절전 복귀: Windows 로그인 옵션의 ‘자리를 비운 경우 언제 다시 로그인해야 하나요?’를 ‘안 함’으로 선택하세요. 기기나 관리 정책에 따라 선택 항목이 다를 수 있어요."));
+        sSignIn.Full(UI.HintL("부팅: Microsoft Autologon을 내려받아 실행하고 계정 암호를 직접 입력한 뒤 Enable을 누르세요. PIN 대신 계정 암호가 필요하며, 다시 인증을 요구하려면 Disable을 선택하세요."));
+        sSignIn.Full(UI.HintL("이 버튼은 공식 설정 화면을 열어요. BongHub가 계정 암호를 수집하거나 저장하지 않아요."));UI.AddRow(st,sSignIn);
 
         var sOv = new Section("전환 안내 화면", null);
         gOverlay = UI.Chk("전환 중 로딩 화면 사용 (모든 모니터 프리셋)"); gOverlay.CheckedChanged += (s, e) => { if (loading) return; Cfg.General.OverlayEnabled = gOverlay.Checked; Changed(); };
