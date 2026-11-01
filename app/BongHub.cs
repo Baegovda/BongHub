@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.4.2.0")]
-[assembly: AssemblyFileVersion("3.4.2.0")]
-[assembly: AssemblyInformationalVersion("3.4.2")]
+[assembly: AssemblyVersion("3.4.3.0")]
+[assembly: AssemblyFileVersion("3.4.3.0")]
+[assembly: AssemblyInformationalVersion("3.4.3")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -632,8 +632,9 @@ static class LockScreenPolicy {
     }
 }
 static class AppInfo {
-    public const string Version = "3.4.2";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.4.3";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.4.3  잡아서 이동 요청 적체·종료 좌표 수정 · 마우스 뒤로가기 · Space 누르는 동안 미리보기 · WebP 디코더",
         "3.4.2  탭 전환 전체 강제 그리기 제거 · 레이아웃 측정 캐시 · 실시간 크기 변경 요청 병합 · 배경 캐시 재생성 억제",
         "3.4.1  설정 화면 최초 표시/탭 전환 시 자식 컨트롤이 비어 보이는 다시 그리기 회귀 수정",
         "3.4.0  전체 다크 UI 개편 · 반응형 카드/줄바꿈 · 드래그 깜빡임 개선 · 잠금 화면 숨기기 · 잡아서 이동 전용 입력 스레드 · Peek/공식 단축키",
@@ -3759,7 +3760,7 @@ class TitleBar : Control {
 }
 
 // ================= Settings window =================
-class SettingsForm : ChromeForm {
+class SettingsForm : ChromeForm, IMessageFilter {
     public Config Cfg; public bool StartupEnabled; bool loading;
     public Action<Config, bool> OnSave; public Action<Preset> RunPresetNow;
     Panel content; readonly List<Button> nav = new List<Button>(); readonly List<Control> pages = new List<Control>(); int page = -1;
@@ -3807,7 +3808,7 @@ class SettingsForm : ChromeForm {
         Cfg.General.TabOrder = stack.Controls.OfType<FlatBtn>().Where(x => x.Nav).Select(x => (string)x.Tag).ToList();
     }
     public SettingsForm(Config cfg, bool startup, bool deferPage = false) {
-        Cfg = Config.Clone(cfg); StartupEnabled = startup;
+        Cfg = Config.Clone(cfg); StartupEnabled = startup; Application.AddMessageFilter(this);
         Text = "BongHub 설정"; Font = UI.Base; BackColor = UI.Page; AutoScaleMode = AutoScaleMode.None;
         StartPosition = FormStartPosition.CenterScreen; Icon = Program.AppIcon; KeyPreview = true;
         Size = new Size(UI.S(1080), UI.S(760)); MinimumSize = new Size(UI.S(880), UI.S(580));
@@ -4815,6 +4816,13 @@ class SettingsForm : ChromeForm {
         for (int i = 0; i < ptCards.Count; i++) { var c = ptCards[i]; bool v = q == "" || Palette.Score(q, c.Title) > 0 || c.Desc.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0 || c.Key.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0; c.Visible = v; if (v) n++; }
         ptEmpty.Visible = n == 0;
     }
+    public bool PreFilterMessage(ref Message message) {
+        bool appBack=message.Msg==0x0319 && ((message.LParam.ToInt64()>>16)&0x7FF)==1;
+        bool mouseBack=(message.Msg==0x020B || message.Msg==0x020C) && ((message.WParam.ToInt64()>>16)&0xFFFF)==1;
+        if(page!=7 || PtOpen==null || !Visible || IsDisposed || (!appBack && !mouseBack))return false;
+        var target=Control.FromChildHandle(message.HWnd);if(target==null || target.FindForm()!=this)return false;
+        if(appBack || message.Msg==0x020C)PtShow(null);return true;
+    }
     public void PtShow(string key) {
         PtOpen = key;
         if (key == null) { ptDetail.Visible = false; ptGrid.Visible = true; PtRefresh(); return; }
@@ -4891,7 +4899,7 @@ class SettingsForm : ChromeForm {
                 sec.Row("보조 키", mod, "보조 키 + 왼쪽 드래그 = 이동");
                 PtChk(sec, "보조 키 + 오른쪽 드래그로 크기 조정", x.Grab.Resize, v => x.Grab.Resize = v);
                 PtChk(sec, "전체 화면 앱(게임·영상)에서는 동작 안 함", x.Grab.SkipFullscreen, v => x.Grab.SkipFullscreen = v);
-                sec.Full(UI.HintL("바탕화면·작업 표시줄·최대화된 창·BongHub 창은 건드리지 않아요. 켜져 있는 동안에만 마우스 후킹을 써요."));
+                sec.Full(UI.HintL("바탕화면과 작업 표시줄은 제외해요. 최대화 창은 움직이기 시작할 때 복원하며, 켜져 있는 동안에만 마우스 후킹을 써요."));
                 break; }
             case "work": {
                 PtChk(sec, "작업 영역 단축키와 명령 팔레트에서 사용", x.Work.Enabled, v => x.Work.Enabled = v);
@@ -4947,7 +4955,7 @@ class SettingsForm : ChromeForm {
                 sec.Full(UI.HintL("기본 Space는 탐색기에서 파일을 선택했을 때만 동작해요. 파일 이름·검색어를 입력할 때는 일반 공백으로 입력됩니다."));
                 PtChk(sec, "다른 창을 누르면 닫기", x.Peek.CloseOnFocusLoss, v => x.Peek.CloseOnFocusLoss = v);
                 PtChk(sec, "HTML 파일을 렌더링해서 보기 (끄면 소스 보기, 스크립트는 항상 차단)", x.Peek.RenderHtml, v => x.Peek.RenderHtml = v);
-                sec.Full(UI.HintL("이미지·GIF·WebP/HEIC(썸네일) · 코드(구문 강조) · 마크다운 · HTML · 동영상/음악 · ZIP 목록 · 폴더 · PDF/Office(설치된 미리보기 처리기). ←/→ 다음 파일, Esc/Space 닫기, Enter 열기."));
+                sec.Full(UI.HintL("Space를 누르는 동안 표시하고 떼면 닫아요. 이미지·GIF·WebP·HEIC(썸네일) · 코드(구문 강조) · 마크다운 · HTML · 동영상/음악 · ZIP 목록 · 폴더 · PDF/Office(설치된 미리보기 처리기). ←/→ 다음 파일, Esc/Space 닫기, Enter 열기."));
                 break; }
             case "resizer": {
                 var open = UI.Btn("Image Resizer 열기", true); open.Click += (s, e) => { var f = new ResizerForm(x.Resizer, null); f.Saved += () => Changed(); f.Show(this); };
@@ -5017,7 +5025,7 @@ class SettingsForm : ChromeForm {
         }
         base.OnFormClosing(e);
     }
-    protected override void OnFormClosed(FormClosedEventArgs e) { saveTimer.Dispose(); statusFade.Dispose(); if (kTimer != null) kTimer.Dispose(); if (dTimer != null) dTimer.Dispose(); base.OnFormClosed(e); }
+    protected override void OnFormClosed(FormClosedEventArgs e) { Application.RemoveMessageFilter(this); saveTimer.Dispose(); statusFade.Dispose(); if (kTimer != null) kTimer.Dispose(); if (dTimer != null) dTimer.Dispose(); base.OnFormClosed(e); }
     protected override bool ProcessCmdKey(ref Message m, Keys k) {
         if (k == (Keys.Control | Keys.S)) { Flush(); return true; }
         return base.ProcessCmdKey(ref m, k);
@@ -5662,7 +5670,7 @@ static class GrabMove {
     [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint f);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
     [StructLayout(LayoutKind.Sequential)] struct MSLL { public Point pt; public int data, flags, time; public IntPtr extra; }
-    static IntPtr hook; static IntPtr win; static int mode; static Point start; static Native.RECT startRect; static int corner; static bool swallowUp;
+    static IntPtr hook; static IntPtr win; static int mode; static Point start; static Native.RECT startRect; static int corner; static bool swallowUp, restoreOnMove, dragMoved; static int dragSession, minimumWidth=160, minimumHeight=100, maximumWidth=int.MaxValue, maximumHeight=int.MaxValue;
     public static bool Active { get { return hook != IntPtr.Zero; } }
     static InputHookHost inputHost; static int generation;
     public static void Apply(GrabCfg c) {
@@ -5688,33 +5696,92 @@ static class GrabMove {
     }
     // the hook only records the latest target; a worker thread applies it (coalesced), so the callback returns in microseconds
     static Thread worker; static readonly AutoResetEvent wake = new AutoResetEvent(false); static volatile bool run; static int seq;
-    struct MoveTarget { public IntPtr H; public int Mode, X,Y,W,Height, Seq; }
+    struct MoveTarget { public IntPtr H; public int Mode, X,Y,W,Height, Seq, Session; public bool Restore; }
     static readonly object moveGate = new object(); static MoveTarget latest;
-    public static Action<IntPtr,int,int,int,int,int> MoveBackend = (h,m,x,y,w,hh) => { Native.SetWindowPos(h, IntPtr.Zero, x, y, m == 1 ? 0 : w, m == 1 ? 0 : hh, (m == 1 ? 0x0001u : 0u) | 0x0004u | 0x0010u | 0x0200u | 0x4000u); };
+    public static uint MoveFlags(int mode) {return (mode==1?0x0001u:0u)|0x0004u|0x0010u|0x0200u;}
+    // Completion provides backpressure: never enqueue unbounded SWP_ASYNCWINDOWPOS requests in the target app.
+    public static Action<IntPtr,int,int,int,int,int> MoveBackend = (h,m,x,y,w,hh) => { if(Native.IsWindow(h))Native.SetWindowPos(h,IntPtr.Zero,x,y,m==1?0:w,m==1?0:hh,MoveFlags(m)); };
+    public static Action<IntPtr> RestoreBackend=h=>Native.ShowWindow(h,9);
     static void Work(int current) {
-        int applied = -1; var pace = Stopwatch.StartNew();
-        while (run && current == Volatile.Read(ref generation)) {
-            wake.WaitOne(500); if (!run || current != Volatile.Read(ref generation)) break;
-            int delay = 8 - (int)pace.ElapsedMilliseconds; if (delay > 0) Thread.Sleep(delay);
-            MoveTarget target; lock (moveGate) target = latest;
-            if (target.H == IntPtr.Zero || target.Seq == applied) continue;
-            applied = target.Seq; pace.Restart(); try { MoveBackend(target.H,target.Mode,target.X,target.Y,target.W,target.Height); } catch { }
+        int applied=-1,restoredSession=-1;long nextFrame=0;
+        while(run && current==Volatile.Read(ref generation)) {
+            wake.WaitOne(500);
+            while(run && current==Volatile.Read(ref generation)) {
+                int remaining=(int)((nextFrame-Stopwatch.GetTimestamp())*1000/Stopwatch.Frequency);
+                if(remaining<=0)break;wake.WaitOne(Math.Max(1,remaining));
+            }
+            if(!run || current!=Volatile.Read(ref generation))break;
+            MoveTarget target;lock(moveGate)target=latest;
+            if(target.H==IntPtr.Zero || target.Seq==applied)continue;
+            applied=target.Seq;nextFrame=Stopwatch.GetTimestamp()+Stopwatch.Frequency/60;
+            try {
+                if(target.Restore && restoredSession!=target.Session){RestoreBackend(target.H);restoredSession=target.Session;}
+                if(run && current==Volatile.Read(ref generation))MoveBackend(target.H,target.Mode,target.X,target.Y,target.W,target.Height);
+            } catch { }
         }
     }
-    static void Post(IntPtr h, int m, int x, int y, int w, int hh) { lock (moveGate) latest = new MoveTarget { H=h, Mode=m, X=x, Y=y, W=w, Height=hh, Seq=Interlocked.Increment(ref seq) }; wake.Set(); }
+    static void Post(IntPtr h,int m,int x,int y,int w,int hh) {
+        lock(moveGate)latest=new MoveTarget{H=h,Mode=m,X=x,Y=y,W=w,Height=hh,Seq=Interlocked.Increment(ref seq),Session=dragSession,Restore=restoreOnMove};wake.Set();
+    }
+    [StructLayout(LayoutKind.Sequential)] struct MinMax { public Point reserved,maxSize,maxPosition,minTrack,maxTrack; }
+    [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr window,uint message,IntPtr w,ref MinMax info,uint flags,uint timeout,out UIntPtr result);
+    static void ReadSizeLimits(IntPtr target) {
+        var defaults=SystemInformation.MinimumWindowSize;minimumWidth=Math.Max(1,defaults.Width);minimumHeight=Math.Max(1,defaults.Height);maximumWidth=maximumHeight=int.MaxValue;
+        var limits=new MinMax{minTrack=new Point(minimumWidth,minimumHeight)};UIntPtr result;
+        if(SendMessageTimeout(target,0x0024,IntPtr.Zero,ref limits,2,30,out result)!=IntPtr.Zero) {
+            if(limits.minTrack.X>0)minimumWidth=limits.minTrack.X;if(limits.minTrack.Y>0)minimumHeight=limits.minTrack.Y;
+            if(limits.maxTrack.X>=minimumWidth)maximumWidth=limits.maxTrack.X;if(limits.maxTrack.Y>=minimumHeight)maximumHeight=limits.maxTrack.Y;
+        }
+    }
+    static void UpdateDrag(Point point) {
+        int dx=point.X-start.X,dy=point.Y-start.Y;var r=startRect;
+        if(restoreOnMove && !dragMoved && Math.Abs(dx)<3 && Math.Abs(dy)<3)return;
+        dragMoved=true;
+        if(mode==1)Post(win,1,r.L+dx,r.T+dy,0,0);
+        else {
+            int left=r.L,top=r.T,right=r.R,bottom=r.B;
+            if((corner&1)!=0)right+=dx;else left+=dx;if((corner&2)!=0)bottom+=dy;else top+=dy;
+            int width=Math.Max(minimumWidth,Math.Min(maximumWidth,right-left)),height=Math.Max(minimumHeight,Math.Min(maximumHeight,bottom-top));
+            if((corner&1)!=0)right=left+width;else left=right-width;if((corner&2)!=0)bottom=top+height;else top=bottom-height;
+            Post(win,2,left,top,right-left,bottom-top);
+        }
+    }
+    public static bool HandleDragMessage(int message,Point point) {
+        if(win==IntPtr.Zero)return false;
+        if(message==0x0200){UpdateDrag(point);return true;}
+        if(message==(mode==1?0x0202:0x0205)) {
+            UpdateDrag(point);win=IntPtr.Zero;bool consume=swallowUp;swallowUp=false;return consume;
+        }
+        return false;
+    }
     [StructLayout(LayoutKind.Sequential)] struct Placement { public int length, flags, show; public Point min,max; public Native.RECT normal; }
     [DllImport("user32.dll")] static extern bool GetWindowPlacement(IntPtr h, ref Placement p);
     [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr h, int cmd);
     public static bool TestQueue(out string detail) {
-        var previous=MoveBackend; int calls=0, torn=0, last=-1; var finished=new ManualResetEventSlim();
+        var previous=MoveBackend;int calls=0,torn=0,last=-1;var finished=new ManualResetEventSlim();var entered=new ManualResetEventSlim();var proceed=new ManualResetEventSlim();
         int current=Interlocked.Increment(ref generation); run=true;
-        MoveBackend=(h,m,x,y,w,hh)=>{ Interlocked.Increment(ref calls); if (y != -x) Interlocked.Increment(ref torn); Volatile.Write(ref last,x); if(x==999) finished.Set(); };
+        MoveBackend=(h,m,x,y,w,hh)=>{ Interlocked.Increment(ref calls);entered.Set();proceed.Wait(1000);if (y != -x) Interlocked.Increment(ref torn); Volatile.Write(ref last,x); if(x==999) finished.Set(); };
         var testWorker=new Thread(()=>Work(current)) { IsBackground=true }; testWorker.Start();
         try {
-            for(int i=0;i<1000;i++) Post((IntPtr)123,1,i,-i,0,0);
+            Post((IntPtr)123,1,0,0,0,0);if(!entered.Wait(1000)){detail="worker did not start";return false;}
+            for(int i=1;i<1000;i++)Post((IntPtr)123,1,i,-i,0,0);proceed.Set();
             bool reached=finished.Wait(2000); detail="applied="+calls+", last="+last+", torn="+torn;
-            return reached && last==999 && torn==0 && calls<1000 && !Active;
-        } finally { run=false; Interlocked.Increment(ref generation); wake.Set(); testWorker.Join(1000); MoveBackend=previous; }
+            return reached && last==999 && torn==0 && calls<10 && !Active && (MoveFlags(1)&0x4000)==0;
+        } finally {proceed.Set();run=false;Interlocked.Increment(ref generation);wake.Set();testWorker.Join(1000);MoveBackend=previous;}
+    }
+    public static bool TestMessages(out string detail) {
+        bool ok=true;var log=new StringBuilder();Action<bool,string> check=(value,text)=>{ok&=value;log.AppendLine((value?"PASS ":"FAIL ")+text);};
+        try {
+            win=(IntPtr)123;mode=1;start=Point.Empty;startRect=new Native.RECT{L=-400,T=-200,R=100,B=100};restoreOnMove=false;swallowUp=true;
+            check(HandleDragMessage(0x0200,new Point(10,-20)),"grabbed move consumed");
+            check(!HandleDragMessage(0x0205,new Point(12,-22))&&win!=(IntPtr)0,"unrelated button release keeps drag");
+            check(HandleDragMessage(0x0202,new Point(25,-35))&&win==IntPtr.Zero,"matching button release ends drag");
+            lock(moveGate)check(latest.X==-375&&latest.Y==-235,"release coordinates posted on negative-coordinate monitor");
+            win=(IntPtr)123;mode=2;start=Point.Empty;startRect=new Native.RECT{L=-400,T=-200,R=100,B=100};minimumWidth=300;minimumHeight=200;maximumWidth=800;maximumHeight=600;restoreOnMove=false;
+            for(int edge=0;edge<4;edge++){corner=edge;UpdateDrag(new Point((edge&1)==0?1000:-1000,(edge&2)==0?1000:-1000));lock(moveGate)check(latest.W==300&&latest.Height==200&&((edge&1)!=0?latest.X==-400:latest.X+latest.W==100),"resize corner "+edge+" preserves opposite edge at min size");}
+            win=(IntPtr)123;mode=1;restoreOnMove=true;dragMoved=false;int before=seq;UpdateDrag(new Point(1,1));check(seq==before,"maximized click does not restore or move");UpdateDrag(new Point(8,3));lock(moveGate)check(latest.Restore,"maximized restore deferred to first movement");
+        }finally{win=IntPtr.Zero;restoreOnMove=dragMoved=swallowUp=false;lock(moveGate)latest=new MoveTarget();}
+        detail=log.ToString();return ok;
     }
     public static int Moves { get { return seq; } }
     static IntPtr Hook(int code, IntPtr w, IntPtr l) {
@@ -5726,30 +5793,22 @@ static class GrabMove {
             if ((msg == 0x0201 || (msg == 0x0204 && Cfg.Resize)) && win == IntPtr.Zero && ModDown) {
                 var h = GetAncestor(WindowFromPoint(new Point(px, py)), 2);
                 if (Eligible(h)) {
-                    win = h; mode = msg == 0x0201 ? 1 : 2; start = new Point(px, py); Native.GetWindowRect(h, out startRect);
+                    win = h; mode = msg == 0x0201 ? 1 : 2; start = new Point(px, py); if(!Native.GetWindowRect(h,out startRect)){win=IntPtr.Zero;return CallNextHookEx(IntPtr.Zero,code,w,l);}
+                    restoreOnMove=false;dragMoved=false;Interlocked.Increment(ref dragSession);
                     if (Native.IsZoomed(h)) {
                         var placement = new Placement { length = Marshal.SizeOf(typeof(Placement)) };
                         if (!GetWindowPlacement(h, ref placement)) { win = IntPtr.Zero; return CallNextHookEx(IntPtr.Zero, code, w, l); }
                         int width = placement.normal.R - placement.normal.L, height = placement.normal.B - placement.normal.T;
                         double fraction = (px - startRect.L) / (double)Math.Max(1, startRect.R - startRect.L);
                         int left = px - (int)(width * fraction), top = py - Math.Min(UI.S(24), height / 2);
-                        startRect = new Native.RECT { L=left,T=top,R=left+width,B=top+height }; ShowWindowAsync(h,9);
+                        startRect = new Native.RECT { L=left,T=top,R=left+width,B=top+height }; restoreOnMove=true;
                     }
+                    if(mode==2)ReadSizeLimits(h);
                     corner = (px > (startRect.L + startRect.R) / 2 ? 1 : 0) | (py > (startRect.T + startRect.B) / 2 ? 2 : 0);
                     swallowUp = true; return (IntPtr)1;
                 }
             }
-            if (msg == 0x0200 && win != IntPtr.Zero) {
-                int dx = px - start.X, dy = py - start.Y; var r = startRect;
-                if (mode == 1) Post(win, 1, r.L + dx, r.T + dy, 0, 0);
-                else {
-                    int L = r.L, T = r.T, R = r.R, B = r.B;
-                    if ((corner & 1) != 0) R += dx; else L += dx; if ((corner & 2) != 0) B += dy; else T += dy;
-                    if (R - L < 160) { if ((corner & 1) != 0) R = L + 160; else L = R - 160; } if (B - T < 100) { if ((corner & 2) != 0) B = T + 100; else T = B - 100; }
-                    Post(win, 2, L, T, R - L, B - T);
-                }
-            }
-            if ((msg == 0x0202 || msg == 0x0205) && win != IntPtr.Zero) { win = IntPtr.Zero; if (swallowUp) { swallowUp = false; return (IntPtr)1; } }
+            if(HandleDragMessage(msg,new Point(px,py)))return (IntPtr)1;
         } catch { }
         return CallNextHookEx(IntPtr.Zero, code, w, l);
     }
@@ -6281,7 +6340,7 @@ class PasteMenu : Form {
 
 // ----- Peek: quick look at the files selected in Explorer -----
 static class PeekSpace {
-    static InputHookHost host; static Action<IntPtr> open; static bool pressed;
+    static InputHookHost host; static Action<IntPtr> open; static Action release; static volatile bool pressed; public static bool IsHeld {get{return pressed;}}
     [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr h,int c,IntPtr w,IntPtr l);
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GuiInfo info);
@@ -6294,18 +6353,28 @@ static class PeekSpace {
         var fc = new StringBuilder(256); if (GetGUIThreadInfo(0,ref gui)) { if (gui.caret != IntPtr.Zero || (gui.flags & 0x1E) != 0) return false; if (gui.focus != IntPtr.Zero) Native.GetClassName(gui.focus,fc,256); }
         return EligibleContext(wc.ToString(),fc.ToString());
     }
-    public static void Apply(bool enable, Action<IntPtr> action) { open=action; if (enable && host == null) host=new InputHookHost(13,Hook); else if (!enable && host != null) { host.Dispose(); host=null; pressed=false; } }
+    public static void Apply(bool enable,Action<IntPtr> action,Action onRelease=null) {
+        var previousRelease=release;
+        if(!enable && host!=null){host.Dispose();host=null;if(pressed){pressed=false;if(previousRelease!=null)previousRelease();}}
+        open=action;release=onRelease;if(enable && host==null)host=new InputHookHost(13,Hook);
+    }
+    public static bool HandleSpace(bool down,IntPtr foreground,bool eligible) {
+        if(!down){if(!pressed)return false;pressed=false;if(release!=null)release();return true;}
+        if(pressed)return true;if(!eligible)return false;pressed=true;if(open!=null)open(foreground);return true;
+    }
     static IntPtr Hook(int code,IntPtr w,IntPtr l) {
-        if (code >= 0 && Marshal.ReadInt32(l) == 0x20) {
-            int msg=w.ToInt32(); if (msg == 0x0101 && pressed) { pressed=false; return (IntPtr)1; }
-            if (msg == 0x0100) {
-                if (pressed) return (IntPtr)1;
-                bool modifiers=false; foreach(int k in new[]{0x10,0x11,0x12,0x5B,0x5C}) modifiers |= (GetAsyncKeyState(k)&0x8000)!=0;
-                IntPtr foreground=Peek.GetForegroundWindow(); if (!modifiers && ExplorerReady(foreground)) { pressed=true; try { if(open!=null) open(foreground); } catch { } return (IntPtr)1; }
+        if(code>=0 && Marshal.ReadInt32(l)==0x20) {
+            int msg=w.ToInt32();
+            if(msg==0x0101 || msg==0x0105){if(HandleSpace(false,IntPtr.Zero,false))return (IntPtr)1;}
+            if(msg==0x0100 || msg==0x0104) {
+                if(pressed)return (IntPtr)1;
+                bool modifiers=false;foreach(int key in new[]{0x10,0x11,0x12,0x5B,0x5C})modifiers|=(GetAsyncKeyState(key)&0x8000)!=0;
+                IntPtr foreground=Peek.GetForegroundWindow();if(HandleSpace(true,foreground,!modifiers&&ExplorerReady(foreground)))return (IntPtr)1;
             }
         }
         return CallNextHookEx(IntPtr.Zero,code,w,l);
     }
+
 }
 static class Peek {
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
@@ -6531,8 +6600,60 @@ class MediaHost : AxHost {
     public void Play(string url) { var o = GetOcx(); if (o == null) return; o.GetType().InvokeMember("URL", BindingFlags.SetProperty, null, o, new object[] { url }); try { o.GetType().InvokeMember("stretchToFit", BindingFlags.SetProperty, null, o, new object[] { true }); } catch { } }
     public void Stop() { try { var o = GetOcx(); if (o == null) return; var c = o.GetType().InvokeMember("controls", BindingFlags.GetProperty, null, o, null); c.GetType().InvokeMember("stop", BindingFlags.InvokeMethod, null, c, null); o.GetType().InvokeMember("close", BindingFlags.InvokeMethod, null, o, null); } catch { } }
 }
+static class WebPImage {
+    static readonly object gate=new object();
+    static string Tool(string name) {
+        string path=Path.Combine(TestEnv.Off?Path.GetDirectoryName(Application.ExecutablePath):Core.Dir,"codecs","libwebp-1.6.0",name);
+        lock(gate) {if(!File.Exists(path)){Directory.CreateDirectory(Path.GetDirectoryName(path));using(var input=Assembly.GetExecutingAssembly().GetManifestResourceStream(name))using(var output=File.Create(path)){if(input==null)throw new IOException("WebP 디코더 리소스 없음");input.CopyTo(output);}}}return path;
+    }
+    static void Run(string name,string arguments,CancellationToken cancel) {
+        cancel.ThrowIfCancellationRequested();
+        using(var process=Process.Start(new ProcessStartInfo(Tool(name),arguments){UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden})) {
+            var timer=Stopwatch.StartNew();while(!process.WaitForExit(25)) {
+                if(cancel.IsCancellationRequested || timer.ElapsedMilliseconds>10000){try{process.Kill();process.WaitForExit(1000);}catch{}cancel.ThrowIfCancellationRequested();throw new IOException("WebP 디코딩 시간 초과");}
+            }
+            if(process.ExitCode!=0)throw new IOException("WebP 이미지를 읽지 못했어요.");
+        }
+    }
+    public static bool Animated(string path) {
+        using(var stream=File.OpenRead(path)) {var header=new byte[21];return stream.Read(header,0,header.Length)==header.Length && Encoding.ASCII.GetString(header,12,4)=="VP8X" && (header[20]&2)!=0;}
+    }
+    struct AnimationFrame {public Size Canvas;public Point Offset;public Color Background;public bool Replace;}
+    static int Read24(byte[] bytes,int at){return bytes[at]|bytes[at+1]<<8|bytes[at+2]<<16;}
+    static AnimationFrame FirstFrame(string path) {
+        var result=new AnimationFrame{Background=Color.Transparent};
+        using(var stream=File.OpenRead(path))using(var reader=new BinaryReader(stream)) {
+            stream.Position=12;
+            while(stream.Position+8<=stream.Length) {
+                string kind=Encoding.ASCII.GetString(reader.ReadBytes(4));uint length=reader.ReadUInt32();long next=stream.Position+length+(length&1);if(next>stream.Length)throw new IOException("잘못된 WebP 데이터");
+                if(kind=="VP8X"&&length>=10){var header=reader.ReadBytes(10);result.Canvas=new Size(Read24(header,4)+1,Read24(header,7)+1);}
+                else if(kind=="ANIM"&&length>=4){var color=reader.ReadBytes(4);result.Background=Color.FromArgb(color[3],color[2],color[1],color[0]);}
+                else if(kind=="ANMF"&&length>=16){var header=reader.ReadBytes(16);result.Offset=new Point(Read24(header,0)*2,Read24(header,3)*2);result.Replace=(header[15]&2)!=0;break;}
+                stream.Position=next;
+            }
+        }
+        if(result.Canvas.Width<1||result.Canvas.Height<1||result.Canvas.Width>16383||result.Canvas.Height>16383||(long)result.Canvas.Width*result.Canvas.Height>100000000)throw new IOException("WebP 캔버스 크기를 읽지 못했어요.");return result;
+    }
+    public static Bitmap Decode(string path) {return Decode(path,CancellationToken.None);}
+    public static Bitmap Decode(string path,CancellationToken cancel) {
+        cancel.ThrowIfCancellationRequested();
+        string prefix=Path.Combine(Path.GetTempPath(),"BongHubWebP_"+Guid.NewGuid().ToString("N")),png=prefix+".png",frame=prefix+".webp";
+        try {
+            string source=Path.GetFullPath(path);bool animated=Animated(source);var animation=animated?FirstFrame(source):new AnimationFrame();
+            if(animated){Run("webpmux.exe","-get frame 1 \""+source+"\" -o \""+frame+"\"",cancel);source=frame;}
+            Run("dwebp.exe","-quiet \""+source+"\" -o \""+png+"\"",cancel);
+            using(var image=Image.FromFile(png)) {
+                if(!animated)return new Bitmap(image);
+                var canvas=new Bitmap(animation.Canvas.Width,animation.Canvas.Height,PixelFormat.Format32bppArgb);
+                try{using(var graphics=Graphics.FromImage(canvas)){graphics.Clear(animation.Background);graphics.CompositingMode=animation.Replace?CompositingMode.SourceCopy:CompositingMode.SourceOver;graphics.DrawImageUnscaled(image,animation.Offset);}return canvas;}catch{canvas.Dispose();throw;}
+            }
+        } finally {foreach(string temp in new[]{png,frame})try{File.Delete(temp);}catch{}}
+    }
+}
 class PeekForm : Form {
     public string File_; public string KindName; readonly List<string> list; int index; Panel bodyHost; Label nameL, infoL; Control body; HandlerSession handler; MediaHost media;
+    int imageRequest;CancellationTokenSource imageCancellation;
+    public bool HoldToPreview;
     public static bool CloseOnDeactivate, RenderHtml = true; public event Action ContentReady; public bool Ready; public double ContentMs; readonly Stopwatch openSw = Stopwatch.StartNew(); static Font codeFont;
     public PeekForm(string path) : this(new List<string> { path }, 0) { }
     // several selected files: Left/Right moves between them; one file: Left/Right moves through its folder
@@ -6551,10 +6672,11 @@ class PeekForm : Form {
         bodyHost = new DbPanel { Dock = DockStyle.Fill, BackColor = UI.Page };
         Controls.Add(bodyHost); Controls.Add(head);
         KeyDown += (s, e) => {
-            if (e.KeyCode == Keys.Escape || (e.KeyCode == Keys.Space && !(body is TextBoxBase) && !(body is WebBrowser))) { Close(); e.Handled = true; }
+            if (e.KeyCode == Keys.Escape || (e.KeyCode == Keys.Space && !HoldToPreview && !(body is TextBoxBase) && !(body is WebBrowser))) { Close(); e.Handled = true; }
             else if (e.KeyCode == Keys.Enter) { OpenIt(); e.Handled = true; }
             else if (e.KeyCode == Keys.Right || e.KeyCode == Keys.Left) { if (!(body is TextBoxBase)) { Step(e.KeyCode == Keys.Right ? 1 : -1); e.Handled = true; } }
         };
+        KeyUp += (s,e)=>{if(HoldToPreview && e.KeyCode==Keys.Space){Close();e.Handled=true;}};
         Deactivate += (s, e) => { if (CloseOnDeactivate && !TestEnv.Off) Close(); };
         Dark.Theme(this);
         SetHeader();
@@ -6578,12 +6700,24 @@ class PeekForm : Form {
     }
     void Show_(string p) { File_ = p; if (list.Count == 1) list[0] = p; KindName = Peek.Kind(p); SetHeader(); Load_(); }
     void Unload() {
+        imageRequest++;if(imageCancellation!=null){imageCancellation.Cancel();imageCancellation.Dispose();imageCancellation=null;}
         if (handler != null) { handler.Close(); handler = null; }
         if (media != null) { media.Stop(); }
         if (body != null) { var pb = body as PictureBox; if (pb != null && pb.Image != null) { var im = pb.Image; pb.Image = null; im.Dispose(); } bodyHost.Controls.Remove(body); body.Dispose(); body = null; media = null; }
     }
     void Load_() {
         if (IsDisposed) return; var sw = Stopwatch.StartNew(); Unload(); string path = File_; Control b;
+        if(Path.GetExtension(path).Equals(".webp",StringComparison.OrdinalIgnoreCase)) {
+            Ready=false;int request=imageRequest;imageCancellation=new CancellationTokenSource();var cancel=imageCancellation.Token;var picture=new PictureBox{Dock=DockStyle.Fill,SizeMode=PictureBoxSizeMode.Zoom,BackColor=UI.Page};body=picture;bodyHost.Controls.Add(picture);
+            ThreadPool.QueueUserWorkItem(_=>{
+                Bitmap decoded=null;string error=null;bool animated=false;try{cancel.ThrowIfCancellationRequested();animated=WebPImage.Animated(path);decoded=WebPImage.Decode(path,cancel);}catch(Exception ex){error=ex.Message;}
+                try{BeginInvoke((Action)(()=>{
+                    if(IsDisposed||request!=imageRequest||picture.IsDisposed){if(decoded!=null)decoded.Dispose();return;}
+                    if(decoded!=null){picture.Image=decoded;infoL.Text+=" · "+decoded.Width+"×"+decoded.Height+(animated?" · 애니메이션 첫 프레임":"");}else{bodyHost.Controls.Remove(picture);picture.Dispose();body=Info(path,error);bodyHost.Controls.Add(body);}
+                    ContentMs=openSw.Elapsed.TotalMilliseconds;Ready=true;if(ContentReady!=null)ContentReady();
+                }));}catch{if(decoded!=null)decoded.Dispose();}
+            });return;
+        }
         try {
             switch (KindName) {
                 case "image": case "thumb": {
@@ -7073,7 +7207,7 @@ class TrayApp : Form {
         // lazy: a disabled feature that was never on does not even load its code path
         try { if (x.Zones.Enabled || Zones.Active || Zones.KeysActive) Zones.Apply(Config.CloneObj(x.Zones)); } catch { }
         try { if (x.Grab.Enabled || GrabMove.Active) GrabMove.Apply(Config.CloneObj(x.Grab)); } catch { }
-        PeekSpace.Apply(x.Peek.Enabled && Hotkey.Normalize(x.Peek.Hotkey) == "Space", foreground => { try { BeginInvoke((Action)(() => PeekNow(foreground))); } catch { } });
+        PeekSpace.Apply(x.Peek.Enabled && Hotkey.Normalize(x.Peek.Hotkey)=="Space",foreground=>{try{BeginInvoke((Action)(()=>PeekNow(foreground,true)));}catch{}},()=>{try{BeginInvoke((Action)CloseHeldPeek);}catch{}});
         PeekForm.CloseOnDeactivate = x.Peek.CloseOnFocusLoss; PeekForm.RenderHtml = x.Peek.RenderHtml;
         if (x.Palette.Enabled) ThreadPool.QueueUserWorkItem(_ => { Thread.Sleep(8000); try { Palette.Warm(); } catch { } });   // index built quietly after startup
         try { if (x.Resizer.ContextMenu != Resizer.MenuInstalled() || !resizeMenuSet) { if (x.Resizer.ContextMenu || Resizer.MenuInstalled()) Resizer.SetMenu(x.Resizer.ContextMenu); resizeMenuSet = true; } } catch { }
@@ -7119,19 +7253,21 @@ class TrayApp : Form {
         // created once, then hidden and reused: reopening skips window, font and list creation
         palette = new PaletteForm(Config.CloneObj(cfg.Pt.Palette)) { Reusable = true }; palette.FormClosed += (s, e) => palette = null; palette.Show(); palette.Activate();
     }
-    PeekForm peekWindow; bool peekBusy;
+    PeekForm peekWindow; bool peekBusy; int peekRequest;
+    void CloseHeldPeek() {peekRequest++;peekBusy=false;if(peekWindow!=null && !peekWindow.IsDisposed && peekWindow.HoldToPreview){peekWindow.Close();peekWindow=null;}}
     void PeekNow() { PeekNow(Peek.GetForegroundWindow()); }
-    void PeekNow(IntPtr fg) {
+    void PeekNow(IntPtr fg,bool hold=false) {
+        if(hold && !PeekSpace.IsHeld)return;
         if (peekWindow != null && !peekWindow.IsDisposed) { peekWindow.Close(); peekWindow=null; return; }
-        if (peekBusy) return; peekBusy=true;
+        if (peekBusy) return; peekBusy=true;int request=++peekRequest;
         var thread=new Thread(() => {
             List<string> all=null; string error=null;
             try { all=Peek.SelectedAll(fg); } catch(Exception ex) { error=ex.Message; }
             try { BeginInvoke((Action)(() => {
-                peekBusy=false;
+                if(request!=peekRequest || (hold && !PeekSpace.IsHeld))return;peekBusy=false;
                 if (all == null || all.Count == 0) { Balloon(error ?? "탐색기에서 파일을 선택하고 미리보기 단축키를 눌러 주세요.",ToolTipIcon.Info); return; }
-                peekWindow=new PeekForm(all,0); peekWindow.Show(); peekWindow.Activate();
-            })); } catch { peekBusy=false; }
+                peekWindow=new PeekForm(all,0){HoldToPreview=hold}; peekWindow.Show(); peekWindow.Activate();
+            })); } catch { }
         }) { IsBackground=true, Name="Explorer selection" }; thread.SetApartmentState(ApartmentState.STA); thread.Start();
     }
     void LaunchWs(Workspace w) {
@@ -7255,6 +7391,7 @@ static class Program {
             if (ml == "settingstest" || ml == "tabbench" || ml == "notestest" || ml == "imagetest" || ml == "pttest" || ml == "jittertest" || ml == "perfbench" || ml == "paritytest") TestEnv.Off = true;
             switch (ml) {
                 case "uiperf": TestEnv.Off=true; return UiPerf();
+                case "inputtest": TestEnv.Off=true;return InputTest();
                 case "interactiontest": TestEnv.Off=true; return InteractionTest(args.Length>1?args[1]:"");
                 case "lockscreen": return LockScreenPolicy.Run(args);
                 case "lockscreenpolicytest": return LockScreenPolicy.Test(Path.Combine(ExeDir, "lockscreenpolicytest.txt"));
@@ -7385,6 +7522,34 @@ static class Program {
         return File.Exists(Path.Combine(ExeDir, "settingstest_error.txt")) ? 1 : 0;
     }
 
+
+    static int InputTest() {
+        UI.Init(1f);var log=new StringBuilder();bool ok=true;Action<bool,string> check=(value,text)=>{ok&=value;log.AppendLine((value?"PASS ":"FAIL ")+text);};
+        try {
+            string detail;check(GrabMove.TestQueue(out detail),"slow target keeps bounded pending work: "+detail);check(GrabMove.TestMessages(out detail),"grab event protocol");log.Append(detail);
+            int opens=0,closes=0;PeekSpace.Apply(false,h=>opens++,()=>closes++);
+            check(!PeekSpace.HandleSpace(true,(IntPtr)1,false),"Space in text context passes through");
+            check(PeekSpace.HandleSpace(true,(IntPtr)1,true)&&PeekSpace.IsHeld,"Space hold starts preview");
+            PeekSpace.HandleSpace(true,(IntPtr)1,true);check(opens==1,"Space autorepeat does not toggle preview");
+            check(PeekSpace.HandleSpace(false,IntPtr.Zero,false)&&!PeekSpace.IsHeld&&closes==1,"release closes even after foreground changes");
+            using(var form=new SettingsForm(Config.Defaults(),false,true)) {
+                form.OnSave=(c,x)=>{};TestEnv.Place(form);form.Show();form.ShowPage(7);
+                foreach(string key in SettingsForm.PtKeys){form.PtShow(key);var child=Desc(form).OfType<HotkeyBox>().FirstOrDefault(c=>c.Visible&&c.FindForm()==form);IntPtr target=child!=null?child.Handle:form.Handle;
+                    var forward=Message.Create(target,0x020C,(IntPtr)(2<<16),IntPtr.Zero);check(!form.PreFilterMessage(ref forward)&&form.PtOpen==key,"forward button kept in "+key);
+                    var back=Message.Create(target,0x020C,(IntPtr)(1<<16),IntPtr.Zero);check(form.PreFilterMessage(ref back)&&form.PtOpen==null,"mouse back from "+key);
+                }
+                form.PtShow("paste");var command=Message.Create(form.Handle,0x0319,IntPtr.Zero,(IntPtr)(1<<16));check(form.PreFilterMessage(ref command)&&form.PtOpen==null,"driver browser-back command");form.Close();
+            }
+            string fixtureDirectory=Path.Combine(ExeDir,"_dev","fixtures");if(!Directory.Exists(fixtureDirectory))fixtureDirectory=ExeDir;var fixtures=Directory.GetFiles(fixtureDirectory,"fixture*.webp");check(fixtures.Length>=4,"real lossless, alpha, animated and Unicode WebP fixtures present");
+            foreach(string file in fixtures) {
+                if(Path.GetFileName(file).Contains("animated"))check(WebPImage.Animated(file),"animated fixture really contains animation");
+                using(var decoded=WebPImage.Decode(file)){check(decoded.Width==128&&decoded.Height==96,"full WebP decoding: "+Path.GetFileName(file));check(decoded.GetPixel(64,48).A>100&&decoded.GetPixel(64,48).A<200,"WebP transparency preserved");}
+                using(var preview=new PeekForm(file)){TestEnv.Place(preview);preview.Show();var timer=Stopwatch.StartNew();while(!preview.Ready&&timer.ElapsedMilliseconds<5000)Pump(20);check(preview.Ready&&Desc(preview).OfType<PictureBox>().Any(p=>p.Image!=null),"WebP preview image loaded: "+Path.GetFileName(file));preview.Close();}
+                using(var rapid=new PeekForm(file)){rapid.HoldToPreview=true;TestEnv.Place(rapid);rapid.Show();Pump(1);rapid.Close();Pump(80);check(rapid.IsDisposed,"release while WebP decoding does not reopen preview");}
+            }
+        }catch(Exception ex){check(false,ex.ToString());}
+        File.WriteAllText(Path.Combine(ExeDir,"inputtest.txt"),log.ToString());return ok?0:1;
+    }
 
     // Real controls, changing width every frame; no snapshots or user desktop interaction.
     static int UiPerf() {
