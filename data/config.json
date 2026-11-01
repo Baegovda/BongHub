@@ -81,7 +81,16 @@
     }
   ],
   "General": {
-    "TabOrder": [],
+    "TabOrder": [
+      "presets",
+      "windows",
+      "notes",
+      "kakao",
+      "desktop",
+      "powertoys",
+      "general",
+      "about"
+    ],
     "IdleEnabled": true,
     "IdleMinutes": 15,
     "IdlePreset": "자리비움",
