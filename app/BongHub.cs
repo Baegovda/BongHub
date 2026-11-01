@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.4.4.0")]
-[assembly: AssemblyFileVersion("3.4.4.0")]
-[assembly: AssemblyInformationalVersion("3.4.4")]
+[assembly: AssemblyVersion("3.4.5.0")]
+[assembly: AssemblyFileVersion("3.4.5.0")]
+[assembly: AssemblyInformationalVersion("3.4.5")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -631,9 +631,47 @@ static class LockScreenPolicy {
         File.WriteAllText(output, log.ToString()); return ok ? 0 : 1;
     }
 }
+static class SleepResumeAuth {
+    const string Backup = @"SOFTWARE\BongHub\SleepResumeAuthBackup";
+    static readonly Guid SubNone = new Guid("fea3413e-7e05-4911-9a71-700331f1c294");
+    static readonly Guid ConsoleLock = new Guid("0e796bdb-100d-47d6-a2d5-f7d2daa51f51");
+    [DllImport("powrprof.dll")] static extern uint PowerGetActiveScheme(IntPtr root, out IntPtr scheme);
+    [DllImport("powrprof.dll")] static extern uint PowerReadACValueIndex(IntPtr root, ref Guid scheme, ref Guid subgroup, ref Guid setting, out uint value);
+    [DllImport("powrprof.dll")] static extern uint PowerReadDCValueIndex(IntPtr root, ref Guid scheme, ref Guid subgroup, ref Guid setting, out uint value);
+    [DllImport("powrprof.dll")] static extern uint PowerWriteACValueIndex(IntPtr root, ref Guid scheme, ref Guid subgroup, ref Guid setting, uint value);
+    [DllImport("powrprof.dll")] static extern uint PowerWriteDCValueIndex(IntPtr root, ref Guid scheme, ref Guid subgroup, ref Guid setting, uint value);
+    [DllImport("powrprof.dll")] static extern uint PowerSetActiveScheme(IntPtr root, ref Guid scheme);
+    [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr p);
+    static Guid Active() { IntPtr p; uint e = PowerGetActiveScheme(IntPtr.Zero, out p); if (e != 0 || p == IntPtr.Zero) throw new InvalidOperationException("활성 전원 관리 설정을 읽지 못했어요. 오류 " + e); try { return (Guid)Marshal.PtrToStructure(p, typeof(Guid)); } finally { LocalFree(p); } }
+    static uint Read(bool ac, ref Guid scheme) { Guid sub=SubNone, setting=ConsoleLock; uint v, e = ac ? PowerReadACValueIndex(IntPtr.Zero, ref scheme, ref sub, ref setting, out v) : PowerReadDCValueIndex(IntPtr.Zero, ref scheme, ref sub, ref setting, out v); if (e != 0) throw new InvalidOperationException("절전 복귀 인증 설정을 읽지 못했어요. 오류 " + e); return v; }
+    static void Write(bool ac, ref Guid scheme, uint value) { Guid sub=SubNone, setting=ConsoleLock; uint e = ac ? PowerWriteACValueIndex(IntPtr.Zero, ref scheme, ref sub, ref setting, value) : PowerWriteDCValueIndex(IntPtr.Zero, ref scheme, ref sub, ref setting, value); if (e != 0) throw new InvalidOperationException("절전 복귀 인증 설정을 쓰지 못했어요. 오류 " + e); }
+    public static bool Owned { get { using (var root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64)) using (var k = root.OpenSubKey(Backup)) return k != null && k.GetValue("Scheme") != null; } }
+    public static string Status() { try { var s = Active(); return Read(true, ref s) == 0 && Read(false, ref s) == 0 ? "현재 전원 계획: 절전 복귀 인증 요구 안 함" : "현재 전원 계획: 절전 복귀 시 로그인 요구"; } catch (Exception ex) { return "상태 확인 실패: " + ex.Message; } }
+    static void Set(bool disable) {
+        var scheme = Active(); uint ac = Read(true, ref scheme), dc = Read(false, ref scheme);
+        using (var root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64)) {
+            if (disable) {
+                using (var k = root.CreateSubKey(Backup)) if (k.GetValue("Scheme") == null) { k.SetValue("Scheme", scheme.ToString("D")); k.SetValue("AC", unchecked((int)ac), RegistryValueKind.DWord); k.SetValue("DC", unchecked((int)dc), RegistryValueKind.DWord); }
+                Write(true, ref scheme, 0); Write(false, ref scheme, 0);
+            } else {
+                using (var k = root.OpenSubKey(Backup)) {
+                    if (k == null) throw new InvalidOperationException("BongHub가 저장한 원래 설정이 없어요.");
+                    Guid saved; if (!Guid.TryParse(Convert.ToString(k.GetValue("Scheme")), out saved)) throw new InvalidOperationException("저장한 전원 계획을 읽지 못했어요.");
+                    if (saved != scheme) throw new InvalidOperationException("전원 계획이 바뀌었어요. 원래 계획으로 전환한 뒤 다시 시도해 주세요.");
+                    if (ac != 0 || dc != 0) throw new InvalidOperationException("다른 프로그램이나 관리자가 설정을 변경했어요. 현재 설정을 유지했어요.");
+                    Write(true, ref scheme, unchecked((uint)(int)k.GetValue("AC", 1))); Write(false, ref scheme, unchecked((uint)(int)k.GetValue("DC", 1)));
+                }
+                root.DeleteSubKeyTree(Backup, false);
+            }
+        }
+        uint set = PowerSetActiveScheme(IntPtr.Zero, ref scheme); if (set != 0) throw new InvalidOperationException("변경한 전원 계획을 적용하지 못했어요. 오류 " + set);
+    }
+    public static int Run(string[] args) { if (args.Length != 2 || (args[1] != "disable" && args[1] != "restore")) return 2; try { Set(args[1] == "disable"); return 0; } catch (Exception ex) { DarkBox.Show(ex.Message, "절전 복귀 로그인 설정"); return 1; } }
+}
 static class AppInfo {
-    public const string Version = "3.4.4";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.4.5";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.4.5  숨겨진 절전 복귀 로그인 메뉴 대신 실제 전원 정책 적용·복원 · 이미지 보기 종료 후 타이머 예외 수정",
         "3.4.4  일반 설정에서 Windows 절전 복귀 로그인 옵션·Microsoft Autologon 공식 안내 바로 열기",
         "3.4.3  잡아서 이동 요청 적체·종료 좌표 수정 · 마우스 뒤로가기 · Space 누르는 동안 미리보기 · WebP 디코더",
         "3.4.2  탭 전환 전체 강제 그리기 제거 · 레이아웃 측정 캐시 · 실시간 크기 변경 요청 병합 · 배경 캐시 재생성 억제",
@@ -986,17 +1024,18 @@ static class SlimScroll {
 class ImageViewer : ChromeForm {
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
-    readonly Image img; readonly ViewCanvas cv;
+    readonly Image img; readonly ViewCanvas cv; readonly int imgW, imgH;
     public static void Open(Image img, IWin32Window owner) { var v = new ImageViewer(img); v.Show(owner); }
     public ImageViewer(Image image) {
-        img = image; Font = UI.Base; BackColor = Color.FromArgb(14, 14, 26); Icon = Program.AppIcon; KeyPreview = true; ShowInTaskbar = false;
+        if (image == null) throw new ArgumentNullException("image");
+        img = image; imgW=image.Width; imgH=image.Height; Font = UI.Base; BackColor = Color.FromArgb(14, 14, 26); Icon = Program.AppIcon; KeyPreview = true; ShowInTaskbar = false;
         Bar.Visible = false; Bar.Height = 0;
         StartPosition = FormStartPosition.Manual; MinimumSize = new Size(UI.S(420), UI.S(320));
         var wa = Screen.FromPoint(Cursor.Position).WorkingArea;
-        int w = Math.Min((int)(wa.Width * 0.9), Math.Max(MinimumSize.Width, img.Width + UI.S(6))), h = Math.Min((int)(wa.Height * 0.9), Math.Max(MinimumSize.Height, img.Height + UI.S(6)));
+        int w = Math.Min((int)(wa.Width * 0.9), Math.Max(MinimumSize.Width, imgW + UI.S(6))), h = Math.Min((int)(wa.Height * 0.9), Math.Max(MinimumSize.Height, imgH + UI.S(6)));
         Bounds = new Rectangle(wa.X + (wa.Width - w) / 2, wa.Y + (wa.Height - h) / 2, w, h);
         cv = new ViewCanvas(img) { Dock = DockStyle.Fill };
-        cv.Changed += () => Text = "이미지 보기  ·  " + img.Width + "×" + img.Height + "  ·  " + Math.Round(cv.Zoom * 100) + "%";
+        cv.Changed += () => { if (!IsDisposed && !Disposing) Text = "이미지 보기  ·  " + imgW + "×" + imgH + "  ·  " + Math.Round(cv.Zoom * 100) + "%"; };
         Controls.Add(cv);
         var tools = new Panel { Dock = DockStyle.Top, Height = UI.S(30), BackColor = BackColor };
         var close = new NoteBtn("✕", new Font("Segoe UI", 10f * UI.Scale), "닫기 (Esc)") { Dock = DockStyle.Right, Width = UI.S(38) };
@@ -1021,7 +1060,7 @@ class ImageViewer : ChromeForm {
             else return;
             e.Handled = true;
         };
-        Shown += (s, e) => { if (img.Width <= cv.Width && img.Height <= cv.Height) cv.ZoomTo(1f, cv.Center, false); else cv.FitView(false); };
+        Shown += (s, e) => { if (imgW <= cv.Width && imgH <= cv.Height) cv.ZoomTo(1f, cv.Center, false); else cv.FitView(false); };
         FormClosed += (s, e) => img.Dispose();
     }
     public ViewCanvas Canvas { get { return cv; } }
@@ -1047,6 +1086,7 @@ class ViewCanvas : Control {
         };
         Resize += (s, e) => { if (fitMode) FitView(false); else { Clamp(ref offGoal, Target); off = offGoal; Invalidate(); } };
     }
+    protected override void Dispose(bool disposing) { if (disposing && anim != null) { anim.Stop(); anim.Dispose(); anim=null; Changed=null; } base.Dispose(disposing); }
     public PointF Center { get { return new PointF(Width / 2f, Height / 2f); } }
     float FitZoom { get { return Math.Max(0.01f, Math.Min((Width - UI.S(16)) / (float)img.Width, (Height - UI.S(16)) / (float)img.Height)); } }
     public void FitView(bool smooth) { fitMode = true; float z = Math.Min(1f, FitZoom); Go(z, new PointF((Width - img.Width * z) / 2f, (Height - img.Height * z) / 2f), smooth); }
@@ -4634,11 +4674,14 @@ class SettingsForm : ChromeForm, IMessageFilter {
         };
         sLock.Full(lockStatus); sLock.Full(lockButton); sLock.Full(UI.HintL("이 PC에만 적용돼요. 변경할 때 관리자 권한이 필요하며, 복원하면 BongHub가 변경하기 전 정책으로 돌아가요.")); UI.AddRow(st, sLock);
 
-        var sSignIn=new Section("부팅·절전 로그인 설정","Windows 공식 설정과 Microsoft 도구에서 로그인 요구 여부를 설정할 수 있어요.");
-        var wakeOptions=UI.Btn("절전 복귀 로그인 설정 열기");wakeOptions.Click+=(a,b)=>{try{Process.Start("ms-settings:signinoptions");}catch(Exception ex){DarkBox.Show(this,ex.Message,"Windows 로그인 옵션");}};
+        var sSignIn=new Section("부팅·절전 로그인 설정","이 PC에 보이지 않는 Windows 설정 메뉴에 의존하지 않고, 절전 복귀 전원 정책을 직접 적용해요.");
+        var wakeStatus=UI.HintL(""); var wakeOptions=UI.Btn("설정");
+        Action updateWake=()=>{wakeStatus.Text=SleepResumeAuth.Status();wakeOptions.Text=SleepResumeAuth.Owned?"이전 설정으로 복원…":"절전 복귀 인증 생략…";};updateWake();
+        wakeOptions.Click+=(a,b)=>{bool restore=SleepResumeAuth.Owned;wakeOptions.Enabled=false;ThreadPool.QueueUserWorkItem(_=>{string result;try{using(var helper=Process.Start(new ProcessStartInfo(Application.ExecutablePath,"sleepauth "+(restore?"restore":"disable")){UseShellExecute=true,Verb="runas",WorkingDirectory=Path.GetDirectoryName(Application.ExecutablePath)})){helper.WaitForExit();result=helper.ExitCode==0?"적용됐어요. 다음 절전 복귀부터 확인해 주세요.":"설정하지 못했어요.";}}catch(System.ComponentModel.Win32Exception ex){result=ex.NativeErrorCode==1223?"관리자 권한 요청을 취소했어요.":ex.Message;}catch(Exception ex){result=ex.Message;}try{BeginInvoke((Action)(()=>{if(IsDisposed)return;updateWake();wakeStatus.Text+=" · "+result;wakeOptions.Enabled=true;}));}catch{}});};
         var bootOptions=UI.Btn("부팅 자동 로그인 도구 안내");bootOptions.Click+=(a,b)=>{try{Process.Start("https://learn.microsoft.com/en-us/sysinternals/downloads/autologon");}catch(Exception ex){DarkBox.Show(this,ex.Message,"Microsoft Autologon");}};
         sSignIn.Full(UI.Flow(wakeOptions,bootOptions));
-        sSignIn.Full(UI.HintL("절전 복귀: Windows 로그인 옵션의 ‘자리를 비운 경우 언제 다시 로그인해야 하나요?’를 ‘안 함’으로 선택하세요. 기기나 관리 정책에 따라 선택 항목이 다를 수 있어요."));
+        sSignIn.Full(wakeStatus);
+        sSignIn.Full(UI.HintL("절전 복귀: 현재 전원 계획의 AC(전원 연결)·DC(배터리) 로그인 요구를 함께 끄고, BongHub가 변경 전 값을 보관해 복원할 수 있어요. 조직 정책이 강제하는 경우에는 적용되지 않을 수 있어요."));
         sSignIn.Full(UI.HintL("부팅: Microsoft Autologon을 내려받아 실행하고 계정 암호를 직접 입력한 뒤 Enable을 누르세요. PIN 대신 계정 암호가 필요하며, 다시 인증을 요구하려면 Disable을 선택하세요."));
         sSignIn.Full(UI.HintL("이 버튼은 공식 설정 화면을 열어요. BongHub가 계정 암호를 수집하거나 저장하지 않아요."));UI.AddRow(st,sSignIn);
 
@@ -7403,6 +7446,7 @@ static class Program {
                 case "inputtest": TestEnv.Off=true;return InputTest();
                 case "interactiontest": TestEnv.Off=true; return InteractionTest(args.Length>1?args[1]:"");
                 case "lockscreen": return LockScreenPolicy.Run(args);
+                case "sleepauth": return SleepResumeAuth.Run(args);
                 case "lockscreenpolicytest": return LockScreenPolicy.Test(Path.Combine(ExeDir, "lockscreenpolicytest.txt"));
                 case "imagetest": return ImageTest();
                 case "workspace": return WorkspaceCli(args);
@@ -7895,7 +7939,8 @@ static class Program {
             using (var im = rb.ImageOf(ci)) { var v = new ImageViewer(new Bitmap(im)); TestEnv.Place(v); v.Size = new Size(UI.S(900), UI.S(620)); v.Show(); Pump(600);
                 check(v.Canvas.Zoom < 1f, "viewer fits large image (" + Math.Round(v.Canvas.Zoom * 100) + "%)");
                 v.Canvas.ZoomTo(1f, v.Canvas.Center, false); Pump(200); check(Math.Abs(v.Canvas.Zoom - 1f) < 0.01f, "viewer 100%");
-                v.Canvas.ZoomTo(2f, new PointF(10, 10), false); Pump(200); Shot(v, "viewer_zoom200.png"); v.Close(); }
+                v.Canvas.ZoomTo(2f, new PointF(10, 10), false); Pump(200); Shot(v, "viewer_zoom200.png");
+                v.Canvas.ZoomTo(0.2f, v.Canvas.Center, true); v.Close(); Pump(100); check(v.IsDisposed, "viewer close stops active zoom timer"); }
             rb.DeleteImage(ci); Pump(200); check(rb.ObjectChars().Count == 0, "delete picture");
             // seamless surface: title and paper colours meet without a seam
             using (var bmp = TestEnv.Render(f)) { var a = bmp.GetPixel(f.Width - UI.S(8), UI.S(35)); var b = bmp.GetPixel(f.Width - UI.S(8), UI.S(38)); int d = Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B); check(d < 24, "title/paper seamless (diff " + d + ")"); }
