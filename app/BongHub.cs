@@ -697,7 +697,7 @@ static class BlankAutoLogon {
 static class AppInfo {
     public const string Version = "3.4.8";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
-        "3.4.8  Next가 메모를 저장 중이면 트레이를 시작하지 않음 · 메모 저장 잠금(Local\\BongHub_NotesWriter)",
+        "3.4.8  Next가 메모를 저장 중이면 트레이를 시작하지 않음 · 메모 저장 잠금(Local\\BongHub_NotesWriter) · csc 경고 정리",
         "3.4.7  메모 첫 창 드래그 활성화 지연 제거 · 이동 중 저장 타이머 재시작 제거 · 이미지 메타데이터 미리 준비",
         "3.4.6  메모 이미지/디자인 전면 개선 · 무암호 로컬 계정 부팅 자동 로그인 설정·복원",
         "3.4.5  숨겨진 절전 복귀 로그인 메뉴 대신 실제 전원 정책 적용·복원 · 이미지 보기 종료 후 타이머 예외 수정",
@@ -2955,7 +2955,7 @@ class RichBox : RichTextBox {
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr LoadLibrary(string n);
     static bool ok = LoadLibrary("msftedit.dll") != IntPtr.Zero;
-    public Action<Graphics, Control> PaintBack;   // when set, the control is transparent and the owner paints its surface
+    public Action<Graphics, Control> PaintBack = null;   // when set, the control is transparent and the owner paints its surface
     protected override CreateParams CreateParams { get { var c = base.CreateParams; if (ok) c.ClassName = "RICHEDIT50W"; if (PaintBack != null) c.ExStyle |= 0x20; return c; } }
     [DllImport("user32.dll")] static extern bool GetUpdateRect(IntPtr h, out Native.RECT r, bool erase);
 
@@ -3003,7 +3003,7 @@ class RichBox : RichTextBox {
     }
     static int GroupEnd(string r, int s) { int d = 0; for (int j = s; j < r.Length; j++) { if (r[j] == '\\') { j++; continue; } if (r[j] == '{') d++; else if (r[j] == '}') { d--; if (d == 0) return j; } } return r.Length; }
     static int LastCtl(string g) {
-        int pos = 1, d = 0, last = 1;
+        int d = 0, last = 1;
         for (int j = 1; j < g.Length - 1; j++) {
             char c = g[j];
             if (c == '{') { d++; continue; } if (c == '}') { d--; last = j + 1; continue; }
@@ -6296,7 +6296,7 @@ class PaletteForm : Form {
         Show(); Activate(); box.Focus();
     }
     public int Count { get { return items.Count; } }
-    public PaletteItem Top { get { return items.FirstOrDefault(); } }
+    public new PaletteItem Top { get { return items.FirstOrDefault(); } }
     protected override bool ShowWithoutActivation { get { return TestEnv.Off; } }
     protected override CreateParams CreateParams { get { var c = base.CreateParams; c.ExStyle |= 0x80; if (TestEnv.Off) c.ExStyle |= 0x08000000; return c; } }
     protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); int v = 2; try { ChromeNative.Round(Handle, v); } catch { } }
@@ -6429,7 +6429,7 @@ static class AdvPaste {
         if (TestEnv.Off || target == IntPtr.Zero) return;
         SetForegroundWindow(target);
         var sw = Stopwatch.StartNew();
-        while (sw.ElapsedMilliseconds < 1500 && ((GetAsyncKeyState(0x11) | GetAsyncKeyState(0x12) | GetAsyncKeyState(0x10) | GetAsyncKeyState(0x5B)) & 0x8000) != 0) { Application.DoEvents(); Thread.Sleep(20); }
+        while (sw.ElapsedMilliseconds < 1500 && (((GetAsyncKeyState(0x11) & 0x8000) | (GetAsyncKeyState(0x12) & 0x8000) | (GetAsyncKeyState(0x10) & 0x8000) | (GetAsyncKeyState(0x5B) & 0x8000)) != 0)) { Application.DoEvents(); Thread.Sleep(20); }
         keybd_event(0x11, 0, 0, UIntPtr.Zero); keybd_event(0x56, 0, 0, UIntPtr.Zero); keybd_event(0x56, 0, 2, UIntPtr.Zero); keybd_event(0x11, 0, 2, UIntPtr.Zero);
     }
 }
