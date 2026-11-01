@@ -150,6 +150,7 @@
     "PullMinutes": 2
   },
   "Pt": {
+    "ShortcutVersion": 1,
     "Zones": {
       "Enabled": true,
       "ShiftDrag": true,
@@ -225,7 +226,7 @@
     },
     "Palette": {
       "Enabled": true,
-      "Hotkey": "Ctrl+Alt+Space",
+      "Hotkey": "Win+Alt+Space",
       "Apps": true,
       "Calc": true,
       "Web": true,
@@ -241,14 +242,14 @@
     "Paste": {
       "Enabled": true,
       "Hotkey": "Ctrl+Alt+V",
-      "PlainHotkey": "Ctrl+Alt+Shift+V",
+      "PlainHotkey": "Ctrl+Win+Alt+V",
       "JsonHotkey": "",
       "MarkdownHotkey": "",
       "Custom": []
     },
     "Peek": {
       "Enabled": true,
-      "Hotkey": "Ctrl+Shift+Space",
+      "Hotkey": "Space",
       "CloseOnFocusLoss": true,
       "RenderHtml": true
     },
