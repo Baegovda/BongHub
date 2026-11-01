@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.3.5.0")]
-[assembly: AssemblyFileVersion("3.3.5.0")]
-[assembly: AssemblyInformationalVersion("3.3.5")]
+[assembly: AssemblyVersion("3.3.6.0")]
+[assembly: AssemblyFileVersion("3.3.6.0")]
+[assembly: AssemblyInformationalVersion("3.3.6")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -586,8 +586,9 @@ static class TestEnv {
     }
 }
 static class AppInfo {
-    public const string Version = "3.3.5";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.3.6";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.3.6  이미지 선택 해제 검색 최적화 · 텍스트/제목1~4 스타일 · 평면 그라데이션 색상 복원",
         "3.3.5  스티커 메모 상단·본문 평면 통일 · 입력 커서 고정 · 크기 조절 중 실제 본문 즉시 배치",
         "3.3.4  스티커 메모 이미지 드래그 이동 · 글자 크기 빠른 선택 · 색상 호버 미리보기와 차분한 팔레트 · 선택 핸들 커서 안정화 · 더블클릭 이미지 뷰어 제목 표시줄/작업 표시줄 숨김 · 모달 창에서도 메모 선택 · 입력 후 조용할 때 자동 저장",
         "3.3.3  크기 조절 중 확대 제거: 글자·사이드바·목록·카드는 1:1로 두고 빈 곳은 배경색. 제목 단추는 오른쪽, 메모 도구막대는 아래에 붙임. 놓으면 한 번만 배치",
@@ -2810,7 +2811,10 @@ class RichBox : RichTextBox {
         return new Rectangle(p0.X, p0.Y, Math.Max(4, (int)(ps[nth].GoalW * k)), Math.Max(4, (int)(ps[nth].GoalH * k)));
     }
     public int ImageAt(Point pt) {
-        foreach (var ci in ObjectChars()) { var r = ImageRect(ci); if (r.Contains(pt)) return ci; }
+        var objects = ObjectChars();
+        int near = GetCharIndexFromPosition(pt), at = objects.BinarySearch(near);
+        if (at < 0) at = ~at;
+        for (int i = Math.Max(0, at - 1); i < Math.Min(objects.Count, at + 2); i++) if (ImageRect(objects[i]).Contains(pt)) return objects[i];
         return -1;
     }
     Rectangle[] Handles(Rectangle r) {
@@ -2945,7 +2949,7 @@ class RichBox : RichTextBox {
         if (m.Msg == 0x000F && ImageTools && SelImage >= 0) PaintSelection();
         if (ImageTools && SelImage >= 0 && (m.Msg == 0x0115 || m.Msg == 0x020A)) Invalidate();
     }
-    protected override void OnSelectionChanged(EventArgs e) { base.OnSelectionChanged(e); if (SelImage >= 0 && !(SelectionStart == SelImage && SelectionLength == 1) && handle < 0) { SelImage = -1; Invalidate(); } }
+    protected override void OnSelectionChanged(EventArgs e) { if (SelImage >= 0 && !(SelectionStart == SelImage && SelectionLength == 1) && handle < 0) { SelImage = -1; Cursor = Cursors.IBeam; Invalidate(); } base.OnSelectionChanged(e); }
     protected override void OnTextChanged(EventArgs e) { cache = null; objectCache = null; base.OnTextChanged(e); if (PaintBack != null) Invalidate(); }
     static Point Pt(Message m) { long l = (long)m.LParam; return new Point(unchecked((short)(l & 0xFFFF)), unchecked((short)((l >> 16) & 0xFFFF))); }
     void PaintSelection() {
@@ -3176,7 +3180,10 @@ class NoteForm : Form {
     readonly ResizeGlide glide = new ResizeGlide();
     Bitmap surfBm; int surfW, surfH, surfKey;
     // one cached gradient for the whole note; children blit their own slice (no per-control brush, no PointToScreen)
-    public void PaintSurface(Graphics g, Control c) { g.Clear(Paper); }
+    public void PaintSurface(Graphics g, Control c) {
+        int x = 0, y = 0; for (Control p = c; p != null && p != this; p = p.Parent) { x += p.Left; y += p.Top; }
+        var state = g.Save(); g.TranslateTransform(-x, -y); FillSurface(g); g.Restore(state);
+    }
     void DropSurf() { if (surfBm != null) { surfBm.Dispose(); surfBm = null; } }
     int SurfKey() { return titleA.ToArgb() ^ (titleB.ToArgb() * 17) ^ (Paper.ToArgb() * 31) ^ (title == null ? 0 : title.Bottom); }
     void EnsureSurf() {
@@ -3192,6 +3199,10 @@ class NoteForm : Form {
     void FillSurface(Graphics g) {
         var r = new Rectangle(0, 0, Math.Max(1, Width), Math.Max(1, Height));
         using (var pb = new SolidBrush(Paper)) g.FillRectangle(pb, r);
+        int h = title == null ? UI.S(32) : title.Bottom;
+        using (var br = new LinearGradientBrush(new Rectangle(0, 0, r.Width, Math.Max(1, h)), titleA, titleB, 0f)) g.FillRectangle(br, 0, 0, r.Width, h);
+        using (var fade = new LinearGradientBrush(new Rectangle(0, 0, r.Width, Math.Max(1, h)), Color.FromArgb(0, Paper), Paper, 90f)) g.FillRectangle(fade, 0, 0, r.Width, h);
+        using (var accent = new LinearGradientBrush(new Rectangle(0, 0, r.Width, Math.Max(1, UI.S(3))), titleA, titleB, 0f)) g.FillRectangle(accent, 0, 0, r.Width, UI.S(3));
 
     }
     Color titleA, titleB;
@@ -3232,7 +3243,7 @@ class NoteForm : Form {
         tb("U", FontStyle.Underline, "밑줄 (Ctrl+U)", () => Toggle(FontStyle.Underline));
         tb("S", FontStyle.Strikeout, "취소선 (Ctrl+T)", () => Toggle(FontStyle.Strikeout));
         tb("•", FontStyle.Bold, "글머리 기호 (Ctrl+Shift+L)", Bullet);
-        var bSize = new NoteBtn("Aa", new Font("Segoe UI", 9.5f * UI.Scale, FontStyle.Bold), "글씨 크기: 작게 · 보통 · 크게") { Margin = new Padding(0, 0, UI.S(3), 0) };
+        var bSize = new NoteBtn("Aa", new Font("Segoe UI", 9.5f * UI.Scale, FontStyle.Bold), "텍스트 · 제목1 · 제목2 · 제목3 · 제목4") { Margin = new Padding(0, 0, UI.S(3), 0) };
         bSize.Click += (s, e) => ShowFontSizes(bSize); bar.Controls.Add(bSize);
         tb("A−", FontStyle.Regular, "글자 작게 (Ctrl+-)", () => Grow(-1));
         tb("A+", FontStyle.Regular, "글자 크게 (Ctrl++)", () => Grow(1));
@@ -3344,7 +3355,7 @@ class NoteForm : Form {
     }
     void ShowFontSizes(Control at) {
         var menu = new ContextMenuStrip { Renderer = new DarkRenderer(), Font = UI.Base };
-        foreach (var item in new[] { new { Label = "작게", Size = 10f }, new { Label = "보통", Size = 12f }, new { Label = "크게", Size = 16f } }) {
+        foreach (var item in new[] { new { Label = "텍스트", Size = 11f }, new { Label = "H₁  제목1", Size = 24f }, new { Label = "H₂  제목2", Size = 20f }, new { Label = "H₃  제목3", Size = 16f }, new { Label = "H₄  제목4", Size = 13f } }) {
             float size = item.Size;
             var mi = new ToolStripMenuItem(item.Label + "  ·  " + size + "pt") { Checked = Math.Abs((rtb.SelectionFont ?? rtb.Font).Size - size) < .1f };
             mi.Click += (s, e) => { var f = rtb.SelectionFont ?? rtb.Font; rtb.SelectionFont = new Font(f.FontFamily, size, f.Style); dirtyText = true; Kick(); rtb.Focus(); };
