@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.3.3.0")]
-[assembly: AssemblyFileVersion("3.3.3.0")]
-[assembly: AssemblyInformationalVersion("3.3.3")]
+[assembly: AssemblyVersion("3.3.4.0")]
+[assembly: AssemblyFileVersion("3.3.4.0")]
+[assembly: AssemblyInformationalVersion("3.3.4")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -586,8 +586,9 @@ static class TestEnv {
     }
 }
 static class AppInfo {
-    public const string Version = "3.3.3";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.3.4";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.3.4  스티커 메모 이미지 드래그 이동 · 글자 크기 빠른 선택 · 색상 호버 미리보기와 차분한 팔레트 · 선택 핸들 커서 안정화 · 더블클릭 이미지 뷰어 제목 표시줄/작업 표시줄 숨김 · 모달 창에서도 메모 선택 · 입력 후 조용할 때 자동 저장",
         "3.3.3  크기 조절 중 확대 제거: 글자·사이드바·목록·카드는 1:1로 두고 빈 곳은 배경색. 제목 단추는 오른쪽, 메모 도구막대는 아래에 붙임. 놓으면 한 번만 배치",
         "3.3.2  창 크기 조절을 부드럽게: 테두리를 끄는 동안은 화면을 늘려 보여주고 놓을 때 한 번만 배치. 설정 창·스티커 메모·이미지 보기·창 고르기. 그라데이션은 크기가 바뀔 때만 다시 그림",
         "3.3.1  모니터 프리셋별 창 배치(작업 영역) 연계: 아이콘 배치 복원 직후 한 번 실행, 열린 앱은 옮기기만, 중복 실행 방지, 삭제 시 안내",
@@ -931,10 +932,11 @@ class ImageViewer : ChromeForm {
     readonly Image img; readonly ViewCanvas cv;
     public static void Open(Image img, IWin32Window owner) { var v = new ImageViewer(img); v.Show(owner); }
     public ImageViewer(Image image) {
-        img = image; Font = UI.Base; BackColor = Color.FromArgb(14, 14, 26); Icon = Program.AppIcon; KeyPreview = true; ShowInTaskbar = true;
+        img = image; Font = UI.Base; BackColor = Color.FromArgb(14, 14, 26); Icon = Program.AppIcon; KeyPreview = true; ShowInTaskbar = false;
+        Bar.Visible = false; Bar.Height = 0;
         StartPosition = FormStartPosition.Manual; MinimumSize = new Size(UI.S(420), UI.S(320));
         var wa = Screen.FromPoint(Cursor.Position).WorkingArea;
-        int w = Math.Min((int)(wa.Width * 0.9), Math.Max(MinimumSize.Width, img.Width + UI.S(6))), h = Math.Min((int)(wa.Height * 0.9), Math.Max(MinimumSize.Height, img.Height + UI.S(38) + UI.S(6)));
+        int w = Math.Min((int)(wa.Width * 0.9), Math.Max(MinimumSize.Width, img.Width + UI.S(6))), h = Math.Min((int)(wa.Height * 0.9), Math.Max(MinimumSize.Height, img.Height + UI.S(6)));
         Bounds = new Rectangle(wa.X + (wa.Width - w) / 2, wa.Y + (wa.Height - h) / 2, w, h);
         cv = new ViewCanvas(img) { Dock = DockStyle.Fill };
         cv.Changed += () => Text = "이미지 보기  ·  " + img.Width + "×" + img.Height + "  ·  " + Math.Round(cv.Zoom * 100) + "%";
@@ -960,6 +962,10 @@ class ImageViewer : ChromeForm {
         FormClosed += (s, e) => img.Dispose();
     }
     public ViewCanvas Canvas { get { return cv; } }
+    protected override void OnPaint(PaintEventArgs e) {
+        base.OnPaint(e);
+        using (var p = new Pen(Color.FromArgb(82, 93, 103, 139))) e.Graphics.DrawRectangle(p, 1, 1, Math.Max(1, Width - 4), Math.Max(1, Height - 4));
+    }
     public static void Copy(Image i) {
         try { var d = new DataObject(); using (var bm = new Bitmap(i)) { d.SetImage(new Bitmap(bm)); var ms = new MemoryStream(); bm.Save(ms, System.Drawing.Imaging.ImageFormat.Png); d.SetData("PNG", false, ms); Clipboard.SetDataObject(d, true); } } catch { }
     }
@@ -2481,7 +2487,13 @@ static class NoteColors {
         new[] { "g:lagoon", "라군", "40D9D0", "4C8AFE" }, new[] { "g:mint", "민트", "5EE7B0", "3FA9F5" }, new[] { "g:forest", "숲", "7BD88F", "2A9D8F" },
         new[] { "g:lemon", "레몬", "F5E36B", "8FD66B" }, new[] { "g:peach", "복숭아", "FFC37A", "FF7EB3" }, new[] { "g:sunset", "노을", "FF9A6B", "E4589C" },
         new[] { "g:ember", "불씨", "FF7A59", "B03A8F" }, new[] { "g:rose", "장미", "FF7EA8", "B06CFF" }, new[] { "g:ocean", "바다", "2E9BFF", "5B4BFF" },
-        new[] { "g:night", "밤하늘", "5560A8", "2A2B58" }, new[] { "g:slate", "슬레이트", "8A93A8", "4A5168" } };
+        new[] { "g:night", "밤하늘", "5560A8", "2A2B58" }, new[] { "g:slate", "슬레이트", "8A93A8", "4A5168" },
+        new[] { "g:sage", "세이지", "9AA58E", "747F6D" }, new[] { "g:dustrose", "더스티 로즈", "B58D94", "8C7077" }, new[] { "g:mauve", "모브", "9B8298", "706173" },
+        new[] { "g:bluegray", "블루 그레이", "879BA5", "647681" }, new[] { "g:sand", "샌드", "B3A388", "857862" }, new[] { "g:clay", "클레이", "B18670", "826552" },
+        new[] { "g:olive", "올리브", "94916D", "6E6C50" }, new[] { "g:ink", "잉크", "778296", "555E70" }, new[] { "g:lavendergray", "라벤더 그레이", "9D9BB3", "77758E" },
+        new[] { "g:petrol", "페트롤", "698985", "4F6D68" }, new[] { "g:cocoa", "코코아", "927A6D", "6D594F" }, new[] { "g:rosetaupe", "로즈 토프", "A88982", "806963" },
+        new[] { "g:mist", "미스트", "A5A5A0", "7D7D78" }, new[] { "g:mustard", "머스터드", "AC9B63", "817446" }, new[] { "g:deepteal", "딥 틸", "5C7E79", "48615D" },
+        new[] { "g:plumgray", "플럼 그레이", "8D8294", "665D6B" }, new[] { "g:smoke", "스모크", "9A9DA1", "72767A" }, new[] { "g:terracotta", "테라코타", "AA806B", "805F50" } };
     public static readonly Color Text = Color.FromArgb(240, 240, 246);
     public static IEnumerable<string> PaletteKeys { get { return Gradients.Select(g => g[0]).Concat(Keys); } }
     static int I(string k) { return Array.IndexOf(Keys, k); }
@@ -2537,7 +2549,7 @@ static class NoteColors {
 
 // grid of colour swatches (used inline in settings and in the note palette popup)
 class SwatchGrid : Control {
-    public string Current; public event Action<string> Picked;
+    public string Current; public event Action<string> Picked, Hovered;
     readonly List<string> keys; int hover = -1; public int Cols = 7; int Cell { get { return UI.S(34); } }
     public SwatchGrid(IEnumerable<string> k) {
         keys = k.ToList();
@@ -2547,9 +2559,9 @@ class SwatchGrid : Control {
     void Fit() { Size = new Size(Cols * Cell, ((keys.Count + Cols - 1) / Cols) * Cell); }
     public override Size GetPreferredSize(Size p) { return new Size(Cols * Cell, ((keys.Count + Cols - 1) / Cols) * Cell); }
     int Hit(Point p) { int c = p.X / Cell, r = p.Y / Cell, i = r * Cols + c; return c < Cols && i >= 0 && i < keys.Count ? i : -1; }
-    protected override void OnMouseMove(MouseEventArgs e) { int h = Hit(e.Location); if (h != hover) { hover = h; Invalidate(); if (h >= 0) tip.SetToolTip(this, NoteColors.Name(keys[h])); } base.OnMouseMove(e); }
+    protected override void OnMouseMove(MouseEventArgs e) { int h = Hit(e.Location); if (h != hover) { hover = h; Invalidate(); if (h >= 0) tip.SetToolTip(this, NoteColors.Name(keys[h])); if (Hovered != null) Hovered(h >= 0 ? keys[h] : null); } base.OnMouseMove(e); }
     readonly ToolTip tip = new ToolTip();
-    protected override void OnMouseLeave(EventArgs e) { hover = -1; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseLeave(EventArgs e) { hover = -1; Invalidate(); if (Hovered != null) Hovered(null); base.OnMouseLeave(e); }
     protected override void OnMouseClick(MouseEventArgs e) { int h = Hit(e.Location); if (h >= 0) { Current = keys[h]; Invalidate(); if (Picked != null) Picked(keys[h]); } base.OnMouseClick(e); }
     protected override void OnPaint(PaintEventArgs e) {
         var g = e.Graphics; g.Clear(Dark.ParentBack(this)); g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -2563,7 +2575,7 @@ class SwatchGrid : Control {
 }
 class PalettePopup : Form {
     protected override bool ShowWithoutActivation { get { return TestEnv.Off; } }
-    public event Action<string> Picked;
+    public event Action<string> Picked, Previewed;
     SwatchGrid grads, solids; Color ca, cb; FlatBtn bA, bB;
     public PalettePopup(string current) {
         FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual; TopMost = true; KeyPreview = true;
@@ -2582,6 +2594,7 @@ class PalettePopup : Form {
         UI.AddRow(st, UI.Flow(bA, bB, bOk));
         Controls.Add(st);
         grads.Picked += Pick; solids.Picked += Pick;
+        grads.Hovered += Preview; solids.Hovered += Preview;
         Deactivate += (s, e) => { if (!picking) Close(); };
         var fl = (Control)bOk.Parent; var ps = st.GetPreferredSize(Size.Empty);
         ClientSize = new Size(Math.Max(Math.Max(ps.Width, grads.Width + grads.Margin.Horizontal + st.Padding.Horizontal + UI.S(28)), fl.GetPreferredSize(Size.Empty).Width + UI.S(8)) + Padding.Horizontal, ps.Height + Padding.Vertical + UI.S(4));
@@ -2590,6 +2603,7 @@ class PalettePopup : Form {
     bool picking;
     Color? PickColor(Color c) { picking = true; try { using (var d = new ColorDialog { Color = c, FullOpen = true }) return d.ShowDialog(this) == DialogResult.OK ? d.Color : (Color?)null; } finally { picking = false; Activate(); } }
     void Paint2() { bA.Text = "시작 #" + (ca.ToArgb() & 0xFFFFFF).ToString("X6"); bB.Text = "끝 #" + (cb.ToArgb() & 0xFFFFFF).ToString("X6"); Invalidate(true); }
+    void Preview(string k) { if (Previewed != null) Previewed(k); }
     void Pick(string k) { if (Picked != null) Picked(k); Close(); }
     protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); int v = 2; try { DwmSetWindowAttribute(Handle, 33, ref v, 4); } catch { } Dark.Title(Handle); }
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int a, ref int v, int s);
@@ -2619,6 +2633,11 @@ static class Notes {
     public static Action<int> OpenList;
     static bool loaded;
     static readonly JavaScriptSerializer js = new JavaScriptSerializer();
+
+    static Notes() { Application.EnterThreadModal += EnableNotesDuringModal; }
+    static void EnableNotesDuringModal(object sender, EventArgs e) {
+        foreach (var f in forms.Values.ToArray()) if (f != null && !f.IsDisposed) f.EnableDuringModal();
+    }
 
     public static void Reset(string dir) { Dir = dir; loaded = false; All.Clear(); forms.Clear(); }
     public static void EnsureLoaded() {
@@ -2723,6 +2742,7 @@ class RichBox : RichTextBox {
     public bool ImageTools; public event Action ImagesChanged; public Func<int> MaxImageWidth;
     public int SelImage = -1;            // char index of the selected picture
     Rectangle dragRect; int handle = -1; Point dragStart; Rectangle startRect; ToolTip tip; float aspect = 1;
+    int imageDrag = -1, dropIndex = -1; Point imageDown; bool movingImage;
     List<PictInfo> cache; string cacheKey;
     public class PictInfo { public int Start, End, GoalW, GoalH, PixW, PixH; public string Hex; }
 
@@ -2836,6 +2856,20 @@ class RichBox : RichTextBox {
         imgMenu.Show(this, at);
     }
     public void OpenViewer(int ci) { var im = ImageOf(ci); if (im != null) ImageViewer.Open(im, FindForm()); }
+    void MoveImage(int ci, int target) {
+        if (ci < 0 || ci >= TextLength) return;
+        target = Math.Max(0, Math.Min(TextLength, target));
+        if (target == ci || target == ci + 1) return;
+        Select(ci, 1); string imageRtf = SelectedRtf;
+        if (string.IsNullOrEmpty(imageRtf) || !imageRtf.Contains(@"\pict")) return;
+        SelImage = -1;
+        Select(ci, 1); SelectedText = "";
+        if (target > ci) target--;
+        target = Math.Max(0, Math.Min(TextLength, target));
+        Select(target, 0); SelectedRtf = imageRtf;
+        Select(target, 1); SelImage = target; cache = null; Invalidate();
+        if (ImagesChanged != null) ImagesChanged();
+    }
 
     protected override void WndProc(ref Message m) {
         if (ImageTools) {
@@ -2844,7 +2878,7 @@ class RichBox : RichTextBox {
                     var p = Pt(m); int h = HandleAt(p);
                     if (h >= 0) { handle = h; dragStart = p; startRect = ImageRect(SelImage); dragRect = startRect; aspect = startRect.Width / (float)Math.Max(1, startRect.Height); Capture = true; Focus(); return; }
                     int ci = ImageAt(p);
-                    if (ci >= 0) { Focus(); Select(ci, 1); SelImage = ci; Invalidate(); return; }
+                    if (ci >= 0) { Focus(); Select(ci, 1); SelImage = ci; imageDrag = ci; imageDown = p; movingImage = false; dropIndex = ci; Capture = true; Cursor = Cursors.SizeAll; Invalidate(); return; }
                     if (SelImage >= 0) { SelImage = -1; Invalidate(); }
                     break;
                 }
@@ -2864,13 +2898,33 @@ class RichBox : RichTextBox {
                         if (tip == null) tip = new ToolTip();
                         int nth = ObjectChars().IndexOf(SelImage); var ps = Pictures(); float sc = nth >= 0 && ps[nth].PixW > 0 ? w / (ps[nth].PixW * Dpi / 96f) : 1;
                         tip.Show(w + " × " + hh + " px  ·  " + Math.Round(sc * 100) + "%" + (free ? "  (자유 비율)" : ""), this, p.X + UI.S(14), p.Y + UI.S(18));
+                        Cursor = HCur[handle];
                         return;
                     }
-                    int hv = HandleAt(p); if (hv >= 0) { Cursor.Current = HCur[hv]; return; }
+                    if (imageDrag >= 0) {
+                        int dx = p.X - imageDown.X, dy = p.Y - imageDown.Y;
+                        if (!movingImage && (Math.Abs(dx) >= SystemInformation.DragSize.Width / 2 || Math.Abs(dy) >= SystemInformation.DragSize.Height / 2)) movingImage = true;
+                        if (movingImage) { dropIndex = p.Y < 0 ? 0 : p.Y > ClientSize.Height ? TextLength : GetCharIndexFromPosition(p); if (dropIndex < 0) dropIndex = TextLength; Cursor = Cursors.SizeAll; Invalidate(); }
+                        return;
+                    }
+                    int hv = HandleAt(p); if (hv >= 0) { Cursor = HCur[hv]; return; }
+                    Cursor = SelImage >= 0 && ImageAt(p) == SelImage ? Cursors.SizeAll : Cursors.IBeam;
                     break;
                 }
-                case 0x0020: if (handle >= 0 || HandleAt(PointToClient(Cursor.Position)) >= 0) { m.Result = (IntPtr)1; return; } break; // SETCURSOR
-                case 0x0202: if (handle >= 0) { handle = -1; Capture = false; if (tip != null) tip.Hide(this); SetImageSize(SelImage, dragRect.Width, dragRect.Height); return; } break;
+                case 0x0020:
+                    if (handle >= 0) { Cursor = HCur[handle]; System.Windows.Forms.Cursor.Current = HCur[handle]; m.Result = (IntPtr)1; return; }
+                    if (imageDrag >= 0 && movingImage) { Cursor = Cursors.SizeAll; System.Windows.Forms.Cursor.Current = Cursors.SizeAll; m.Result = (IntPtr)1; return; }
+                    { var pt = PointToClient(Cursor.Position); int hv = HandleAt(pt); if (hv >= 0) { Cursor = HCur[hv]; System.Windows.Forms.Cursor.Current = HCur[hv]; m.Result = (IntPtr)1; return; } if (SelImage >= 0 && ImageAt(pt) == SelImage) { Cursor = Cursors.SizeAll; System.Windows.Forms.Cursor.Current = Cursors.SizeAll; m.Result = (IntPtr)1; return; } }
+                    break; // SETCURSOR
+                case 0x0202:
+                    if (imageDrag >= 0) {
+                        int ci = imageDrag, dest = dropIndex; bool move = movingImage;
+                        imageDrag = -1; movingImage = false; dropIndex = -1; Capture = false; Cursor = Cursors.IBeam; Invalidate();
+                        if (move) MoveImage(ci, dest);
+                        return;
+                    }
+                    if (handle >= 0) { handle = -1; Capture = false; Cursor = Cursors.IBeam; if (tip != null) tip.Hide(this); SetImageSize(SelImage, dragRect.Width, dragRect.Height); return; }
+                    break;
                 case 0x0205: { var p = Pt(m); int ci = ImageAt(p); if (ci >= 0) { Select(ci, 1); SelImage = ci; Invalidate(); ShowImageMenu(ci, p); return; } break; } // RBUTTONUP
                 case 0x0204: { var p = Pt(m); if (ImageAt(p) >= 0) return; break; }
                 case 0x007B: { var p = PointToClient(Cursor.Position); if (ImageAt(p) >= 0) return; break; } // WM_CONTEXTMENU over a picture
@@ -2897,6 +2951,10 @@ class RichBox : RichTextBox {
             if (handle >= 0) using (var fill = new SolidBrush(Color.FromArgb(40, UI.G2))) g.FillRectangle(fill, r);
             using (var pen = new Pen(UI.G1, Math.Max(1.5f, UI.Scale * 1.5f))) { if (handle >= 0) pen.DashStyle = DashStyle.Dash; g.DrawRectangle(pen, r); }
             foreach (var h in Handles(r)) { using (var b = new SolidBrush(Color.White)) g.FillEllipse(b, h); using (var pen = new Pen(UI.G2, 1.5f)) g.DrawEllipse(pen, h); }
+            if (movingImage && dropIndex >= 0) {
+                var p = GetPositionFromCharIndex(Math.Min(dropIndex, TextLength));
+                using (var pen = new Pen(UI.G2, Math.Max(2f, UI.Scale * 2f))) g.DrawLine(pen, p.X, p.Y, p.X, p.Y + Math.Max(Font.Height, UI.S(18)));
+            }
         }
     }
 }
@@ -3154,6 +3212,9 @@ class NoteForm : Form {
     public RichTextBox Box { get { return rtb; } }
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnableWindow(IntPtr h, bool enable);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr(IntPtr h, int i, IntPtr v);
+    const int GWL_EXSTYLE = -20, WM_MOUSEACTIVATE = 0x0021, WS_EX_NOACTIVATE = 0x08000000;
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int a, ref int v, int s);
     [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)] static extern int SetWindowTheme(IntPtr h, string a, string i);
 
@@ -3183,6 +3244,8 @@ class NoteForm : Form {
         tb("U", FontStyle.Underline, "밑줄 (Ctrl+U)", () => Toggle(FontStyle.Underline));
         tb("S", FontStyle.Strikeout, "취소선 (Ctrl+T)", () => Toggle(FontStyle.Strikeout));
         tb("•", FontStyle.Bold, "글머리 기호 (Ctrl+Shift+L)", Bullet);
+        var bSize = new NoteBtn("Aa", new Font("Segoe UI", 9.5f * UI.Scale, FontStyle.Bold), "글씨 크기: 작게 · 보통 · 크게") { Margin = new Padding(0, 0, UI.S(3), 0) };
+        bSize.Click += (s, e) => ShowFontSizes(bSize); bar.Controls.Add(bSize);
         tb("A−", FontStyle.Regular, "글자 작게 (Ctrl+-)", () => Grow(-1));
         tb("A+", FontStyle.Regular, "글자 크게 (Ctrl++)", () => Grow(1));
         tb("↶", FontStyle.Regular, "실행 취소 (Ctrl+Z)", () => { if (rtb.CanUndo) rtb.Undo(); });
@@ -3217,7 +3280,7 @@ class NoteForm : Form {
                 else if (e.Data.GetDataPresent(DataFormats.Bitmap)) using (var img = (Image)e.Data.GetData(DataFormats.Bitmap)) InsertImage(img);
             } catch { }
         };
-        save = new WTimer { Interval = 800 }; save.Tick += (s, e) => Flush();
+        save = new WTimer { Interval = 1800 }; save.Tick += (s, e) => Flush();
         Move += (s, e) => { if (!loading && Visible) { dirtyMeta = true; Kick(); } };
         Resize += (s, e) => { if (!loading && Visible) { dirtyMeta = true; Kick(); } };
         Activated += (s, e) => bar.Visible = true;
@@ -3228,8 +3291,17 @@ class NoteForm : Form {
     protected override bool ShowWithoutActivation { get { return true; } }
     protected override CreateParams CreateParams { get { var c = base.CreateParams; c.ClassStyle |= 0x20000; if (TestEnv.Off) c.ExStyle |= 0x08000000 | 0x80; return c; } }
     protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); int v = 2; try { DwmSetWindowAttribute(Handle, 33, ref v, 4); } catch { } }
+    public void EnableDuringModal() { if (Visible && IsHandleCreated) try { EnableWindow(Handle, true); } catch { } }
+    void AllowActivation() {
+        if (!IsHandleCreated) return;
+        long ex = Native.GetWindowLongPtr(Handle, GWL_EXSTYLE).ToInt64();
+        if ((ex & WS_EX_NOACTIVATE) != 0) {
+            SetWindowLongPtr(Handle, GWL_EXSTYLE, new IntPtr(ex & ~WS_EX_NOACTIVATE));
+            Native.SetWindowPos(Handle, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020);
+        }
+    }
     public void Raise() { if (!Visible) Show(); Native.SetWindowPos(Handle, TopMost ? new IntPtr(-1) : IntPtr.Zero, 0, 0, 0, 0, 0x13); }
-    public void ActivateEdit() { Activate(); rtb.Focus(); }
+    public void ActivateEdit() { AllowActivation(); Activate(); rtb.Focus(); }
     void Kick() { save.Stop(); save.Start(); }
     public void Flush() {
         if (Discard) return; save.Stop();
@@ -3237,10 +3309,12 @@ class NoteForm : Form {
         if (dirtyText || dirtyMeta) { M.X = Left; M.Y = Top; M.W = Width; M.H = Height; M.Zoom = rtb.ZoomFactor; M.TopMost = TopMost; Notes.SaveMeta(M); }
         dirtyText = dirtyMeta = false;
     }
-    public void ApplyColor() {
-        Color t = NoteColors.TitleA(M.Color), t2 = NoteColors.TitleB(M.Color), b = NoteColors.Body(M.Color);
-        frameA = t; frameB = NoteColors.BodyEdge(M.Color);
-        surfA = NoteColors.SurfA(M.Color); surfB = NoteColors.SurfB(M.Color); titleA = t; titleB = t2;
+    public void PreviewColor(string key) { ApplyColorFor(key ?? M.Color); }
+    public void ApplyColor() { ApplyColorFor(M.Color); }
+    void ApplyColorFor(string key) {
+        Color t = NoteColors.TitleA(key), t2 = NoteColors.TitleB(key), b = NoteColors.Body(key);
+        frameA = t; frameB = NoteColors.BodyEdge(key);
+        surfA = NoteColors.SurfA(key); surfB = NoteColors.SurfB(key); titleA = t; titleB = t2;
         DropSurf();
         BackColor = Paper; title.A = t; title.B = t2; title.Seamless = this; rtb.BackColor = Paper;
         if (rtbHost != null) rtbHost.BackColor = Paper;
@@ -3287,6 +3361,16 @@ class NoteForm : Form {
     public void Grow(float d) {
         var f = rtb.SelectionFont ?? rtb.Font;
         rtb.SelectionFont = new Font(f.FontFamily, Math.Max(7f, Math.Min(48f, f.Size + d)), f.Style); dirtyText = true; Kick();
+    }
+    void ShowFontSizes(Control at) {
+        var menu = new ContextMenuStrip { Renderer = new DarkRenderer(), Font = UI.Base };
+        foreach (var item in new[] { new { Label = "작게", Size = 10f }, new { Label = "보통", Size = 12f }, new { Label = "크게", Size = 16f } }) {
+            float size = item.Size;
+            var mi = new ToolStripMenuItem(item.Label + "  ·  " + size + "pt") { Checked = Math.Abs((rtb.SelectionFont ?? rtb.Font).Size - size) < .1f };
+            mi.Click += (s, e) => { var f = rtb.SelectionFont ?? rtb.Font; rtb.SelectionFont = new Font(f.FontFamily, size, f.Style); dirtyText = true; Kick(); rtb.Focus(); };
+            menu.Items.Add(mi);
+        }
+        menu.Closed += (s, e) => menu.Dispose(); menu.Show(at, new Point(0, at.Height));
     }
     // ---- images: paste / drop / pick; downscaled + compressed and embedded in the note's RTF ----
     public const int MaxEdge = 1600; public const long WarnBytes = 8L * 1024 * 1024;
@@ -3340,7 +3424,11 @@ class NoteForm : Form {
     }
     void ShowMenu(Control at) {
         var menu = new ContextMenuStrip { Renderer = new DarkRenderer(), Font = UI.Base };
-        menu.Items.Add(new ToolStripMenuItem("색상…  (" + NoteColors.Name(M.Color) + ")", NoteColors.SwatchImage(M.Color, UI.S(14)), (s, e) => BeginInvoke((Action)(() => PalettePopup.ShowAt(at, M.Color, k => Notes.SetColor(M, k))))));
+        menu.Items.Add(new ToolStripMenuItem("색상…  (" + NoteColors.Name(M.Color) + ")", NoteColors.SwatchImage(M.Color, UI.S(14)), (s, e) => BeginInvoke((Action)(() => {
+            var palette = PalettePopup.ShowAt(at, M.Color, k => Notes.SetColor(M, k));
+            palette.Previewed += k => PreviewColor(k);
+            palette.FormClosed += (a, b) => PreviewColor(null);
+        }))));
         menu.Items.Add(new ToolStripMenuItem("이미지 넣기…", null, (s, e) => PickImage()));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("항상 위에 표시", null, (s, e) => { TopMost = !TopMost; dirtyMeta = true; Flush(); }) { Checked = TopMost });
@@ -3372,6 +3460,7 @@ class NoteForm : Form {
         return base.ProcessCmdKey(ref msg, k);
     }
     protected override void WndProc(ref Message m) {
+        if (m.Msg == WM_MOUSEACTIVATE) { AllowActivation(); m.Result = (IntPtr)1; return; } // MA_ACTIVATE: startup notes stay quiet until clicked
         if (m.Msg == 0x0231) glide.Arm(this); // WM_ENTERSIZEMOVE (resize or move)
         else if (m.Msg == 0x0232) { base.WndProc(ref m); glide.End(); return; } // WM_EXITSIZEMOVE
         if (m.Msg == 0x0005 && glide.SizeChanging(m.WParam.ToInt32(), m.LParam.ToInt32())) glide.Begin(this);
@@ -3379,7 +3468,7 @@ class NoteForm : Form {
             base.WndProc(ref m);
             long lp = m.LParam.ToInt64();
             var p = PointToClient(new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF)));
-            int g = UI.S(6); bool l = p.X < g, r = p.X >= Width - g, t = p.Y < g, b = p.Y >= Height - g;
+            int g = UI.S(9); bool l = p.X < g, r = p.X >= Width - g, t = p.Y < g, b = p.Y >= Height - g;
             int ht = t && l ? 13 : t && r ? 14 : b && l ? 16 : b && r ? 17 : l ? 10 : r ? 11 : t ? 12 : b ? 15 : 0;
             if (ht != 0) m.Result = (IntPtr)ht;
             return;
@@ -3398,6 +3487,7 @@ class ChromeForm : Form {
     [StructLayout(LayoutKind.Sequential)] struct MARGINS { public int L, R, T, B; }
     [StructLayout(LayoutKind.Sequential)] struct NCCALC { public Native.RECT r0, r1, r2; public IntPtr pos; }
     public readonly TitleBar Bar;
+    protected virtual bool CaptionEnabled { get { return Bar != null && Bar.Visible; } }
     readonly ResizeGlide glide = new ResizeGlide();
     protected override bool ShowWithoutActivation { get { return TestEnv.Off; } }
     protected override CreateParams CreateParams { get { var c = base.CreateParams; if (TestEnv.Off) c.ExStyle |= 0x08000000 | 0x80; return c; } }
@@ -3464,7 +3554,7 @@ class ChromeForm : Form {
             if (t && l) return 13; if (t && r) return 14; if (bo && l) return 16; if (bo && r) return 17;
             if (l) return 10; if (r) return 11; if (t) return 12; if (bo) return 15;
         }
-        if (pt.Y < Bar.Bottom && !Bar.OverButton(Bar.PointToClient(PointToScreen(pt)))) return 2; // HTCAPTION
+        if (CaptionEnabled && pt.Y < Bar.Bottom && !Bar.OverButton(Bar.PointToClient(PointToScreen(pt)))) return 2; // HTCAPTION
         return 1;
     }
 }
