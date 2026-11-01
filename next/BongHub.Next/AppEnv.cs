@@ -1,0 +1,139 @@
+namespace BongHub.Next;
+
+/// <summary>Process-wide environment: data folder (overridable), test flags, read-only guard.</summary>
+public static class AppEnv
+{
+    public const string Version = "0.2.0";
+    /// <summary>Shared with app/BongHub.cs NotesWriterLock. First live owner is the only writer of the default notes folder.</summary>
+    public const string NotesWriterMutexName = @"Local\BongHub_NotesWriter";
+    public static string DefaultDataDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BongHub");
+    public static string DataDir { get; private set; } = DefaultDataDir;
+    public static string NotesDir => Path.Combine(DataDir, "notes");
+    public static string ConfigPath => Path.Combine(DataDir, "config.json");
+    public static string NextSettingsPath => IsDefaultData ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BongHub.Next", "settings.json") : Path.Combine(DataDir, "next.settings.json");
+    public static string LogPath => Path.Combine(OutDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BongHub.Next"), "next_error.log");
+    public static bool IsDefaultData => string.Equals(Path.GetFullPath(DataDir).TrimEnd('\\'), Path.GetFullPath(DefaultDataDir).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+    public static bool ReadOnly { get; set; }
+    public static string ReadOnlyReason { get; private set; } = "";
+    public static event Action? ReadOnlyChanged;
+    /// <summary>Off-screen mode: every window is shifted by (-30000,-30000) and never activated.</summary>
+    public static bool Off { get; private set; }
+    public static int OffsetX => Off ? -30000 : 0;
+    public static int OffsetY => Off ? -30000 : 0;
+    public static bool Smoke { get; private set; }
+    public static bool NoteTest { get; private set; }
+    public static string? OutDir { get; private set; }
+    public static string[] Args { get; private set; } = [];
+    public static bool Has(string flag) => Args.Contains(flag, StringComparer.OrdinalIgnoreCase);
+    static Mutex? notesWriter;
+    static bool notesWriterOwned;
+
+    public static void Init(string[] args)
+    {
+        Args = args;
+        var env = Environment.GetEnvironmentVariable("BONGHUB_NEXT_DATA");
+        if (!string.IsNullOrWhiteSpace(env)) DataDir = env;
+        for (int i = 0; i < args.Length; i++)
+        {
+            var a = args[i].ToLowerInvariant();
+            if (a == "--data" && i + 1 < args.Length) DataDir = args[++i];
+            else if (a == "--out" && i + 1 < args.Length) OutDir = args[++i];
+            else if (a == "--off") Off = true;
+            else if (a == "--smoketest") Smoke = true;
+            else if (a == "--notetest") NoteTest = true;
+        }
+        if (Smoke || NoteTest)
+        {
+            Off = true;
+            OutDir ??= AppContext.BaseDirectory;
+            // tests never touch the real data folder
+            if (IsDefaultData) DataDir = Path.Combine(Path.GetTempPath(), "bhnext_test_" + Environment.ProcessId);
+        }
+        if (OutDir != null) Directory.CreateDirectory(OutDir);
+    }
+
+    /// <summary>
+    /// Call only after this process won the single-instance mutex.
+    /// Tests use a temp folder and must not call this (they would fight the real app for the writer lock).
+    /// </summary>
+    public static void ClaimWriterOrReadOnly()
+    {
+        if (!IsDefaultData) return;
+        // 3.4.8 takes the writer lock before its tray mutex, so a live tray means the stable app is already the writer.
+        if (LegacyRunning())
+        {
+            EnterReadOnly("BongHub 3.4.8이 실행 중이라 실제 메모를 읽기 전용으로 열었어요.");
+            return;
+        }
+        try
+        {
+            notesWriter = new Mutex(false, NotesWriterMutexName);
+            try { notesWriterOwned = notesWriter.WaitOne(0); }
+            catch (AbandonedMutexException) { notesWriterOwned = true; }
+        }
+        catch (Exception e)
+        {
+            notesWriterOwned = false;
+            Log("notes writer mutex: " + e.Message);
+        }
+        if (!notesWriterOwned)
+        {
+            ReleaseWriter();
+            EnterReadOnly("다른 BongHub가 메모를 저장 중이라 읽기 전용으로 열었어요.");
+            return;
+        }
+        // An older 3.4.7 (no writer lock) may have appeared between the two checks.
+        if (LegacyRunning())
+        {
+            ReleaseWriter();
+            EnterReadOnly("BongHub 3.4.8이 실행 중이라 실제 메모를 읽기 전용으로 열었어요.");
+        }
+    }
+
+    public static void ReleaseWriter()
+    {
+        if (notesWriter == null) return;
+        try { if (notesWriterOwned) notesWriter.ReleaseMutex(); } catch { }
+        notesWriterOwned = false;
+        try { notesWriter.Dispose(); } catch { }
+        notesWriter = null;
+    }
+
+    static void EnterReadOnly(string reason)
+    {
+        bool changed = !ReadOnly || ReadOnlyReason != reason;
+        ReadOnly = true;
+        ReadOnlyReason = reason;
+        if (changed) ReadOnlyChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// True when a shared notes/config write must not proceed.
+    /// Re-checks the legacy tray so a 3.4.7 build that does not know the writer mutex
+    /// cannot start later and save over us. Once read-only, this process stays read-only.
+    /// </summary>
+    public static bool DenyWrite()
+    {
+        if (ReadOnly) return true;
+        if (!IsDefaultData || !LegacyRunning()) return false;
+        ReleaseWriter();
+        EnterReadOnly("BongHub가 나중에 실행돼서 저장을 멈췄어요. 메모가 겹치지 않게 읽기 전용으로 바꿨어요.");
+        return true;
+    }
+
+    /// <summary>True while the stable tray instance (mutex Local\BongHub_Tray) is alive.</summary>
+    public static bool LegacyRunning()
+    {
+        try { using var m = Mutex.OpenExisting(@"Local\BongHub_Tray"); return true; }
+        catch { return false; }
+    }
+
+    public static readonly System.Text.StringBuilder Marks = new();
+    /// <summary>Startup phase timestamp (ms since process start).</summary>
+    public static void Mark(string what) { try { Marks.Append($"{what}={(DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds:0} "); } catch { } }
+
+    public static void Log(string text)
+    {
+        try { Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!); File.AppendAllText(LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {text}\r\n"); } catch { }
+    }
+}

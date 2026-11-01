@@ -1,6 +1,8 @@
+<cursor_untrusted_data_1337 source="CallDynamicTool">
+
 # BongAd
 
-PC 카카오톡 하단 광고 배너를 숨기고, 비어 있는 공간까지 친구/채팅 목록을 늘리고, 화면 간격을 촘촘하게 줄여 주는 **12KB짜리** Windows 네이티브 프로그램입니다. 선택 기능으로 다크 모드 오버레이도 있습니다.
+PC 카카오톡 하단 광고 배너를 숨기고, 비어 있는 공간까지 친구/채팅 목록을 늘리고, 화면 간격을 촘촘하게 줄여 주는 **약 15KB(15,360 bytes)짜리** Windows 네이티브 프로그램입니다. 선택 기능으로 다크 모드 오버레이도 있습니다.
 
 > ⚠️ 비공식 도구이며 개인 용도로만 쓰세요. Kakao와는 관계가 없습니다. 사용에 따른 책임은 사용자 본인에게 있습니다.
 
@@ -73,4 +75,7 @@ v2.1: 사이드바 쪽으로 목록을 당기던 가로 이동은 뺐습니다. 
 - 작업 관리자로 강제 종료하면 숨긴 창이 남습니다. `restore.bat`을 실행하세요.
 
 ## English
-BongAd is a 7.5 KB native Windows program that hides the KakaoTalk PC ad banner and stretches the list over the freed space. It uses only user32/kernel32 (no CRT, no injection, no network), sleeps on `SetWinEventHook` events instead of polling: ~0.4 MB working set, ~1.9 MB private bytes, ~0% CPU (the old PowerShell version used ~99 MB). Run `run.bat`; `restore.bat` stops it and restores; `install-startup.bat` / `uninstall-startup.bat` manage auto-start. Build with `build.bat` (MinGW-w64) or `build.sh` (mingw-w64 or zig). Fixed: a 1px black bar at the top caused by the old version moving the main view down; now only the height is changed. v2 adds a compact layout (moves KakaoTalk's own container windows: top -8px, filter row and list pulled up; per-row spacing is owner-drawn and cannot be changed without injection) and an opt-in `/dark` overlay using the Magnification API (v2.2 replaces the Magnification API with GDI PrintWindow + a layered window: ~3.2 MB private bytes, ~0% CPU idle). Unofficial, personal use, MIT License.
+BongAd is a 15,360-byte (~15 KB) native Windows program that hides the KakaoTalk PC ad banner and stretches the list over the freed space. It uses only user32/kernel32 (no CRT, no injection, no network), sleeps on `SetWinEventHook` events instead of polling: ~0.4 MB working set, ~1.9 MB private bytes, ~0% CPU (the old PowerShell version used ~99 MB). Run `run.bat`; `restore.bat` stops it and restores; `install-startup.bat` / `uninstall-startup.bat` manage auto-start. Build with `build.bat` (MinGW-w64) or `build.sh` (mingw-w64 or zig). Fixed: a 1px black bar at the top caused by the old version moving the main view down; now only the height is changed. v2 adds a compact layout (moves KakaoTalk's own container windows: top -8px, filter row and list pulled up; per-row spacing is owner-drawn and cannot be changed without injection) and an opt-in `/dark` overlay using the Magnification API (v2.2 replaces the Magnification API with GDI PrintWindow + a layered window: ~3.2 MB private bytes, ~0% CPU idle). Unofficial, personal use, MIT License.
+
+
+</cursor_untrusted_data_1337>
