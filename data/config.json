@@ -169,7 +169,7 @@
       "Items": []
     },
     "Palette": {
-      "Enabled": false,
+      "Enabled": true,
       "Hotkey": "Ctrl+Alt+Space",
       "Apps": true,
       "Calc": true,
