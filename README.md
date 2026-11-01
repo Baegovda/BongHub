@@ -4,7 +4,8 @@ Windows 트레이 유틸리티입니다. 부제는 "석봉이의 유틸 창고"�
 
 ## 구성
 
-- `app/` — 트레이 앱 소스 v3.4.7 (`BongHub.cs`, `build.ps1`, `CHANGELOG.md`, `res/`, `_dev/`)
+- `app/` — 트레이 앱 소스 v3.4.8 (`BongHub.cs`, `build.ps1`, `CHANGELOG.md`, `res/`, `_dev/`)
+- `next/` — BongHub.Next 프로토타입 v0.2.0 (WPF, .NET 8). Windows에서 `dotnet publish next\BongHub.Next\BongHub.Next.csproj -c Release -r win-x64`
 - `legacy/BongAd/` — 카카오톡 광고 제거 도우미 원본
 - `docs/HANDOFF.md` — 인수인계 문서
 

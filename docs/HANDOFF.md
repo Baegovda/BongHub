@@ -1,6 +1,76 @@
 # BongHub 인수인계 문서 (HANDOFF)
 
-- 작성: 2026-10-31 (토) 16:05~16:15 (KST, UTC+9), 이전 계정의 Grok Bot(이름 "BongHub")
+> **2026-11-01 현재 상태. 이 0장이 최신이다.**
+> 1장부터 12장까지는 2026-10-31 16:05~16:15 KST에 **3.3.1** 기준으로 쓴 기록이다. 버전, PC 경로, "아직 지우지 않았다"는 정리 대상은 그때 기준이라 지금과 다르다. 지금 일할 때는 0장만 보면 된다.
+
+## 0. 지금 상태 (2026-11-01)
+
+### 배송 버전
+- 쓰는 앱은 **BongHub 3.4.8**이다. 소스는 `app/BongHub.cs` 한 파일이다. C# WinForms, .NET Framework 4.x, `app/build.ps1`가 `csc.exe`로 빌드한다. C# 5에 가까운 문법만 쓴다.
+- 3.4.8은 3.4.7에 메모 동시 저장 방지(아래)만 더한 것이다. 모니터 전환 동작은 바꾸지 않았다.
+- Windows 빌드: 저장소 루트에서 `powershell app\build.ps1`. 출력은 `app\BongHub.exe`다. 버전은 `AppInfo.Version`, `AssemblyVersion`, `AssemblyFileVersion`, `AssemblyInformationalVersion`, `app/version.txt`, `app/_dev/version.txt`가 모두 3.4.8이다.
+- 이 문서를 고친 환경은 리눅스라 `csc.exe` 빌드와 실행은 하지 못했다.
+
+### BongHub.Next 프로토타입
+- 경로: `next/BongHub.Next/` (WPF + WinForms, .NET 8, `net8.0-windows`, 버전 0.2.0). 주인 PC에만 있던 소스를 저장소에 넣었다. `data/`는 건드리지 않았다.
+- 시험 로그: `next/test-logs/next_smoketest.txt` 43 PASS, `next/test-logs/next_notetest.txt` 23 PASS. 2026-11-02 00:33 KST에 주인 PC에서 나온 결과이고, 이번 수정 이후 다시 돌린 값은 아니다.
+- Windows 빌드 (.NET 8 SDK):
+
+```powershell
+dotnet publish next\BongHub.Next\BongHub.Next.csproj -c Release -r win-x64
+```
+
+  출력은 `next\BongHub.Next\bin\` 아래 publish 폴더다. `next/.gitignore`가 `bin/`, `obj/`, `publish/`, `.vs/`, `*.user`를 제외한다. 이 환경에는 `dotnet`이 없어 게시 빌드는 하지 못했다.
+- 데이터는 3.4.8과 같은 `%LOCALAPPDATA%\BongHub` (`config.json`, `notes\`). Next만 쓰는 설정은 `%LOCALAPPDATA%\BongHub.Next\settings.json`이다.
+- 메모리: 스모크 로그의 작업 집합은 약 227MB(프라이빗 184MB)다. 주인 쪽 비교로는 Next 약 227–239MB, 3.4.7 약 103MB다. 여기서 다시 재지 않았다.
+- 사이드바 첫 항목은 **모니터 프리셋**이다. 스티커 메모 `Notes.Opacity`를 설정 행(40~100%)으로 두고, 3.4.8과 같이 메모 창 전체 불투명도에 적용한다.
+- 시작 순서와 상관없이 같은 메모를 동시에 쓰지 않게 고쳤다. 설계는 아래.
+
+### 메모 저장 잠금 (3.4.8과 Next)
+공유 뮤텍스 이름은 `Local\BongHub_NotesWriter`다. 먼저 잡은 쪽이 `%LOCALAPPDATA%\BongHub` 메모의 유일한 저장자다. 프로세스가 끝날 때까지 유지한다. 죽은 프로세스가 놓고 간 뮤텍스(abandoned)는 다음 프로세스가 이어받는다.
+
+- **3.4.8 트레이**는 이 잠금을 트레이 뮤텍스(`Local\BongHub_Tray`)보다 먼저 잡는다.
+  - 잠금을 얻으면 예전과 같이 트레이로 실행한다. Next가 없으면 3.4.7과 같다.
+  - 잠금을 못 얻고 트레이도 없으면 Next가 저장 중인 것이다. 안내를 띄우고 종료한다(코드 4). 설정 창, 메모 저장, 클라우드 동기화를 시작하지 않는다.
+  - 잠금을 못 얻고 트레이가 이미 있으면 기존처럼 바로 종료한다(코드 1, 이미 실행 중).
+  - 잠금은 얻었는데 트레이를 다른 3.4.x가 이미 갖고 있으면 잠금을 놓고 종료한다(코드 1). 옛 3.4.7이 저장권을 뺏기지 않는다.
+- **Next**는 단일 인스턴스가 된 뒤에만, 그리고 기본 데이터 폴더를 쓸 때만 잠금을 다룬다. `--smoketest` / `--notetest`는 임시 폴더라 잠금을 잡지 않는다.
+  1. 트레이 뮤텍스가 있으면 읽기 전용으로 연다.
+  2. 없으면 `Local\BongHub_NotesWriter`를 잡는다. 실패하면 읽기 전용.
+  3. 잡은 직후 트레이 뮤텍스를 한 번 더 본다. 그 사이에 옛 트레이가 떴으면 잠금을 놓고 읽기 전용.
+  4. 메모와 `config.json`의 Notes 값을 쓰기 직전에 트레이 뮤텍스를 다시 본다. 잠금을 모르는 **이미 설치된 3.4.7 exe**가 나중에 켜지면 Next는 그 저장부터 멈추고 읽기 전용으로 남는다. 한 번 읽기 전용이 되면 그 프로세스는 다시 쓰지 않는다.
+- 그래서 3.4.8과 Next는 어느 쪽이 먼저든 한 쪽만 쓴다. 옛 3.4.7 exe를 Next보다 나중에 켜는 동안만, Next의 다음 저장 전까지 아주 짧은 겹침이 남을 수 있다. 그 창을 없애려면 3.4.8로 다시 빌드해 트레이를 교체한다.
+- 프리셋 CLI(`BongHub.exe 작업` 등)와 `resize`, `workspace`는 이 잠금을 보지 않는다. **실행하지 않는다.** 모니터와 창을 실제로 바꾼다. 메모를 반복해서 저장하는 쪽은 트레이다.
+
+### 클라우드 동기화와 `data/` (모순, 고치지 않음)
+- README는 "`data/`는 클라우드 동기화용이라 이 저장소에 두지 않습니다"라고 적혀 있다.
+- 실제 `main`에는 `data/`가 커밋돼 있다. 최근 커밋 메시지는 `sync: REVAPTOR-FX ...`다. 들어 있는 것은 `data/config.json`, `data/config.stamp.json`, `data/notes/*`, `data/desktop/layouts.json`, `data/devices/REVAPTOR-FX.json`, `data/meta.json`이다.
+- **동기화 방식과 `data/` 파일은 그대로 둔다.** 이 모순을 README에서 지우거나 동기화를 끄지 않았다. 사람이 `data/`를 직접 고치지 않는다.
+
+### 남아 있는 `cursor/*` 브랜치
+원격에 세 개가 남아 있고, 팁은 현재 `main`의 조상이 아니다. 3.3.x 작업이 끝난 뒤 이력이 이어지면서 브랜치 팁이 `main`에 그대로 붙지 않은 상태로 보인다. 지우지 않았다.
+- `cursor/backup-bonghub-331-576e` — 3.3.1 소스를 `app/`에 넣던 백업
+- `cursor/smooth-resize-332-576e` — 3.3.2 부드러운 크기 조절
+- `cursor/resize-1to1-333-576e` — 3.3.3 크기 조절 스냅샷 1:1
+
+### 2026-10-31 PC 정리 (이미 지워짐)
+아래는 그날 지워졌다. 1장과 9장에 "아직 있다", "정리 제안"으로 남은 문장은 정리 전의 기록이다.
+- `C:\Users\Revaptor_FX\MonitorPresets`
+- 바탕화면 `모니터 - *.lnk`
+- 옛 `C:\Users\Revaptor_FX\BongAd` 폴더
+- `_dev33`, `v33dev.tgz`, `settingstest_error.txt`
+
+### Windows에서 주인만 확인할 수 있는 것
+리눅스에서는 WinForms/WPF를 빌드하거나 실행하지 못했다. 프리셋 CLI는 실행하지 말고, 실제 모니터는 건드리지 않는다.
+- 3.4.8만 실행해서 메모 저장이 이전과 같은지
+- Next만 실행해서 메모 저장, 사이드바 "모니터 프리셋", 불투명도 슬라이더가 열린 메모에 바로 반영되는지
+- 3.4.8을 켠 채 Next를 실행하면 Next가 읽기 전용이고 파일을 쓰지 않는지
+- Next를 켠 채 3.4.8을 실행하면 안내 후 트레이가 뜨지 않는지(종료 코드 4)
+- 한 쪽을 완전히 끈 다음 다른 쪽을 켜면 그 쪽이 다시 저장할 수 있는지
+
+---
+
+- 작성: 2026-10-31 (토) 16:05~16:15 (KST, UTC+9), 이전 계정의 Grok Bot(이름 "BongHub"). **아래는 3.3.1 당시 기록이다.**
 - 대상: 다른 계정에서 이 프로젝트를 이어받는 봇
 - 원칙: 아래 내용은 2026-10-31 15:58~16:10 KST 사이에 PC 파일과 코드, GitHub를 직접 확인하고 쓴 것이다. 확인하지 못한 내용은 **(추정)** 으로 표시했다.
 - 비밀값(토큰, 비밀번호)은 이 문서에 넣지 않았다.

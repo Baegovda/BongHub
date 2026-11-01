@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.4.7.0")]
-[assembly: AssemblyFileVersion("3.4.7.0")]
-[assembly: AssemblyInformationalVersion("3.4.7")]
+[assembly: AssemblyVersion("3.4.8.0")]
+[assembly: AssemblyFileVersion("3.4.8.0")]
+[assembly: AssemblyInformationalVersion("3.4.8")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -695,8 +695,9 @@ static class BlankAutoLogon {
     public static int Run(string[] args){if(args.Length!=2||(args[1]!="enable"&&args[1]!="restore"))return 2;try{Set(args[1]=="enable");return 0;}catch(Exception ex){DarkBox.Show(ex.Message,"무암호 부팅 자동 로그인");return 1;}}
 }
 static class AppInfo {
-    public const string Version = "3.4.7";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.4.8";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.4.8  Next가 메모를 저장 중이면 트레이를 시작하지 않음 · 메모 저장 잠금(Local\\BongHub_NotesWriter)",
         "3.4.7  메모 첫 창 드래그 활성화 지연 제거 · 이동 중 저장 타이머 재시작 제거 · 이미지 메타데이터 미리 준비",
         "3.4.6  메모 이미지/디자인 전면 개선 · 무암호 로컬 계정 부팅 자동 로그인 설정·복원",
         "3.4.5  숨겨진 절전 복귀 로그인 메뉴 대신 실제 전원 정책 적용·복원 · 이미지 보기 종료 후 타이머 예외 수정",
@@ -7469,6 +7470,34 @@ class TrayApp : Form {
     }
 }
 
+// First owner of this mutex is the only writer of %LOCALAPPDATA%\BongHub notes.
+// BongHub.Next AppEnv.NotesWriterMutexName must stay the same string.
+static class NotesWriterLock {
+    public const string Name = @"Local\BongHub_NotesWriter";
+    static Mutex mx;
+    static bool owned;
+    public static bool TryAcquire() {
+        owned = false;
+        try {
+            mx = new Mutex(false, Name);
+            try { owned = mx.WaitOne(0); }
+            catch (AbandonedMutexException) { owned = true; }
+        } catch { owned = false; }
+        if (!owned) Release();
+        return owned;
+    }
+    public static void Release() {
+        if (mx == null) return;
+        try { if (owned) mx.ReleaseMutex(); } catch { }
+        owned = false;
+        try { mx.Dispose(); } catch { }
+        mx = null;
+    }
+    public static bool TrayRunning() {
+        try { using (Mutex m = Mutex.OpenExisting(@"Local\BongHub_Tray")) { } return true; }
+        catch { return false; }
+    }
+}
 static class ShotNative {
     [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr h);
     [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr h, IntPtr dc);
@@ -7570,10 +7599,21 @@ static class Program {
             return 0;
         }
         bool created;
+        // Take the shared notes lock BEFORE the tray mutex. Next checks the tray mutex
+        // and would stop saving if we held it only while showing the "Next is running" dialog.
+        if (!NotesWriterLock.TryAcquire()) {
+            if (!NotesWriterLock.TrayRunning()) {
+                DarkBox.Show("BongHub Next가 이미 같은 메모를 저장하고 있어요.\n둘을 같이 실행하면 메모가 동시에 저장돼서 내용이 섞이거나 사라질 수 있어요.\nNext를 종료한 다음 BongHub를 다시 실행해 주세요.", "BongHub");
+                return 4;
+            }
+            return 1;
+        }
         using (var single = new Mutex(true, @"Local\BongHub_Tray", out created)) {
-            if (!created) return 1;
-            UI.Init(1f);
-            Application.Run(new TrayApp());
+            if (!created) { NotesWriterLock.Release(); return 1; }
+            try {
+                UI.Init(1f);
+                Application.Run(new TrayApp());
+            } finally { NotesWriterLock.Release(); }
         }
         return 0;
     }
