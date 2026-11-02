@@ -1340,17 +1340,21 @@ public partial class StickyNoteWindow : Window
     public bool PasteMixed()
     {
         if (AppEnv.ReadOnly) return false;
-        string? pack = NoteClipSession.LastPack;
-        if (NoteClipSession.AllowsSystem)
+        var data = NoteClipSession.CurrentClipboard();
+        if (data == null) return false;
+        try
         {
-            try
-            {
-                if (Clipboard.ContainsData(NoteClip.Format))
-                    pack = Clipboard.GetData(NoteClip.Format) as string ?? pack;
-            }
-            catch (Exception e) { AppEnv.Log("paste note: " + e.Message); }
+            uint now = NoteClipSession.ReadSequence();
+            bool own = NoteClipSession.LastSequence != 0 && now == NoteClipSession.LastSequence && data.GetDataPresent(NoteClip.Format);
+            if (own && data.GetData(NoteClip.Format) is string pack)
+                return InsertPieces(NoteClip.Unpack(pack));
         }
-        var pieces = NoteClip.Unpack(pack);
+        catch (Exception e) { AppEnv.Log("paste note: " + e.Message); }
+        return PasteObject(data);
+    }
+
+    bool InsertPieces(List<NoteClipPiece> pieces)
+    {
         if (pieces.Count == 0 || !pieces.Any(p => p.Png is { Length: > 0 } || p.Text.Length > 0)) return false;
         bool any = false;
         foreach (var p in pieces)
@@ -1931,7 +1935,30 @@ public static class NoteClipSession
     public static Exception? LastError { get; private set; }
     public static IDataObject? Fake { get; set; }
     public static DataObject? Memory { get; private set; }
+    public static uint LastSequence { get; private set; }
+    public static uint SequenceNow { get; set; }
+    public static bool SequenceIsFake { get; set; }
     public static bool AllowsSystem => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest;
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern uint GetClipboardSequenceNumber();
+
+    public static uint ReadSequence() => SequenceIsFake || !AllowsSystem ? SequenceNow : GetClipboardSequenceNumber();
+
+    public static IDataObject? CurrentClipboard()
+    {
+        if (Fake != null) return Fake;
+        if (!AllowsSystem) return null;
+        for (int i = 0; i < 6; i++)
+        {
+            try { return Clipboard.GetDataObject(); }
+            catch (Exception ex)
+            {
+                LastError = ex;
+                AppEnv.Log("clipboard read: " + ex.GetType().Name + " " + ex.Message);
+                if (i + 1 < 6) Thread.Sleep(15 * (i + 1));
+            }
+        }
+        return null;
+    }
 
     public static bool Publish(string pack, string plain, string rtf, byte[]? png, string? xaml = null, string? html = null)
     {
@@ -1994,9 +2021,14 @@ public static class NoteClipSession
                     throw new System.Runtime.InteropServices.COMException("OpenClipboard", unchecked((int)0x800401D0));
                 }
                 Memory = data;
-                if (!AllowsSystem) return true;
+                if (!AllowsSystem)
+                {
+                    LastSequence = ++SequenceNow;
+                    return true;
+                }
                 Clipboard.SetDataObject(data, copy: true);
                 SystemCalls++;
+                try { LastSequence = GetClipboardSequenceNumber(); } catch (Exception ex) { AppEnv.Log("clipboard sequence: " + ex.Message); }
                 return true;
             }
             catch (Exception ex)
@@ -2011,8 +2043,8 @@ public static class NoteClipSession
 
     public static IDataObject? TakeClipboard()
     {
-        if (Fake != null) return Fake;
-        if (Memory != null && !AllowsSystem) return Memory;
+        var current = CurrentClipboard();
+        if (current != null) return current;
         if (!AllowsSystem) return null;
         for (int i = 0; i < 6; i++)
         {

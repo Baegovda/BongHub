@@ -22,9 +22,10 @@ public static class SmokeTest
         try { await Body(app, t); }
         catch (Exception e) { t.Check("no exception", false, e.ToString()); }
         t.Save("smoketest.txt");
-        if (t.Fails > 0) Environment.ExitCode = 1;
+        int code = t.Fails > 0 ? 1 : 0;
+        Environment.ExitCode = code;
         if (tray != null) tray.OnExit();
-        else app.RequestShutdown();
+        app.RequestShutdown(code);
     }
 
     static void ContrastCheck(TestKit t, Window w, FrameworkElement? el, string name, double need)

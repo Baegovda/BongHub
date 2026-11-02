@@ -175,10 +175,15 @@ public static class NoteColors
     }
     public static Color Mix(Color x, Color y, double t) => C((byte)(x.R + (y.R - x.R) * t), (byte)(x.G + (y.G - x.G) * t), (byte)(x.B + (y.B - x.B) * t));
     public static double Lum(Color c) { static double f(double v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4); } return 0.2126 * f(c.R) + 0.7152 * f(c.G) + 0.0722 * f(c.B); }
-    static Color ForText(Color c, double ratio) { double lt = Lum(Text); for (int n = 0; n < 40 && (lt + 0.05) / (Lum(c) + 0.05) < ratio; n++) c = Mix(c, Colors.Black, 0.08); return c; }
-    public static Color Body(string k) { if (!Grad && I(k) >= 0) return body[I(k)]; Raw(k, out var a, out var b); return ForText(Mix(Base, Mix(a, b, .5), Grad ? .2 : .24), 9); }
-    public static Color SurfA(string k) { if (!Grad) return Body(k); Raw(k, out var a, out _); return ForText(Mix(Base, a, .40), 7); }
-    public static Color SurfB(string k) { if (!Grad) return Body(k); Raw(k, out _, out var b); return ForText(Mix(Base, b, .34), 7); }
+    static Color ForText(Color c, double ratio)
+    {
+        double need = ratio + 0.45;
+        for (int n = 0; n < 64 && Contrast(Text, c) < need; n++) c = Mix(c, Colors.Black, 0.1);
+        return c;
+    }
+    public static Color Body(string k) { if (!Grad && I(k) >= 0) return ForText(body[I(k)], 8.5); Raw(k, out var a, out var b); return ForText(Mix(Base, Mix(a, b, .5), Grad ? .2 : .24), 9); }
+    public static Color SurfA(string k) { if (!Grad) return Body(k); Raw(k, out var a, out _); return ForText(Mix(Base, a, .40), 8.5); }
+    public static Color SurfB(string k) { if (!Grad) return Body(k); Raw(k, out _, out var b); return ForText(Mix(Base, b, .34), 8.5); }
     public static Color Swatch(string k) { Raw(k, out var a, out _); return a; }
     public static Color SwatchB(string k) { Raw(k, out _, out var b); return b; }
     public static string Name(string k) { int i = I(k); if (i >= 0) return Names[i]; var g = Gradients.FirstOrDefault(x => x[0] == k); return g != null ? g[1] : k.StartsWith("c:") ? "맞춤" : "블록"; }

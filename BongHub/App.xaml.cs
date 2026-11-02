@@ -176,13 +176,16 @@ public partial class App : Application
         }, null, 5000, minutes * 60000);
     }
 
-    public void RequestShutdown()
+    public void RequestShutdown() => RequestShutdown(Environment.ExitCode);
+
+    public void RequestShutdown(int exitCode)
     {
         if (ShuttingDown) return;
         ShuttingDown = true;
+        Environment.ExitCode = exitCode;
         NoteManager.FlushAll();
         tray?.Dispose(); tray = null;
-        Shutdown();
+        Shutdown(exitCode);
     }
 
     protected override void OnExit(ExitEventArgs e)

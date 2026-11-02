@@ -43,7 +43,7 @@ jobs:
           global-json-file: global.json
 
       - name: Publish BongHub
-        run: dotnet publish BongHub/BongHub.csproj -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=true
+        run: dotnet publish BongHub/BongHub.csproj -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=true -o artifacts/publish
 
       - name: Build patch tests
         run: dotnet build BongHub.PatchTests/BongHub.PatchTests.csproj -c Release --nologo
@@ -53,17 +53,30 @@ jobs:
 
       - name: Smoke test
         run: |
-          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP/bonghub-smoke" | Out-Null
-          & "BongHub/bin/Release/net10.0-windows/win-x64/publish/BongHub.exe" --smoketest --out "$env:RUNNER_TEMP/bonghub-smoke"
-          if ($LASTEXITCODE -ne 0) { Get-Content "$env:RUNNER_TEMP/bonghub-smoke/smoketest.txt" -ErrorAction SilentlyContinue; exit $LASTEXITCODE }
+          $out = Join-Path (Get-Location) "artifacts/smoke"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $exe = Join-Path (Get-Location) "artifacts/publish/BongHub.exe"
+          if (-not (Test-Path $exe)) { Write-Error "missing $exe"; exit 1 }
+          & $exe --smoketest --out $out
+          $code = $LASTEXITCODE
+          $log = Join-Path $out "smoketest.txt"
+          if (-not (Test-Path $log)) { Write-Error "smoketest.txt was not written to $out"; exit 1 }
+          Get-Content $log
+          if ($code -ne 0) { exit $code }
 
       - name: Note test
         run: |
-          $copy = Join-Path $env:RUNNER_TEMP "bonghub-notes"
+          $copy = Join-Path (Get-Location) "artifacts/notes-data"
+          $out = Join-Path (Get-Location) "artifacts/notes"
           Copy-Item -Recurse data $copy
-          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP/bonghub-notes-out" | Out-Null
-          & "BongHub/bin/Release/net10.0-windows/win-x64/publish/BongHub.exe" --notetest --data $copy --out "$env:RUNNER_TEMP/bonghub-notes-out"
-          if ($LASTEXITCODE -ne 0) { Get-Content "$env:RUNNER_TEMP/bonghub-notes-out/notetest.txt" -ErrorAction SilentlyContinue; exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $exe = Join-Path (Get-Location) "artifacts/publish/BongHub.exe"
+          & $exe --notetest --data $copy --out $out
+          $code = $LASTEXITCODE
+          $log = Join-Path $out "notetest.txt"
+          if (-not (Test-Path $log)) { Write-Error "notetest.txt was not written to $out"; exit 1 }
+          Get-Content $log
+          if ($code -ne 0) { exit $code }
 
       - name: Upload test logs
         if: always()
@@ -71,6 +84,6 @@ jobs:
         with:
           name: wpf-tests
           path: |
-            ${{ runner.temp }}/bonghub-smoke/smoketest.txt
-            ${{ runner.temp }}/bonghub-notes-out/notetest.txt
-          if-no-files-found: ignore
+            artifacts/smoke/smoketest.txt
+            artifacts/notes/notetest.txt
+          if-no-files-found: error

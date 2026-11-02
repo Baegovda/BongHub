@@ -49,7 +49,14 @@ public partial class MainWindow
         foreach (var listed in profile.Apps)
         {
             string listedName = listed.Name.Length > 0 ? listed.Name : (listed.Title.Length > 0 ? listed.Title : listed.Process);
-            Row(windowRows, "\uE737", "5AC8FA", listedName.Length > 0 ? listedName : "창", listed.W + "×" + listed.H, null, wrap: true, icon: AppIcon.Lookup(listed.Process, listed.Path));
+            string listedId = listed.Id;
+            int listedMonitor = listed.Monitor;
+            Row(windowRows, "\uE737", "5AC8FA", listedName.Length > 0 ? listedName : "창", listed.W + "×" + listed.H, null, () =>
+            {
+                selectedAppId = listedId;
+                selectedMonitorNumber = listedMonitor;
+                Render("presets", false);
+            }, wrap: true, icon: AppIcon.Lookup(listed.Process, listed.Path));
         }
         var add = Small(windowPickerOpen ? "닫기" : "+ 창 추가", () => { windowPickerOpen = !windowPickerOpen; Render("presets", false); });
         var bar = Group();
@@ -258,21 +265,25 @@ public partial class MainWindow
             var abs = new ProfileBox(home.X + app.X, home.Y + app.Y, app.W, app.H);
             var view = ProfileSnap.ToCanvas(abs, scene);
             var homeBox = ProfileSnap.ToCanvas(home.Box, scene);
-            double left = Math.Max(homeBox.X + 4, view.X);
-            double top = Math.Max(homeBox.Y + 26, view.Y);
-            double tileW = Math.Max(36, Math.Min(view.W, Math.Max(36, homeBox.X + homeBox.W - 4 - left)));
-            double tileH = Math.Max(28, Math.Min(view.H, Math.Max(28, homeBox.Y + homeBox.H - 4 - top)));
-            if (left + tileW > homeBox.X + homeBox.W - 4) left = Math.Max(homeBox.X + 4, homeBox.X + homeBox.W - 4 - tileW);
-            if (top + tileH > homeBox.Y + homeBox.H - 4) top = Math.Max(homeBox.Y + 26, homeBox.Y + homeBox.H - 4 - tileH);
+            int onMonitor = profile.Apps.Count(a => a.Monitor == home.Number);
+            int steps = Math.Min(Math.Max(onMonitor - 1, 1), 4);
+            double tileW = Math.Min(160, Math.Max(72, homeBox.W - 12 - 24 * steps));
+            double tileH = Math.Min(52, Math.Max(36, Math.Min(homeBox.H - 36, 48)));
+            int indexOnMonitor = profile.Apps.TakeWhile(a => !ReferenceEquals(a, app)).Count(a => a.Monitor == home.Number);
+            double left = Math.Max(homeBox.X + 4, Math.Min(view.X, homeBox.X + homeBox.W - tileW - 4));
+            double top = Math.Max(homeBox.Y + 28, Math.Min(view.Y, homeBox.Y + homeBox.H - tileH - 4));
             var spot = new Rect(left, top, tileW, tileH);
-            for (int n = 0; n < 6 && occupied.Any(r => r.IntersectsWith(spot)); n++)
+            bool heavy = occupied.Any(r => r.Width > 0 && r.IntersectsWith(spot) && Intersection(r, spot) > 0.35 * Math.Min(r.Width * r.Height, spot.Width * spot.Height));
+            if (heavy)
             {
-                left = Math.Min(left + 14, Math.Max(homeBox.X + 4, homeBox.X + homeBox.W - 4 - tileW));
-                top = Math.Min(top + 14, Math.Max(homeBox.Y + 26, homeBox.Y + homeBox.H - 4 - tileH));
+                double span = Math.Max(24, homeBox.W - tileW - 8);
+                left = homeBox.X + 6 + (indexOnMonitor * 24) % span;
+                top = homeBox.Y + 30 + (indexOnMonitor * 24 / Math.Max(24, span)) * 24;
+                top = Math.Min(top, Math.Max(homeBox.Y + 28, homeBox.Y + homeBox.H - tileH - 4));
                 spot = new Rect(left, top, tileW, tileH);
             }
             occupied.Add(spot);
-            view = new ProfileBox((int)left, (int)top, (int)tileW, (int)tileH);
+            view = new ProfileBox((int)Math.Round(left), (int)Math.Round(top), (int)Math.Round(tileW), (int)Math.Round(tileH));
             double font = Math.Clamp(Math.Min(tileW, tileH) / 7.0, 10, 13);
             string shown = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
             var tile = new Border
@@ -289,7 +300,7 @@ public partial class MainWindow
             };
             Canvas.SetLeft(tile, view.X);
             Canvas.SetTop(tile, view.Y);
-            Canvas.SetZIndex(tile, app.Id == selectedAppId ? 40 : 10);
+            Canvas.SetZIndex(tile, app.Id == selectedAppId ? 400 : 20 + indexOnMonitor);
             var body = new Grid { Margin = new Thickness(8, 6, 8, 6), IsHitTestVisible = false };
             body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             body.ColumnDefinitions.Add(new ColumnDefinition());
@@ -403,7 +414,34 @@ public partial class MainWindow
         Canvas.SetZIndex(preview, 3);
         stage.Children.Add(preview);
         foreach (var badge in badges) Canvas.SetZIndex(badge, 100000);
+        foreach (var mon in profile.Monitors)
+        {
+            int count = profile.Apps.Count(a => a.Monitor == mon.Number);
+            if (count < 2) continue;
+            var box = ProfileSnap.ToCanvas(mon.Box, scene);
+            var countBadge = new Border
+            {
+                Width = 22,
+                Height = 18,
+                CornerRadius = new CornerRadius(9),
+                Background = (Brush)FindResource("Accent"),
+                IsHitTestVisible = false,
+                ToolTip = "이 모니터에 창 " + count + "개",
+                Child = new TextBlock { Text = count.ToString(), Foreground = Brushes.White, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+            };
+            Canvas.SetLeft(countBadge, box.X + box.W - 30);
+            Canvas.SetTop(countBadge, box.Y + box.H - 26);
+            Canvas.SetZIndex(countBadge, 100002);
+            stage.Children.Add(countBadge);
+        }
         PageHost.Children.Add(stage);
+    }
+
+    static double Intersection(Rect a, Rect b)
+    {
+        double w = Math.Min(a.Right, b.Right) - Math.Max(a.Left, b.Left);
+        double h = Math.Min(a.Bottom, b.Bottom) - Math.Max(a.Top, b.Top);
+        return w <= 0 || h <= 0 ? 0 : w * h;
     }
 
     static string EdgeAt(Point p, double w, double h)

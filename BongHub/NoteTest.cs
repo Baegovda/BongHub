@@ -21,8 +21,7 @@ public static class NoteTest
         }
         catch (Exception e) { t.Check("no exception", false, e.ToString()); }
         t.Save("notetest.txt");
-        if (t.Fails > 0) Environment.ExitCode = 1;
-        app.RequestShutdown();
+        app.RequestShutdown(t.Fails > 0 ? 1 : 0);
     }
 
     static Dictionary<string, string> Hashes() => Directory.GetFiles(AppEnv.NotesDir).ToDictionary(f => Path.GetFileName(f)!, f => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(f))));
@@ -523,6 +522,29 @@ public static class NoteTest
                 t.Check("switching notes keeps both carets", host.CaretParagraph == 1 && other.CaretParagraph == otherPara);
             }
             else t.Check("switching notes keeps both carets", false, "no second note");
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("내부")));
+            host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+            host.CopySelection(false);
+            uint owned = NoteClipSession.LastSequence;
+            var foreign = new DataObject(DataFormats.UnicodeText, "외부앱");
+            NoteClipSession.Fake = foreign;
+            NoteClipSession.SequenceIsFake = true;
+            NoteClipSession.SequenceNow = owned + 1;
+            host.Editor.Selection.Select(host.Editor.Document.ContentEnd, host.Editor.Document.ContentEnd);
+            bool foreignPaste = host.PasteMixed();
+            t.Check("paste reads the other app clipboard, not the last internal copy", foreignPaste && host.PlainText().Contains("외부앱") && !host.PlainText().EndsWith("내부내부"));
+            var same = new DataObject();
+            same.SetData(NoteClip.Format, NoteClip.Pack(new[] { new NoteClipPiece { Text = "같은순번" } }));
+            same.SetData(DataFormats.UnicodeText, "무시될글");
+            NoteClipSession.Fake = same;
+            NoteClipSession.SequenceNow = owned;
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph());
+            host.Editor.CaretPosition = host.Editor.Document.ContentEnd;
+            bool ownPaste = host.PasteMixed();
+            t.Check("paste uses BongHub.Note only when the clipboard sequence matches", ownPaste && host.PlainText().Contains("같은순번") && !host.PlainText().Contains("무시될글"));
+            NoteClipSession.Fake = null;
         }
     }
 }
