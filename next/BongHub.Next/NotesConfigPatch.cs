@@ -95,6 +95,53 @@ public static class NotesConfigPatch
         return true;
     }
 
+    /// <summary>The single middle span where <paramref name="after"/> differs from <paramref name="before"/>.</summary>
+    public static void ChangedSpan(string before, string after, out string removed, out string inserted)
+    {
+        before ??= "";
+        after ??= "";
+        int pre = 0;
+        int n = Math.Min(before.Length, after.Length);
+        while (pre < n && before[pre] == after[pre]) pre++;
+        int b = before.Length, a = after.Length;
+        while (b > pre && a > pre && before[b - 1] == after[a - 1]) { b--; a--; }
+        removed = before.Substring(pre, b - pre);
+        inserted = after.Substring(pre, a - pre);
+    }
+
+    /// <summary>
+    /// True when that span only inserts <c>TabOrder</c> or replaces its array.
+    /// Presets, Pt, Desk, and sibling General keys must stay outside the span.
+    /// </summary>
+    public static bool TabOrderSpanOnly(string removed, string inserted)
+    {
+        if (string.IsNullOrEmpty(inserted)) return false;
+        if (ContainsForeign(removed) || ContainsForeign(inserted)) return false;
+        if (inserted.Contains("\"TabOrder\"", StringComparison.Ordinal)) return true;
+        return StartsJsonArray(removed) && StartsJsonArray(inserted);
+    }
+
+    static bool StartsJsonArray(string s)
+    {
+        int i = 0;
+        while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+        return i < s.Length && s[i] == '[';
+    }
+
+    static bool ContainsForeign(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return false;
+        return s.Contains("PRESET_KEEP", StringComparison.Ordinal)
+            || s.Contains("PT_KEEP", StringComparison.Ordinal)
+            || s.Contains("DESK_KEEP", StringComparison.Ordinal)
+            || s.Contains("OverlayOpacity", StringComparison.Ordinal)
+            || s.Contains("IdleEnabled", StringComparison.Ordinal)
+            || s.Contains("\"Presets\"", StringComparison.Ordinal)
+            || s.Contains("\"Pt\"", StringComparison.Ordinal)
+            || s.Contains("\"Desk\"", StringComparison.Ordinal)
+            || s.Contains("\"Kakao\"", StringComparison.Ordinal);
+    }
+
     public static string Format(JsonNode value)
     {
         if (value is JsonValue jv)

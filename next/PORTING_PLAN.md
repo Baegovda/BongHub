@@ -599,7 +599,7 @@ Stop-Process -Id $p.Id
 - 일반의 자리비움·오버레이 투명도·폴더 열기. 시작프로그램 스위치는 **상태를 보여 주기만** 하고 lnk를 쓰지 않아요.
 - 정보 탭에 버전, 구성요소, 단축키, 변경 이력.
 - 즉시 저장. 적용 버튼 없음.
-- 합격: 스모크 **82**, 노트 **89**. 화면 밖에서 탭을 돌고, 공유 config의 Pt·Presets·Desk 키가 바이트 수준으로 남아요. 설정 메모리는 20/64MB를 넘기면 안 돼요.
+- 합격: 스모크 **83**, 노트 **89**. 화면 밖에서 탭을 돌고, 공유 config의 Pt·Presets·Desk 키가 바이트 수준으로 남아요. `--smoketest`는 `--data`를 무시하고, 그 복사본이 있으면 임시 폴더에서만 `General.TabOrder` 바이트 차이를 봐요. 설정 메모리는 20/64MB를 넘기면 안 돼요.
 
 ### 3단계 — 바탕화면 아이콘
 
@@ -684,7 +684,7 @@ Stop-Process -Id $p.Id
 |---|---|---|---|
 | 0 | 3.4.9 `extrastest`, `settingstest`. Next `--smoketest`(0.5.0은 65, 0.4.0은 58), `--notetest`(0.5.0은 89, 0.4.0은 26, 그 전은 23) | `next/measure-baseline.ps1` → `baseline_memory.txt`. `version`으로 3.4.9 문자열 확인 | 프리셋 CLI, 실모니터 |
 | 1 | 위 + 3.4.9 `notestest`, `imagetest` | Next 노트 테스트에 이미지 라운드트립, 삭제, 단축키 등록은 테스트 창의 메시지 흉내(전역 후킹 설치 없음), 읽기 전용. 0.5.0 기대값은 스모크 65, 노트 89 | 실제 메모 폴더, 전역 핫키가 사용자 키를 가로채는 실행 |
-| 2 | 위 + `configtest` | 화면 밖 탭 순회, 패치 후 Pt/Presets/Desk 키 보존. 0.6.0 스모크 **82**, 노트 **89** | 시작프로그램 lnk 생성 |
+| 2 | 위 + `configtest` | 화면 밖 탭 순회, 패치 후 Pt/Presets/Desk 키 보존. 0.6.0 스모크 **83**, 노트 **89** | 시작프로그램 lnk 생성 |
 | 3 | 위 + `icontest`(탐색기에 쓰지 않는 범위) | layouts.json 병합 픽스처 | 실제 바탕화면, `Desk.Apply`의 실리스트뷰 |
 | 4 | 위 + `windowtest`, `watchbench` | 테스트 창만 이동 | 사용자 창 |
 | 5 | 위 + `pttest` | 계산·단위·리사이즈 기하·WebP 샘플 파일. Zones 사각형 단위 | 저수준 후킹, HKCU 우클릭 키, `resize` GUI, `workspace` CLI |

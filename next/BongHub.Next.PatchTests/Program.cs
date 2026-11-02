@@ -157,6 +157,17 @@ order.Add(JsonValue.Create("presets"));
 Check("general tab order splice", NotesConfigPatch.TryApply(Shell, "General", "TabOrder", order, out string shelled)
     && shelled.Contains("PRESET_KEEP") && shelled.Contains("PT_KEEP") && shelled.Contains("DESK_KEEP")
     && shelled.Contains("\"OverlayOpacity\":70") && shelled.Contains("\"TabOrder\""));
+NotesConfigPatch.ChangedSpan(Shell, shelled, out string tabRemoved, out string tabInserted);
+Check("tab order byte span leaves foreign keys", NotesConfigPatch.TabOrderSpanOnly(tabRemoved, tabInserted) && tabRemoved.Length == 0);
+const string PrettyOrder = "{\r\n  \"Version\": 2,\r\n  \"Presets\": [{ \"Marker\": \"PRESET_KEEP\" }],\r\n  \"Pt\": { \"Marker\": \"PT_KEEP\" },\r\n  \"Desk\": { \"Marker\": \"DESK_KEEP\" },\r\n  \"General\": {\r\n    \"TabOrder\": [\r\n      \"presets\",\r\n      \"about\"\r\n    ],\r\n    \"OverlayOpacity\": 70,\r\n    \"IdleEnabled\": true\r\n  }\r\n}\r\n";
+var swapped = new JsonArray();
+swapped.Add(JsonValue.Create("about"));
+swapped.Add(JsonValue.Create("presets"));
+Check("pretty tab order replaces only the array", NotesConfigPatch.TryApply(PrettyOrder, "General", "TabOrder", swapped, out string prettyOut)
+    && prettyOut.Contains("PRESET_KEEP") && prettyOut.Contains("PT_KEEP") && prettyOut.Contains("DESK_KEEP") && prettyOut.Contains("\"OverlayOpacity\": 70"));
+NotesConfigPatch.ChangedSpan(PrettyOrder, prettyOut, out string prettyRemoved, out string prettyInserted);
+Check("pretty tab order byte span", NotesConfigPatch.TabOrderSpanOnly(prettyRemoved, prettyInserted)
+    && prettyRemoved.TrimStart().StartsWith("[") && prettyInserted.StartsWith("[") && prettyOut.Contains("\"IdleEnabled\": true"));
 Check("notes patch still leaves Presets", NotesConfigPatch.TryApply(Shell, "Opacity", JsonValue.Create(9), out string notesOnly)
     && notesOnly.Contains("\"Opacity\": 9") && notesOnly.Contains("PRESET_KEEP") && notesOnly.Contains("PT_KEEP") && notesOnly.Contains("DESK_KEEP"));
 

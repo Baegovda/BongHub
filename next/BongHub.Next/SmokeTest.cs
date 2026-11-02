@@ -103,13 +103,24 @@ public static class SmokeTest
         t.Check("startup switch is display only", w.StartupSwitchEnabled == false);
         t.Check("about shows version and hotkeys", w.AboutMentionsVersion && w.AboutMentionsHotkey);
         t.Check("open folder stays inside tests", w.RequestOpenDataFolder() == false && w.FolderLaunches == 0);
-        string markerCfg = "{\r\n  \"Version\": 2,\r\n  \"Presets\": [{ \"Name\": \"작업\", \"Hotkey\": \"Ctrl+Alt+1\", \"Marker\": \"PRESET_KEEP\" }],\r\n  \"Pt\": { \"Zones\": { \"Enabled\": false, \"Marker\": \"PT_KEEP\" } },\r\n  \"Desk\": { \"HotkeySave\": \"Ctrl+Alt+S\", \"Marker\": \"DESK_KEEP\" },\r\n  \"General\": { \"OverlayOpacity\": 70 }\r\n}\r\n";
-        File.WriteAllText(AppEnv.ConfigPath, markerCfg);
+        t.Check("smoketest keeps its own temp folder", AppEnv.DataDir.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) && AppEnv.DataDir.Contains("bhnext_smoke_"));
+        string fixture = "{\r\n  \"Version\": 2,\r\n  \"Presets\": [{ \"Name\": \"작업\", \"Hotkey\": \"Ctrl+Alt+1\", \"Marker\": \"PRESET_KEEP\" }],\r\n  \"Pt\": { \"Zones\": { \"Enabled\": false, \"Marker\": \"PT_KEEP\" } },\r\n  \"Desk\": { \"HotkeySave\": \"Ctrl+Alt+S\", \"Marker\": \"DESK_KEEP\" },\r\n  \"General\": { \"OverlayOpacity\": 70 }\r\n}\r\n";
+        // --data is never the write target. When that folder has a real config, the byte diff uses a temp copy of it.
+        string? srcPath = string.IsNullOrEmpty(AppEnv.IgnoredDataDir) ? null : Path.Combine(AppEnv.IgnoredDataDir, "config.json");
+        byte[]? srcBefore = srcPath != null && File.Exists(srcPath) ? File.ReadAllBytes(srcPath) : null;
+        if (srcBefore != null) File.WriteAllBytes(AppEnv.ConfigPath, srcBefore);
+        else File.WriteAllText(AppEnv.ConfigPath, fixture);
+        string beforeText = File.ReadAllText(AppEnv.ConfigPath);
         ConfigStore.Load();
         w.ApplyTabOrder(ConfigStore.TabOrder);
-        bool moved = w.MoveTab("about", 1);
+        string moveKey = w.Pages.Count > 1 ? w.Pages[0].Key : "";
+        bool moved = moveKey.Length > 0 && w.MoveTab(moveKey, w.Pages.Count - 1);
         string patched = File.ReadAllText(AppEnv.ConfigPath);
-        t.Check("tab order keeps Pt Presets and Desk bytes", moved && patched.Contains("PRESET_KEEP") && patched.Contains("PT_KEEP") && patched.Contains("DESK_KEEP") && patched.Contains("\"OverlayOpacity\": 70") && patched.Contains("\"TabOrder\""));
+        NotesConfigPatch.ChangedSpan(beforeText, patched, out string removed, out string inserted);
+        bool sourceSame = srcBefore == null || File.ReadAllBytes(srcPath!).AsSpan().SequenceEqual(srcBefore);
+        bool markers = srcBefore != null || (patched.Contains("PRESET_KEEP") && patched.Contains("PT_KEEP") && patched.Contains("DESK_KEEP"));
+        t.Check("tab order changes only TabOrder bytes", moved && sourceSame && markers && NotesConfigPatch.TabOrderSpanOnly(removed, inserted),
+            srcBefore == null ? $"fixture removed={removed.Length} inserted={inserted.Length}" : $"real copy {srcBefore.Length} bytes untouched, removed={removed.Length} inserted={inserted.Length}");
 
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);

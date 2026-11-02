@@ -22,6 +22,8 @@ public static class AppEnv
     public static int OffsetY => Off ? -30000 : 0;
     public static bool Smoke { get; private set; }
     public static bool NoteTest { get; private set; }
+    /// <summary>Folder passed with <c>--data</c> or <c>BONGHUB_NEXT_DATA</c> when <c>--smoketest</c> refused it. Never written.</summary>
+    public static string? IgnoredDataDir { get; private set; }
     /// <summary>Show the settings window off-screen, then hide it and stay running. Used by the Phase 0 memory baseline.</summary>
     public static bool IdleHidden { get; private set; }
     public static string? OutDir { get; private set; }
@@ -33,12 +35,13 @@ public static class AppEnv
     public static void Init(string[] args)
     {
         Args = args;
+        bool askedData = false;
         var env = Environment.GetEnvironmentVariable("BONGHUB_NEXT_DATA");
-        if (!string.IsNullOrWhiteSpace(env)) DataDir = env;
+        if (!string.IsNullOrWhiteSpace(env)) { DataDir = env; askedData = true; }
         for (int i = 0; i < args.Length; i++)
         {
             var a = args[i].ToLowerInvariant();
-            if (a == "--data" && i + 1 < args.Length) DataDir = args[++i];
+            if (a == "--data" && i + 1 < args.Length) { DataDir = args[++i]; askedData = true; }
             else if (a == "--out" && i + 1 < args.Length) OutDir = args[++i];
             else if (a == "--off") Off = true;
             else if (a == "--idle-hidden") { IdleHidden = true; Off = true; }
@@ -51,6 +54,17 @@ public static class AppEnv
             OutDir ??= AppContext.BaseDirectory;
             // tests never touch the real data folder
             if (IsDefaultData) DataDir = Path.Combine(Path.GetTempPath(), "bhnext_test_" + Environment.ProcessId);
+        }
+        if (Smoke)
+        {
+            // A copy passed with --data is the caller's. Smoke writes a fixture config, so it must not use that folder.
+            if (askedData)
+            {
+                IgnoredDataDir = DataDir;
+                Log("smoketest ignores --data and BONGHUB_NEXT_DATA");
+            }
+            DataDir = Path.Combine(Path.GetTempPath(), "bhnext_smoke_" + Environment.ProcessId);
+            Directory.CreateDirectory(DataDir);
         }
         if (OutDir != null) Directory.CreateDirectory(OutDir);
     }
