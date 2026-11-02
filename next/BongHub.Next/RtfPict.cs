@@ -58,6 +58,58 @@ static class RtfPict
         return n;
     }
 
+    /// <summary>1×1 PNG used by tests and by the display placeholder. Not a photo.</summary>
+    public static byte[] TinyPngBytes => TinyPng;
+
+    /// <summary>Rewrite display size only. The blip hex is copied unchanged.</summary>
+    public static string WithGoals(string group, int goalW, int goalH)
+    {
+        string s = Regex.Replace(group, @"\\picscalex-?\d+", "");
+        s = Regex.Replace(s, @"\\picscaley-?\d+", "");
+        s = ReplaceOrInsert(s, "picwgoal", Math.Max(1, goalW));
+        s = ReplaceOrInsert(s, "pichgoal", Math.Max(1, goalH));
+        return s;
+    }
+
+    /// <summary>A <c>{\pict...\pngblip|jpegblip...}</c> group. Hex is the file payload, not a second encoding.</summary>
+    public static string BuildGroup(byte[] data, bool jpeg, int pxW, int pxH, int goalW, int goalH)
+    {
+        var sb = new StringBuilder(data.Length * 2 + 80);
+        sb.Append(@"{\pict");
+        sb.Append(jpeg ? @"\jpegblip" : @"\pngblip");
+        sb.Append(@"\picw").Append(Math.Max(1, pxW));
+        sb.Append(@"\pich").Append(Math.Max(1, pxH));
+        sb.Append(@"\picwgoal").Append(Math.Max(1, goalW));
+        sb.Append(@"\pichgoal").Append(Math.Max(1, goalH));
+        sb.Append("\r\n");
+        const string hx = "0123456789abcdef";
+        for (int i = 0; i < data.Length; i++)
+        {
+            sb.Append(hx[data[i] >> 4]);
+            sb.Append(hx[data[i] & 15]);
+            if ((i & 63) == 63) sb.Append("\r\n");
+        }
+        sb.Append('}');
+        return sb.ToString();
+    }
+
+    /// <summary>Hex digits of the blip payload, lowercase, no whitespace. Empty when the group has no blip.</summary>
+    public static string BlipHex(string group)
+    {
+        var bytes = ExtractBytes(group);
+        return bytes == null ? "" : Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    static string ReplaceOrInsert(string group, string name, int value)
+    {
+        string token = @"\" + name + value;
+        if (Regex.IsMatch(group, @"\\" + name + @"-?\d+"))
+            return Regex.Replace(group, @"\\" + name + @"-?\d+", token);
+        var m = Blip.Match(group);
+        if (!m.Success) return group;
+        return group.Insert(m.Index, token);
+    }
+
     /// <summary>Same text, but every pict payload is a 1×1 PNG. Picture count and goal sizes stay.</summary>
     public static byte[] Placeholder(byte[] rtf)
     {

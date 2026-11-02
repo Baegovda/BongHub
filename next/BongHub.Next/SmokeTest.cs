@@ -77,6 +77,12 @@ public static class SmokeTest
             t.Check($"tab {page} switch is non-blocking (<60ms)", w.LastNavigateMs < 60, $"{w.LastNavigateMs:0.0} ms");
             await TestKit.Delay(420);
             t.Check($"tab {page} slide-in settles", w.PageHost.Opacity >= 0.999, $"opacity {w.PageHost.Opacity:0.00}");
+            if (page == "notes")
+            {
+                var slider = w.NoteFontSlider;
+                t.Check("note font size is 7–48", slider != null && slider.Minimum == 7 && slider.Maximum == 48, slider == null ? "no slider" : $"{slider.Minimum}–{slider.Maximum}");
+                t.Check("notes page show/hide/copy/delete", w.HasNotesCommand("모두 보이기") && w.HasNotesCommand("모두 숨기기") && w.HasNotesCommand("텍스트 복사") && w.HasNotesCommand("삭제"));
+            }
             TestKit.SavePng(w, DarkUnder, $"settings_{page}.png");
             ContrastCheck(t, w, w.TitleBlock, $"{page} title", 7);
             ContrastCheck(t, w, w.FirstSecondary, $"{page} secondary", 4.5);
@@ -104,7 +110,8 @@ public static class SmokeTest
         t.Check("note cloaked before first paint", ns.CloakedAtCreate > 0, $"{ns.CloakedAtCreate}");
         t.Check("note did not take focus (ShowActivated=false)", TestKit.NotForeground(note) && !note.ShowActivated);
         var r = Win32.Rect(note);
-        t.Check("note placed by physical pixels", r.Left == 200 + AppEnv.OffsetX && r.Top == 200 + AppEnv.OffsetY && r.Width == 330 && r.Height == 330, $"{r.Left},{r.Top} {r.Width}x{r.Height}");
+        bool onScreen = Win32.OnAnyMonitor(r.Left, r.Top, r.Width, r.Height);
+        t.Check("note placed by physical pixels", !onScreen && r.Left == 200 + AppEnv.OffsetX && r.Top == 200 + AppEnv.OffsetY && r.Width == 330 && r.Height == 330, $"onScreen={onScreen} {r.Left},{r.Top} {r.Width}x{r.Height}");
         var noteMode = HwndSource.FromHwnd(Win32.Handle(note))?.CompositionTarget?.RenderMode;
         t.Check("note window renders in software", noteMode == RenderMode.SoftwareOnly, noteMode?.ToString() ?? "no target");
         note.Editor.Document.Blocks.Clear();
@@ -139,12 +146,14 @@ public static class SmokeTest
         tray = new TrayService(app, registerShell: false);
         var style = Application.Current.FindResource(typeof(ContextMenu)) as Style;
         t.Check("tray menu uses the dark ContextMenu style", ReferenceEquals(tray.Menu.Style, style));
-        bool entries = tray.Menu.Items.Count == 4
+        bool entries = tray.Menu.Items.Count == 6
             && tray.Menu.Items[0] is MenuItem open && (open.Header as string) == "BongHub 열기"
             && tray.Menu.Items[1] is MenuItem newer && (newer.Header as string) == "새 스티커 메모"
-            && tray.Menu.Items[2] is Separator
-            && tray.Menu.Items[3] is MenuItem quit && (quit.Header as string) == "종료";
-        t.Check("tray menu entries", entries, "BongHub 열기, 새 스티커 메모, separator, 종료");
+            && tray.Menu.Items[2] is MenuItem show && (show.Header as string) == "스티커 메모 모두 보이기"
+            && tray.Menu.Items[3] is MenuItem hide && (hide.Header as string) == "스티커 메모 모두 숨기기"
+            && tray.Menu.Items[4] is Separator
+            && tray.Menu.Items[5] is MenuItem quit && (quit.Header as string) == "종료";
+        t.Check("tray menu entries", entries, "열기, 새 스티커 메모, 모두 보이기, 모두 숨기기, separator, 종료");
         var (chrome, sample) = tray.CreateChromeVisual();
         var shot = TestKit.RenderElement(chrome, DarkUnder);
         t.Check("tray menu chrome is dark", TestKit.WhitePercent(shot) < 1 && TestKit.DominantLum(shot) < 0.08, $"pure-white {TestKit.WhitePercent(shot):0.00}%, background luminance {TestKit.DominantLum(shot):0.000}");
@@ -172,5 +181,15 @@ public static class SmokeTest
         var bc = TestKit.ContrastElement(tray.LastBalloonVisual!, tray.LastBalloonSample!, DarkUnder);
         t.Check("balloon text contrast ≥ 7", bc.ratio >= 7, $"{bc.ratio:0.0}:1 ({bc.fg} on {bc.bg})");
         t.Check("smoketest does not register a shell tray icon", !tray.ShellIconCreated && tray.NativeBalloonCalls == 0);
+        t.Check("smoketest does not register a hotkey or a hook", NoteHotkey.NativeRegistrations == 0 && NoteHotkey.HookInstalls == 0 && !NoteHotkey.Registered);
+        NoteHotkey.ReportFailure(tray, "Ctrl+Alt+N");
+        t.Check("hotkey conflict balloon", tray.LastBalloonMessage != null && tray.LastBalloonMessage.Contains("단축키 등록 실패") && tray.LastBalloonMessage.Contains("Ctrl+Alt+N") && tray.NativeBalloonCalls == 0);
+
+        int beforeHide = NoteManager.Windows.Count;
+        tray.RaiseHeader("스티커 메모 모두 숨기기");
+        t.Check("tray hide-all closes notes", beforeHide > 0 && await TestKit.Until(() => NoteManager.Windows.Count == 0, 4000), $"open {NoteManager.Windows.Count}");
+        tray.RaiseHeader("스티커 메모 모두 보이기");
+        t.Check("tray show-all opens notes", await TestKit.Until(() => NoteManager.Windows.Count >= 1, 4000), $"open {NoteManager.Windows.Count}");
+        t.Check("tray note commands still installed no hook", NoteHotkey.HookInstalls == 0 && NoteHotkey.NativeRegistrations == 0);
     }
 }

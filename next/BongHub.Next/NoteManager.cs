@@ -1,5 +1,6 @@
 using System.Runtime;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Threading;
 
 namespace BongHub.Next;
@@ -10,6 +11,16 @@ public static class NoteManager
     public static IReadOnlyCollection<StickyNoteWindow> Windows => open.Values;
     public static event Action? Changed;
     static double SysScale => Win32.SystemScale;
+    static int modalHook;
+
+    static void EnsureModalHook()
+    {
+        if (Interlocked.Exchange(ref modalHook, 1) != 0) return;
+        ComponentDispatcher.EnterThreadModal += (_, _) =>
+        {
+            foreach (var w in open.Values.ToList()) w.EnableDuringModal();
+        };
+    }
 
     public static bool IsOpen(string id) => open.ContainsKey(id);
 
@@ -17,6 +28,7 @@ public static class NoteManager
     {
         if (open.TryGetValue(id, out var w)) { if (activate && !AppEnv.Off) { w.Show(); w.Activate(); } return w; }
         var m = NoteStore.Find(id); if (m == null) return null;
+        EnsureModalHook();
         w = new StickyNoteWindow(m);
         open[id] = w;
         if (!m.Open) { m.Open = true; NoteStore.SaveMeta(m); }
@@ -93,6 +105,33 @@ public static class NoteManager
     }
 
     internal static void Forget(StickyNoteWindow w) { if (open.TryGetValue(w.Meta.Id, out var x) && x == w) { open.Remove(w.Meta.Id); Changed?.Invoke(); } }
+
+    public static void ShowAll()
+    {
+        foreach (var m in NoteStore.All.ToList()) Open(m.Id, activate: false);
+    }
+
+    public static void HideAll()
+    {
+        foreach (var w in open.Values.ToList()) w.CloseNote();
+    }
+
+    /// <summary>Empty notes delete immediately. Others need <paramref name="confirmed"/>.</summary>
+    public static bool Delete(string id, bool confirmed)
+    {
+        var m = NoteStore.Find(id);
+        if (m == null) return false;
+        bool blank = open.TryGetValue(id, out var live) ? live.IsBlankLive : NoteStore.IsBlank(m);
+        if (!blank && !confirmed) return false;
+        if (live != null) live.DiscardClose();
+        return NoteStore.Delete(m);
+    }
+
+    public static string AllText()
+    {
+        FlushAll();
+        return string.Join("\r\n\r\n──────────\r\n\r\n", NoteStore.All.Where(m => !string.IsNullOrWhiteSpace(m.Text)).Select(m => m.Text.Trim()));
+    }
 
     public static void FlushAll() { foreach (var w in open.Values.ToList()) { try { w.FlushAll(); } catch (Exception e) { AppEnv.Log("flush failed: " + e.Message); } } }
     public static void CloseAllWindows() { foreach (var w in open.Values.ToList()) w.Close(); open.Clear(); }

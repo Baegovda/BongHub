@@ -24,6 +24,8 @@ public partial class MainWindow : Window
     public TextBlock? FirstRowTitle { get; private set; }
     public TextBlock? FirstSecondary { get; private set; }
     public double LastNavigateMs { get; private set; }
+    public Slider? NoteFontSlider { get; private set; }
+    readonly HashSet<string> noteChecks = new(StringComparer.Ordinal);
     readonly Dictionary<string, Border> navRows = new();
     bool hiding;
 
@@ -198,17 +200,70 @@ public partial class MainWindow : Window
         var top = Group();
         var newBtn = new Button { Content = "새 메모", Style = (Style)FindResource("AccentButton"), IsEnabled = !ro, Padding = new Thickness(18, 8, 18, 8) };
         newBtn.Click += (_, _) => NoteManager.NewNote();
-        Row(top, "\uE710", "F5B83D", "새 스티커 메모", ConfigStore.Notes.Hotkey.Length > 0 ? $"3.4.8 단축키: {ConfigStore.Notes.Hotkey}" : null, newBtn);
+        Row(top, "\uE710", "F5B83D", "새 스티커 메모", ConfigStore.Notes.Hotkey.Length > 0 ? $"단축키 {ConfigStore.Notes.Hotkey}" : "단축키 없음", newBtn);
 
         Header("모양");
         var g = Group();
         Row(g, "\uE7B3", "FF9500", "시작할 때 열려 있던 메모 열기", null, Switch(ConfigStore.Notes.OpenOnStartup, v => { ConfigStore.Notes.OpenOnStartup = v; ConfigStore.SetNotesValue("OpenOnStartup", JsonValue.Create(v)); }, !ro));
         Row(g, "\uE790", "AF52DE", "그라데이션 배경", null, Switch(ConfigStore.Notes.Gradient, v => { ConfigStore.Notes.Gradient = v; ConfigStore.SetNotesValue("Gradient", JsonValue.Create(v)); foreach (var w in NoteManager.Windows) w.SetColorRefresh(); }, !ro));
-        float[] sizes = { 10, 11, 13 };
-        int si = Array.IndexOf(sizes, ConfigStore.Notes.FontSize); if (si < 0) si = 1;
-        var seg = new Segmented(new[] { "작게", "보통", "크게" }, si) { IsEnabled = !ro };
-        seg.Changed += k => { ConfigStore.Notes.FontSize = sizes[k]; ConfigStore.SetNotesValue("FontSize", JsonValue.Create(sizes[k])); foreach (var w in NoteManager.Windows) w.ApplyFontSize(); };
-        Row(g, "\uE8D2", "4C8AFE", "글자 크기", null, seg);
+        double font = StickyNoteWindow.ClampPt(ConfigStore.Notes.FontSize);
+        var fontLabel = Value(((int)Math.Round(font)).ToString());
+        fontLabel.Margin = new Thickness(8, 0, 0, 0);
+        fontLabel.MinWidth = 24;
+        var fontSlider = new Slider { Minimum = 7, Maximum = 48, Width = 148, IsEnabled = !ro, IsMoveToPointEnabled = true, TickFrequency = 1, IsSnapToTickEnabled = true, VerticalAlignment = VerticalAlignment.Center };
+        NoteFontSlider = fontSlider;
+        fontSlider.Value = font;
+        int fontGuard = 0;
+        fontSlider.ValueChanged += (_, _) =>
+        {
+            if (fontGuard > 0) return;
+            int v = (int)Math.Round(fontSlider.Value);
+            fontLabel.Text = v.ToString();
+            if (Math.Abs(v - ConfigStore.Notes.FontSize) < 0.01) return;
+            float prev = ConfigStore.Notes.FontSize;
+            ConfigStore.Notes.FontSize = v;
+            if (!ConfigStore.SetNotesValue("FontSize", JsonValue.Create(v)))
+            {
+                ConfigStore.Notes.FontSize = prev;
+                fontGuard++;
+                fontSlider.Value = StickyNoteWindow.ClampPt(prev);
+                fontGuard--;
+                fontLabel.Text = ((int)Math.Round(StickyNoteWindow.ClampPt(prev))).ToString();
+                return;
+            }
+            foreach (var w in NoteManager.Windows) w.ApplyFontSize();
+        };
+        var fontTrail = new StackPanel { Orientation = Orientation.Horizontal };
+        fontTrail.Children.Add(fontSlider);
+        fontTrail.Children.Add(fontLabel);
+        Row(g, "\uE8D2", "4C8AFE", "글자 크기", "7–48pt. 열린 메모에 바로 적용돼요.", fontTrail);
+        var hkBox = new TextBox { Text = ConfigStore.Notes.Hotkey, Width = 120, IsReadOnly = true, FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
+        hkBox.PreviewKeyDown += (sender, e) =>
+        {
+            e.Handled = true;
+            if (ro || e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.System) return;
+            if (e.Key is Key.Escape or Key.Tab) return;
+            string text = FormatHotkey(e.Key, Keyboard.Modifiers);
+            // `out _` here would bind the lambda parameter if it were named `_` (object), not a discard.
+            if (text.Length == 0 || !NoteHotkey.TryParse(text, out uint _, out uint _)) return;
+            string prev = ConfigStore.Notes.Hotkey;
+            ConfigStore.Notes.Hotkey = text;
+            if (!ConfigStore.SetNotesValue("Hotkey", JsonValue.Create(text))) { ConfigStore.Notes.Hotkey = prev; return; }
+            hkBox.Text = text;
+            NoteHotkey.Apply(text, App.Instance.Tray);
+        };
+        var hkClear = new Button { Content = "지우기", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(8, 0, 0, 0), IsEnabled = !ro };
+        hkClear.Click += (_, _) =>
+        {
+            ConfigStore.Notes.Hotkey = "";
+            if (!ConfigStore.SetNotesValue("Hotkey", JsonValue.Create(""))) { ConfigStore.Load(); return; }
+            hkBox.Text = "";
+            NoteHotkey.Apply("", App.Instance.Tray);
+        };
+        var hkTrail = new StackPanel { Orientation = Orientation.Horizontal };
+        hkTrail.Children.Add(hkBox);
+        hkTrail.Children.Add(hkClear);
+        Row(g, "\uE765", "FF9500", "새 메모 단축키", "저장하는 즉시 다시 등록해요. 비우면 등록하지 않아요.", hkTrail);
         int op = ConfigStore.Notes.Opacity;
         if (op < 30 || op > 100) op = 100;
         int shown = Math.Clamp(op, 40, 100);
@@ -247,9 +302,21 @@ public partial class MainWindow : Window
         var sw = new StackPanel { Orientation = Orientation.Horizontal };
         sw.Children.Add(new Ellipse { Width = 16, Height = 16, Margin = new Thickness(0, 0, 8, 0), Fill = new LinearGradientBrush(NoteColors.Swatch(dc), NoteColors.SwatchB(dc), 45) });
         sw.Children.Add(Value(NoteColors.Name(dc)));
-        Row(g, "\uE771", "FF2D55", "기본 색", "새 메모는 이 색을 피해 무작위로 골라요 (3.4.8과 같음)", sw);
+        var custom = new Button { Content = "맞춤 색", Padding = new Thickness(10, 4, 10, 4), IsEnabled = !ro };
+        custom.Click += (_, _) => PickDefaultColor(custom);
+        var colorTrail = new StackPanel { Orientation = Orientation.Horizontal };
+        colorTrail.Children.Add(sw);
+        colorTrail.Children.Add(custom);
+        Row(g, "\uE771", "FF2D55", "기본 색", "새 메모는 이 색을 피해 무작위로 골라요 (3.4.9와 같음)", colorTrail);
 
         Header($"메모 {NoteStore.All.Count}개");
+        var cmds = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 0, 0, 8) };
+        cmds.Children.Add(NoteCmd("모두 보이기", () => NoteManager.ShowAll(), enabled: true));
+        cmds.Children.Add(NoteCmd("모두 숨기기", () => NoteManager.HideAll(), enabled: true));
+        cmds.Children.Add(NoteCmd("텍스트 복사", CopyAllNotes, enabled: true));
+        cmds.Children.Add(NoteCmd("삭제", DeleteChecked, enabled: !ro));
+        cmds.Children.Add(NoteCmd("선택 색", () => ColorChecked(cmds), enabled: !ro));
+        PageHost.Children.Add(cmds);
         var list = Group();
         foreach (var n in NoteStore.All)
         {
@@ -259,6 +326,10 @@ public partial class MainWindow : Window
             if (NoteManager.IsOpen(n.Id)) trailing.Children.Add(new Border { CornerRadius = new CornerRadius(6), Background = new SolidColorBrush(Color.FromArgb(0x33, 0x34, 0xC7, 0x59)), Padding = new Thickness(7, 2, 7, 3), Margin = new Thickness(0, 0, 10, 0), Child = new TextBlock { Text = "열림", FontSize = 11.5, Foreground = new SolidColorBrush(Color.FromRgb(0x7C, 0xE3, 0x9A)) } });
             trailing.Children.Add(Chevron());
             var id = n.Id;
+            var check = new CheckBox { IsChecked = noteChecks.Contains(id), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+            check.Checked += (_, _) => noteChecks.Add(id);
+            check.Unchecked += (_, _) => noteChecks.Remove(id);
+            trailing.Children.Insert(0, check);
             var r = Row(list, null, null, t, $"{n.Modified:yyyy.MM.dd HH:mm} · {NoteColors.Name(n.Color)}" + (n.TopMost ? " · 항상 위" : ""), trailing, () => NoteManager.Open(id, activate: true));
             ((Grid)r.Child).Children.Insert(0, new Border { Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Child = dot });
             ((StackPanel)((Grid)r.Child).Children.OfType<StackPanel>().First()).Margin = new Thickness(50, 9, 10, 9);
@@ -269,7 +340,166 @@ public partial class MainWindow : Window
         var d = Group();
         Row(d, "\uE8B7", "8E8E93", "데이터 폴더", AppEnv.DataDir, null);
         if (ro) Row(d, "\uE72E", "FF9500", "읽기 전용", AppEnv.ReadOnlyReason, null);
-        Footer("3.4.8과 같은 notes\\<id>.json / .rtf 형식으로 저장해요. 손상되거나 빈 메모 파일은 건너뛰지 않고 안전하게 열어요.");
+        Footer("3.4.9와 같은 notes\\<id>.json / .rtf 형식으로 저장해요. 손상되거나 빈 메모 파일은 건너뛰지 않고 안전하게 열어요.");
+        Footer("메모 안: Ctrl+B 굵게 · Ctrl+I 기울임 · Ctrl+U 밑줄 · Ctrl+T 취소선 · Ctrl+Shift+L 글머리 · Ctrl++/− 글자 크기 · Ctrl+N 새 메모 · Ctrl+D 삭제 · Ctrl+W 닫기");
+    }
+
+    Button NoteCmd(string label, Action act, bool enabled)
+    {
+        var b = new Button { Content = label, Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(12, 6, 12, 6), IsEnabled = enabled };
+        b.Click += (_, _) => act();
+        return b;
+    }
+
+    public bool HasNotesCommand(string label) => WalkButtons(PageHost).Any(b => b.Content as string == label);
+
+    static IEnumerable<Button> WalkButtons(DependencyObject node)
+    {
+        if (node is Button button) yield return button;
+        foreach (var child in LogicalTreeHelper.GetChildren(node).OfType<DependencyObject>())
+            foreach (var b in WalkButtons(child)) yield return b;
+    }
+
+    void CopyAllNotes()
+    {
+        string text = NoteManager.AllText();
+        try { if (text.Length > 0) Clipboard.SetText(text); } catch (Exception e) { AppEnv.Log("copy notes: " + e.Message); }
+    }
+
+    void DeleteChecked()
+    {
+        var ids = noteChecks.ToList();
+        if (ids.Count == 0) return;
+        bool blank = ids.All(id => NoteStore.Find(id) is { } m && (NoteManager.Windows.FirstOrDefault(w => w.Meta.Id == id)?.IsBlankLive ?? NoteStore.IsBlank(m)));
+        if (!blank && !ConfirmNotes(ids.Count)) return;
+        foreach (var id in ids) NoteManager.Delete(id, confirmed: true);
+        noteChecks.Clear();
+    }
+
+    void ColorChecked(DependencyObject owner)
+    {
+        var ids = noteChecks.ToList();
+        if (ids.Count == 0 || owner is not UIElement el) return;
+        var menu = new ContextMenu { PlacementTarget = el, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        foreach (var key in NoteColors.PaletteKeys)
+        {
+            var k = key;
+            var item = new MenuItem { Header = NoteColors.Name(k) };
+            item.Click += (_, _) =>
+            {
+                foreach (var id in ids)
+                {
+                    var w = NoteManager.Windows.FirstOrDefault(x => x.Meta.Id == id);
+                    if (w != null) w.SetColor(k);
+                    else if (NoteStore.Find(id) is { } m && m.Color != k) { m.Color = k; NoteStore.SaveMeta(m); }
+                }
+            };
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
+    }
+
+    static bool ConfirmNotes(int count)
+    {
+        if (AppEnv.Smoke) return false;
+        var w = new Window
+        {
+            Title = "스티커 메모", Width = 380, Height = 168, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false, ShowActivated = !AppEnv.Off, Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x1D, 0x26)),
+            WindowStartupLocation = AppEnv.Off ? WindowStartupLocation.Manual : WindowStartupLocation.CenterScreen,
+        };
+        if (AppEnv.Off) { w.Left = AppEnv.OffsetX + 240; w.Top = AppEnv.OffsetY + 240; }
+        bool yes = false;
+        var root = new StackPanel { Margin = new Thickness(18) };
+        root.Children.Add(new TextBlock { Text = count + "개 메모를 삭제할까요?", Foreground = Brushes.White, FontSize = 15, Margin = new Thickness(0, 8, 0, 16) });
+        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var no = new Button { Content = "취소", Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(14, 6, 14, 6) };
+        var ok = new Button { Content = "삭제", Padding = new Thickness(14, 6, 14, 6) };
+        no.Click += (_, _) => w.Close();
+        ok.Click += (_, _) => { yes = true; w.Close(); };
+        row.Children.Add(no); row.Children.Add(ok); root.Children.Add(row);
+        w.Content = root;
+        w.ShowDialog();
+        return yes;
+    }
+
+    void PickDefaultColor(Button anchor)
+    {
+        var menu = new ContextMenu { PlacementTarget = anchor, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        foreach (var key in NoteColors.PaletteKeys)
+        {
+            var k = key;
+            var item = new MenuItem { Header = NoteColors.Name(k) };
+            item.Click += (_, _) => SaveDefaultColor(k);
+            menu.Items.Add(item);
+        }
+        menu.Items.Add(new Separator());
+        var ask = new MenuItem { Header = "맞춤…" };
+        ask.Click += (_, _) => SaveDefaultColor(PromptCustom(ConfigStore.Notes.DefaultColor));
+        menu.Items.Add(ask);
+        menu.IsOpen = true;
+    }
+
+    static string PromptCustom(string current)
+    {
+        NoteColors.Raw(current, out var a, out var b);
+        string hex(Color c) => c.R.ToString("X2") + c.G.ToString("X2") + c.B.ToString("X2");
+        var w = new Window
+        {
+            Title = "맞춤 색", Width = 320, Height = 160, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false, ShowActivated = !AppEnv.Off, Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x1D, 0x26)),
+            WindowStartupLocation = AppEnv.Off ? WindowStartupLocation.Manual : WindowStartupLocation.CenterScreen,
+        };
+        if (AppEnv.Off) { w.Left = AppEnv.OffsetX + 260; w.Top = AppEnv.OffsetY + 260; }
+        string result = current;
+        var aBox = new TextBox { Text = hex(a), Width = 90, MaxLength = 6, Margin = new Thickness(0, 0, 8, 0) };
+        var bBox = new TextBox { Text = hex(b), Width = 90, MaxLength = 6 };
+        var ok = new Button { Content = "적용", Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(8, 0, 0, 0) };
+        ok.Click += (_, _) => { if (NoteColors.TryCustom(aBox.Text.Trim(), bBox.Text.Trim(), out var k)) result = k; w.Close(); };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(16) };
+        row.Children.Add(aBox); row.Children.Add(bBox); row.Children.Add(ok);
+        w.Content = row;
+        w.ShowDialog();
+        return result;
+    }
+
+    static void SaveDefaultColor(string key)
+    {
+        if (!NoteColors.Valid(key) || AppEnv.ReadOnly) return;
+        string prev = ConfigStore.Notes.DefaultColor;
+        ConfigStore.Notes.DefaultColor = key;
+        if (!ConfigStore.SetNotesValue("DefaultColor", JsonValue.Create(key))) ConfigStore.Notes.DefaultColor = prev;
+    }
+
+    static string FormatHotkey(Key key, ModifierKeys mods)
+    {
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.System or Key.None)
+            return "";
+        var parts = new List<string>();
+        if ((mods & ModifierKeys.Windows) == ModifierKeys.Windows) parts.Add("Win");
+        if ((mods & ModifierKeys.Control) == ModifierKeys.Control) parts.Add("Ctrl");
+        if ((mods & ModifierKeys.Alt) == ModifierKeys.Alt) parts.Add("Alt");
+        if ((mods & ModifierKeys.Shift) == ModifierKeys.Shift) parts.Add("Shift");
+        parts.Add(KeyToken(key));
+        return string.Join("+", parts);
+    }
+
+    static string KeyToken(Key key)
+    {
+        if (key >= Key.D0 && key <= Key.D9) return ((int)(key - Key.D0)).ToString();
+        if (key >= Key.NumPad0 && key <= Key.NumPad9) return "Num" + (int)(key - Key.NumPad0);
+        if (key >= Key.A && key <= Key.Z) return key.ToString();
+        if (key >= Key.F1 && key <= Key.F24) return key.ToString();
+        return key switch
+        {
+            Key.Space => "Space",
+            Key.Tab => "Tab",
+            Key.Escape => "Escape",
+            Key.Enter => "Enter",
+            Key.OemPlus => "Oemplus",
+            Key.OemMinus => "OemMinus",
+            _ => key.ToString(),
+        };
     }
 
     void PageGeneral()

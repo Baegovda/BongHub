@@ -31,3 +31,27 @@ jobs:
 
       - name: Notes config patch
         run: dotnet run --project next/BongHub.Next.PatchTests/BongHub.Next.PatchTests.csproj -c Release --nologo
+
+  # Smoke and note tests open WPF windows, so they stay on the owner PC.
+  # The RTF step loads one fixture with WPF TextRange on an STA thread. It does not show a window.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Publish BongHub.Next
+        run: dotnet publish next/BongHub.Next/BongHub.Next.csproj -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=true
+
+      - name: Build patch tests
+        run: dotnet build next/BongHub.Next.PatchTests/BongHub.Next.PatchTests.csproj -c Release --nologo
+
+      - name: Build tray (warnings are errors)
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File app\build.ps1
+
+      - name: WPF RTF round trip (no GUI)
+        run: dotnet run --project next/BongHub.Next.RichEditTests/BongHub.Next.RichEditTests.csproj -c Release --nologo

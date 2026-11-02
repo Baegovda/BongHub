@@ -1,6 +1,6 @@
 # BongHub.Next
 
-**0.4.0** — .NET 10 WPF 프로토타입이에요. 메모·설정 UI는 0.3.0과 같고, 이 버전은 메모리와 설정 첫 프레임만 줄여요. 모니터 전환은 아직 3.4.x 트레이가 맡아요.
+**0.5.0** — .NET 10 WPF예요. 1단계는 스티커 메모를 트레이 3.4.9와 맞춰요. 모니터 전환은 아직 3.4.x 트레이가 맡아요. 소프트웨어 렌더와 동시 GC는 0.4.0 그대로예요.
 
 ## 경로
 
@@ -23,7 +23,7 @@ dotnet publish next\BongHub.Next\BongHub.Next.csproj -c Release -r win-x64 --sel
 
 같은 설정은 `next/BongHub.Next/Properties/PublishProfiles/ReadyToRun.pubxml`에도 있어요.
 
-대상: `net10.0-windows`, WPF, H.NotifyIcon.Wpf **2.4.1**. WinForms는 쓰지 않아요. 버전은 csproj·`AppEnv.Version` 모두 **0.4.0**. 게시는 ReadyToRun, `win-x64`, 프레임워크 종속이에요. 단일 파일·트림·Native AOT는 꺼져 있어요. `ConcurrentGarbageCollection`은 **true**예요.
+대상: `net10.0-windows`, WPF, H.NotifyIcon.Wpf **2.4.1**. WinForms는 쓰지 않아요. 버전은 csproj·`AppEnv.Version` 모두 **0.5.0**. 게시는 ReadyToRun, `win-x64`, 프레임워크 종속이에요. 단일 파일·트림·Native AOT는 꺼져 있어요. `ConcurrentGarbageCollection`은 **true**예요.
 
 출력: `next\BongHub.Next\bin\Release\net10.0-windows\win-x64\publish\`.
 
@@ -36,7 +36,7 @@ BongHub.Next.exe --smoketest
 BongHub.Next.exe --notetest --data <notes 복사본>
 ```
 
-0.2.0 기록(`next/test-logs/next_smoketest.txt`, `next_notetest.txt`)은 스모크 **43 PASS**, 노트 **23 PASS**예요. 0.3.0 스모크는 그 43개에 트레이 단언 13개를 더해 **56 PASS**예요. 0.4.0 스모크는 거기에 소프트웨어 렌더 단언 2개(설정 창, 메모 창)를 더해 **58 PASS**예요. 노트는 그 23개에 표시용 이미지 크기·원본 pict 바이트 유지 2개와 선형 확대 1개를 더해 **26 PASS**예요(읽기 전용 저장 차단 포함). 노트 테스트에는 `data/notes`의 json·rtf 7개를 임시 폴더로 복사해 `--data`로 넘기세요. `data/` 원본은 고치지 마세요.
+0.2.0 기록(`next/test-logs/next_smoketest.txt`, `next_notetest.txt`)은 스모크 **43 PASS**, 노트 **23 PASS**예요. 0.3.0 스모크는 **56**, 0.4.0 스모크는 **58**, 노트는 **26**이에요. 0.5.0 스모크는 **65 PASS**, 노트는 `data/notes` 7개(그림 포함)를 복사했을 때 **89 PASS**예요. 늘린 단언은 글자 7–48, 메모 페이지의 모두 보이기·숨기기·복사·삭제, 트레이 메뉴 항목, 핫키 미등록, 충돌 풍선, 모두 숨기기/보이기, 그리고 노트 쪽의 삭제·단축키 흉내·맞춤 색·그림 바이트·`picwgoal`·그림 가드·뷰어·클램프·읽기 전용 삭제예요. 노트 테스트에는 `data/notes`의 json·rtf 7개를 임시 폴더로 복사해 `--data`로 넘기세요. `data/` 원본은 고치지 마세요. `--off`에서는 `RegisterHotKey`와 `SetWindowsHookEx`를 호출하지 않아요.
 
 ## 메모리 기준선
 
@@ -48,7 +48,9 @@ BongHub.Next가 이미 켜져 있으면 그 Next만 종료한 뒤에 실행하�
 
 결과 파일: `next/test-logs/baseline_memory.txt`. 시나리오 4개(트레이만, 설정 창, 숨긴 설정 창, 메모 7개) × GC 동시 수집 꺼짐/켜짐 × 3회, 각 중앙값. 준비된 뒤 20초 유휴의 `WorkingSet64`·`PrivateMemorySize64`예요. 판정은 **gc_concurrent=true**(csproj 기본값) 중앙값이고, **작업 집합과 private 둘 다** 아래 숫자 이하여야 해요. 작업 집합만 내리고 private가 그대로면 실패한 거예요. `render_mode=software`와, 창이 있는 시나리오의 `hwnd_render_mode=SoftwareOnly`가 스타트업 텍스트에 있어야 해요. `render_tier`는 하드웨어 능력을 적으므로 2여도 소프트웨어 렌더가 켜진 상태일 수 있어요. `idle_trim=1`은 정리가 돌았다는 표시일 뿐이고, 그 직후의 작업 집합 숫자는 로그에 없어요.
 
-0.3.0을 주인 PC에서 잰 값(2026-11-02, `ConcurrentGarbageCollection=false`): 트레이만 작업 집합 57MB / private 15MB, `tray_visible_ms` 341. 설정 창 192 / 162MB, `first_frame_ms` 중앙값 1648(1648 / 1522 / 3795). 메모 7개 276 / 250MB. 같은 날 동시 GC를 켜면 설정 첫 프레임 684ms, 메모 7개 264MB, 트레이 56MB / 293ms였어요. `38e6b9b`(동시 GC, 그림은 화면 크기로만 디코딩)는 트레이 60MB·약 290ms, 설정 첫 프레임 662ms, 설정 195 / 162MB, 메모 7개 240 / 212MB였어요. 관리 힙은 5–6MB라 목표를 넘는 부분은 네이티브 렌더 장치예요. `fb8d5f2`(소프트웨어 렌더)는 트레이 8/18MB·294ms, 설정 23/65MB, 메모 7개 22/95MB로 메모리 목표는 통과했고, 설정 첫 프레임 중앙값만 706ms(652 / 706 / 2386)였어요. 그 다음 변경(설정 창을 처음 열 때 불투명도 애니메이션과 방사 그라데이션을 첫 페인트에서 빼기)을 Windows에서 확인했어요. 스모크 **58**, 노트 **26**, 설정 첫 프레임 **593ms**. 유휴 작업 집합/private는 트레이 **8/18MB**, 설정 **20/64MB**, 메모 7개 **22/94MB**예요. 합격선은 여전히 아래 표예요. 기대값:
+0.5.0은 이 경로에 창이나 후킹을 더하지 않아요. `--off`에서는 핫키 메시지 창을 만들지 않고, msftedit도 불러오지 않아요. 0.4.0에서 확인된 값보다 커지면 안 돼요.
+
+0.3.0을 주인 PC에서 잰 값(2026-11-02, `ConcurrentGarbageCollection=false`): 트레이만 작업 집합 57MB / private 15MB, `tray_visible_ms` 341. 설정 창 192 / 162MB, `first_frame_ms` 중앙값 1648(1648 / 1522 / 3795). 메모 7개 276 / 250MB. 같은 날 동시 GC를 켜면 설정 첫 프레임 684ms, 메모 7개 264MB, 트레이 56MB / 293ms였어요. `38e6b9b`(동시 GC, 그림은 화면 크기로만 디코딩)는 트레이 60MB·약 290ms, 설정 첫 프레임 662ms, 설정 195 / 162MB, 메모 7개 240 / 212MB였어요. 관리 힙은 5–6MB라 목표를 넘는 부분은 네이티브 렌더 장치예요. `fb8d5f2`(소프트웨어 렌더)는 트레이 8/18MB·294ms, 설정 23/65MB, 메모 7개 22/95MB로 메모리 목표는 통과했고, 설정 첫 프레임 중앙값만 706ms(652 / 706 / 2386)였어요. 그 다음 변경(설정 창을 처음 열 때 불투명도 애니메이션과 방사 그라데이션을 첫 페인트에서 빼기)을 Windows에서 확인했어요. 스모크 **58**, 노트 **26**, 설정 첫 프레임 **593ms**. 유휴 작업 집합/private는 트레이 **8/18MB**, 설정 **20/64MB**, 메모 7개 **22/94MB**예요. 0.5.0도 이 숫자를 넘기면 안 돼요. 합격선은 여전히 아래 표예요. 기대값:
 
 | 시나리오 (`gc_concurrent=true` 중앙값) | 작업 집합과 private | 시각 |
 |---|---|---|
@@ -69,7 +71,7 @@ BongHub.Next가 이미 켜져 있으면 그 Next만 종료한 뒤에 실행하�
 
 ## 사이드바
 
-첫 항목이 **모니터 프리셋**이에요(읽기 전용 목록). 이어서 스티커 메모·일반·더 보기·정보. 스티커 메모 `Notes.Opacity`는 40~100% 슬라이더로, 3.4.8과 같이 메모 창 전체 불투명도에 적용해요.
+첫 항목이 **모니터 프리셋**이에요(읽기 전용 목록). 이어서 스티커 메모·일반·더 보기·정보. 스티커 메모 `Notes.Opacity`는 40~100% 슬라이더로, 3.4.9와 같이 메모 창 전체 불투명도에 적용해요. 글자 크기는 7–48pt이고, 새 메모 단축키는 저장하는 즉시 다시 등록해요. Notes 키 하나를 저장할 때는 `config.json`에서 그 값만 바꾸고 나머지 바이트는 그대로 둬요.
 
 ## 메모 저장 잠금
 

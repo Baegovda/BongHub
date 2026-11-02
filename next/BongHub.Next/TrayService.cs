@@ -115,7 +115,12 @@ public sealed class TrayService : IDisposable
     {
         var menu = new ContextMenu { Style = (Style)Application.Current.FindResource(typeof(ContextMenu)) };
         menu.Items.Add(Item("BongHub 열기", OnLeftClick));
-        menu.Items.Add(Item("새 스티커 메모", OnNewNote));
+        var newer = Item("새 스티커 메모", OnNewNote);
+        string hk = NoteHotkey.Normalize(ConfigStore.Notes.Hotkey);
+        if (hk.Length > 0) newer.InputGestureText = hk;
+        menu.Items.Add(newer);
+        menu.Items.Add(Item("스티커 메모 모두 보이기", () => NoteManager.ShowAll()));
+        menu.Items.Add(Item("스티커 메모 모두 숨기기", () => NoteManager.HideAll()));
         menu.Items.Add(new Separator { Style = (Style)Application.Current.FindResource(typeof(Separator)) });
         menu.Items.Add(Item("종료", OnExit));
         return menu;
