@@ -221,7 +221,7 @@ public partial class MainWindow : Window
             group.Children.Add(new Border { Height = 1, Background = (Brush)FindResource("Separator"), Margin = new Thickness(glyph != null ? 58 : 16, 0, 0, 0) });
         var g = new Grid { MinHeight = 50 };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        g.ColumnDefinitions.Add(new ColumnDefinition());
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 140 });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         if (glyph != null) g.Children.Add(new Border { Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Child = Tile(glyph, hex ?? "8E8E93", 30, 8, 15) });
         var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(glyph != null ? 14 : 16, 9, 10, 9) };
@@ -385,7 +385,7 @@ public partial class MainWindow : Window
         }
         catch { }
         Profiles.Clear();
-        Profiles.AddRange(ProfileDoc.Migrate(ConfigStore.Presets, ConfigStore.WindowRules, json));
+        Profiles.AddRange(ProfileDoc.Migrate(ConfigStore.Presets, ConfigStore.WindowRules, json, ScreenMap.Current()));
         if (Profiles.All(p => p.Id != SelectedProfileId))
             SelectedProfileId = Profiles.FirstOrDefault()?.Id ?? "";
     }
@@ -513,7 +513,7 @@ public partial class MainWindow : Window
         cmds.Children.Add(Small("추가", () => { var n = ProfileDoc.Add(Profiles); SelectedProfileId = n.Id; SaveProfiles(); Render("presets", false); }));
         cmds.Children.Add(Small("복제", () => { var n = ProfileDoc.Duplicate(Profiles, SelectedProfileId); if (n != null) { SelectedProfileId = n.Id; SaveProfiles(); Render("presets", false); } }));
         cmds.Children.Add(Small("삭제", () => { if (ProfileDoc.Delete(Profiles, SelectedProfileId)) { SelectedProfileId = Profiles.FirstOrDefault()?.Id ?? ""; SaveProfiles(); Render("presets", false); } }));
-        Row(g, null, null, "프로필", "추가, 이름 바꾸기, 복제, 삭제", cmds);
+        Row(g, null, null, "목록", null, cmds);
         var selected = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId);
         if (selected != null) BuildProfileEditor(selected);
         Footer("모니터와 창, 아이콘은 지금 적용을 눌렀을 때만 바뀌어요. 시험·화면 밖·CI에서는 디스플레이, 실제 창, 탐색기를 열지 않아요. 모니터를 바꾼 뒤 Windows가 최소화된 창을 다시 그리는 경우가 있어요. 작업 표시줄을 맞추려고 탐색기를 끝내지는 않아요.");

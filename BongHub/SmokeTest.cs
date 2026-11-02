@@ -332,6 +332,28 @@ public static class SmokeTest
         bool explorerBlocked = false;
         try { using var realIcons = new ExplorerIconSurface(); } catch (InvalidOperationException) { explorerBlocked = true; }
         t.Check("profile icon layout restores through a fake desktop", iconResult.Ok && iconSurface.Icons[0].X == 40 && iconSurface.Icons[0].Y == 50 && explorerBlocked && ExplorerIconSurface.NativeCalls == 0);
+        string legacy = "{\"profiles\":[{\"name\":\"작업\",\"icons\":\"L1\",\"windows\":["
+            + "{\"process\":\"a.exe\",\"title\":\"A\",\"class\":\"A\",\"x\":36,\"y\":28,\"w\":96,\"h\":64},"
+            + "{\"process\":\"b.exe\",\"title\":\"B\",\"class\":\"B\",\"x\":140,\"y\":28,\"w\":96,\"h\":64},"
+            + "{\"process\":\"c.exe\",\"title\":\"C\",\"class\":\"C\",\"x\":244,\"y\":28,\"w\":96,\"h\":64},"
+            + "{\"process\":\"d.exe\",\"title\":\"D\",\"class\":\"D\",\"x\":36,\"y\":100,\"w\":96,\"h\":64},"
+            + "{\"process\":\"e.exe\",\"title\":\"E\",\"class\":\"E\",\"x\":140,\"y\":100,\"w\":96,\"h\":64},"
+            + "{\"process\":\"f.exe\",\"title\":\"F\",\"class\":\"F\",\"x\":244,\"y\":100,\"w\":96,\"h\":64}]}]}";
+        var lifted = ProfileDoc.Migrate(new[] { new MonitorPreset { Name = "작업", Hotkey = "Ctrl+Alt+1" } }, Array.Empty<WindowRule>(), legacy);
+        var liftedApps = lifted[0].Apps.OrderBy(a => a.Title).ToList();
+        t.Check("1.1.0 canvas windows become monitor pixels", liftedApps.Count == 6 && liftedApps.All(a => a.W == 576 && a.H == 384) && liftedApps[0].X == 96 && liftedApps[1].X == 720 && liftedApps[5].Y == 540 && liftedApps.Select(a => a.X).Distinct().Count() == 3 && lifted[0].Monitors[0].W == 1920);
+        var screens = new List<MonitorSpec>
+        {
+            new(3840, 2160, 0, 0, true),
+            new(1920, 1080, 3840, 0, false),
+            new(1920, 1080, 3840, 1080, false),
+            new(3840, 2160, -3840, 0, false),
+            new(960, 640, 5760, 0, false)
+        };
+        var seeded = ProfileDoc.Migrate(new[] { new MonitorPreset { Name = "작업", Hotkey = "Ctrl+Alt+1", Primary = "SAM1", Enable = new() { "SAM1" } } }, Array.Empty<WindowRule>(), null, screens);
+        var seedPrimary = seeded[0].Monitors.First(m => m.Primary);
+        string seedSummary = seedPrimary.W + "×" + seedPrimary.H;
+        t.Check("profile monitors follow the screen list", seeded[0].Monitors.Count == 5 && seedPrimary.W == 3840 && seedPrimary.H == 2160 && seedPrimary.X == 0 && seedPrimary.Id == "SAM1" && seeded[0].Monitors.Any(m => m.W == 960 && m.H == 640) && seedSummary == "3840×2160" && ScreenMap.Current().Count == 0);
 
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);

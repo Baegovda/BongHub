@@ -758,6 +758,20 @@ var restored = ProfileDoc.RestoreIcons(captured, icons);
 bool explorerBlocked = false;
 try { _ = new ExplorerIconSurface(); } catch (InvalidOperationException) { explorerBlocked = true; }
 Check("profile icons restore on a fake desktop", restored.Ok && icons.Icons[0].X == 40 && icons.Icons[0].Y == 12 && icons.Moves == 1 && explorerBlocked && ExplorerIconSurface.NativeCalls == 0);
+string legacy = "{\"profiles\":[{\"name\":\"작업\",\"windows\":["
+    + "{\"process\":\"a.exe\",\"title\":\"A\",\"class\":\"A\",\"x\":36,\"y\":28,\"w\":96,\"h\":64},"
+    + "{\"process\":\"b.exe\",\"title\":\"B\",\"class\":\"B\",\"x\":140,\"y\":28,\"w\":96,\"h\":64},"
+    + "{\"process\":\"c.exe\",\"title\":\"C\",\"class\":\"C\",\"x\":244,\"y\":28,\"w\":96,\"h\":64},"
+    + "{\"process\":\"d.exe\",\"title\":\"D\",\"class\":\"D\",\"x\":36,\"y\":100,\"w\":96,\"h\":64},"
+    + "{\"process\":\"e.exe\",\"title\":\"E\",\"class\":\"E\",\"x\":140,\"y\":100,\"w\":96,\"h\":64},"
+    + "{\"process\":\"f.exe\",\"title\":\"F\",\"class\":\"F\",\"x\":244,\"y\":100,\"w\":96,\"h\":64}]}]}";
+var lifted = ProfileDoc.Migrate(new[] { new MonitorPreset { Name = "작업" } }, Array.Empty<WindowRule>(), legacy);
+var liftedApps = lifted[0].Apps.OrderBy(a => a.Title).ToList();
+Check("1.1.0 canvas windows become monitor pixels", liftedApps.Count == 6 && liftedApps.All(a => a.W == 576 && a.H == 384) && liftedApps[0].X == 96 && liftedApps[1].X == 720 && liftedApps[5].Y == 540 && liftedApps.Select(a => a.X).Distinct().Count() == 3);
+var screens = new List<MonitorSpec> { new(3840, 2160, 0, 0, true), new(1920, 1080, 3840, 0, false), new(1920, 1080, 3840, 1080, false), new(3840, 2160, -3840, 0, false), new(960, 640, 5760, 0, false) };
+var seeded = ProfileDoc.Migrate(new[] { new MonitorPreset { Name = "작업", Primary = "SAM1", Enable = new List<string> { "SAM1" } } }, Array.Empty<WindowRule>(), null, screens);
+var seedPrimary = seeded[0].Monitors.First(m => m.Primary);
+Check("profile monitors follow the screen list", seeded[0].Monitors.Count == 5 && seedPrimary.W == 3840 && seedPrimary.H == 2160 && seedPrimary.X == 0 && seedPrimary.Id == "SAM1" && seeded[0].Monitors.Any(m => m.W == 960 && m.H == 640) && ProfileSnap.ContentHeight(seeded[0].Monitors.Select(m => m.Box).ToList(), 560, 16) < 200);
 string profileRoot = Path.Combine(Path.GetTempPath(), "bonghub_profile_" + Environment.ProcessId);
 try
 {

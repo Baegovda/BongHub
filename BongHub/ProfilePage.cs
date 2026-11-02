@@ -29,15 +29,13 @@ public partial class MainWindow
     void BuildProfileEditor(MonitorProfile profile)
     {
         Header("이 프로필");
-        var nameBox = new TextBox { Text = profile.Name, MinWidth = 160, FontSize = 16, FontWeight = FontWeights.SemiBold, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground };
-        var hotkeyBox = new TextBox { Text = profile.Hotkey, Width = 110, FontSize = 13, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground, ToolTip = "단축키. 등록은 하지 않아요." };
+        var nameBox = new TextBox { Text = profile.Name, MinWidth = 180, FontSize = 16, FontWeight = FontWeights.SemiBold, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground, VerticalContentAlignment = VerticalAlignment.Center };
+        var hotkeyBox = new TextBox { Text = profile.Hotkey, MinWidth = 120, FontSize = 14, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground, VerticalContentAlignment = VerticalAlignment.Center };
         nameBox.LostFocus += (_, _) => { ProfileDoc.Rename(profile, nameBox.Text); SaveProfiles(); };
         hotkeyBox.LostFocus += (_, _) => { profile.Hotkey = hotkeyBox.Text.Trim(); SaveProfiles(); };
-        var naming = new StackPanel { Orientation = Orientation.Horizontal };
-        naming.Children.Add(nameBox);
-        naming.Children.Add(hotkeyBox);
         var named = Group();
-        Row(named, "\uE7F4", "4C8AFE", "이름", "핫키는 표시만 하고, 지금 적용을 눌러야 배치가 바뀌어요.", naming);
+        FieldRow(named, "이름", Chip(nameBox));
+        FieldRow(named, "단축키", Chip(hotkeyBox));
 
         Header("모니터 배치");
         DrawProfileCanvas(profile);
@@ -62,20 +60,19 @@ public partial class MainWindow
 
         Header("창");
         DrawWindowList(profile);
-        var addRow = new StackPanel { Orientation = Orientation.Horizontal };
-        Button running = null!;
-        running = Small("실행 중", () => ShowRunningMenu(profile, running));
-        addRow.Children.Add(running);
-        addRow.Children.Add(Small("조준", () => { RequestCaptureWindow(); if (LastPick != null) AddPicked(profile, LastPick); }));
-        var proc = Field("exe");
-        var title = Field("제목");
-        var cls = Field("클래스");
-        addRow.Children.Add(proc);
-        addRow.Children.Add(title);
-        addRow.Children.Add(cls);
-        addRow.Children.Add(Small("직접 담기", () => AddPicked(profile, new WindowPick { Process = proc.Text.Trim(), Title = title.Text.Trim(), Class = cls.Text.Trim(), W = 800, H = 600 })));
+        Header("창 담기");
         var winGroup = Group();
-        Row(winGroup, "\uE737", "5AC8FA", "창 담기", "실행 중 목록, 조준, 또는 exe·제목·클래스. 시험에서는 가짜 창만 담아요.", addRow);
+        Button running = null!;
+        running = Small("목록", () => ShowRunningMenu(profile, running));
+        Row(winGroup, "\uE737", "5AC8FA", "실행 중인 창", "고르면 이 모니터에 담아요. 시험에서는 가짜 창만 나와요.", running);
+        Row(winGroup, "\uE8B3", "4C8AFE", "조준", "십자선으로 창을 집어요.", Small("조준", () => { RequestCaptureWindow(); if (LastPick != null) AddPicked(profile, LastPick); }));
+        var proc = PromptBox("notepad.exe");
+        var title = PromptBox("제목 없음");
+        var cls = PromptBox("Notepad");
+        FieldRow(winGroup, "실행 파일", proc.Field);
+        FieldRow(winGroup, "창 제목", title.Field);
+        FieldRow(winGroup, "창 클래스", cls.Field);
+        Row(winGroup, "\uE710", "34C759", "직접 담기", "위 세 칸으로 창을 추가해요.", Small("담기", () => AddPicked(profile, new WindowPick { Process = proc.Box.Text.Trim(), Title = title.Box.Text.Trim(), Class = cls.Box.Text.Trim(), W = 800, H = 600 })));
 
         Header("바탕화면 아이콘");
         var iconGroup = Group();
@@ -88,7 +85,31 @@ public partial class MainWindow
         DeskSwitch(pol, "\uE7F8", "AF52DE", "화면이 바뀌면 되돌리기", "저장된 배치가 있을 때만 아이콘을 옮겨요.", "RestoreOnChange", ConfigStore.DeskRestoreOnChange);
     }
 
-    TextBox Field(string tip) => new() { Width = 88, Margin = new Thickness(0, 0, 6, 0), FontSize = 12, ToolTip = tip, Foreground = Foreground, Background = Brushes.Transparent };
+    Border Chip(UIElement child) => new()
+    {
+        CornerRadius = new CornerRadius(8),
+        BorderBrush = (Brush)FindResource("Separator"),
+        BorderThickness = new Thickness(1),
+        Padding = new Thickness(10, 6, 10, 6),
+        Background = new SolidColorBrush(Color.FromArgb(0x14, 255, 255, 255)),
+        Child = child,
+        MinWidth = 180,
+        HorizontalAlignment = HorizontalAlignment.Right
+    };
+
+    void FieldRow(StackPanel group, string label, UIElement editor)
+        => Row(group, null, null, label, null, editor);
+
+    (Border Field, TextBox Box) PromptBox(string placeholder)
+    {
+        var box = new TextBox { MinWidth = 180, FontSize = 14, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground, VerticalContentAlignment = VerticalAlignment.Center };
+        var hint = new TextBlock { Text = placeholder, Opacity = 0.4, IsHitTestVisible = false, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 0, 0), Foreground = (Brush)FindResource("Secondary") };
+        box.TextChanged += (_, _) => hint.Visibility = box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        var grid = new Grid { MinWidth = 180 };
+        grid.Children.Add(box);
+        grid.Children.Add(hint);
+        return (Chip(grid), box);
+    }
 
     void DrawWindowList(MonitorProfile profile)
     {
@@ -108,9 +129,11 @@ public partial class MainWindow
 
     void DrawProfileCanvas(MonitorProfile profile)
     {
-        const int cw = 560, ch = 280, pad = 18;
-        var scene = ProfileSnap.Fit(profile.Monitors.Select(m => m.Box).ToList(), cw, ch, pad);
-        var stage = new Canvas { Width = cw, Height = ch, Margin = new Thickness(16, 0, 16, 8), SnapsToDevicePixels = true, UseLayoutRounding = true };
+        const int cw = 560, pad = 16;
+        var boxes = profile.Monitors.Select(m => m.Box).ToList();
+        int ch = ProfileSnap.ContentHeight(boxes, cw, pad);
+        var scene = ProfileSnap.Fit(boxes, cw, ch, pad);
+        var stage = new Canvas { Width = cw, Height = ch, Margin = new Thickness(16, 0, 16, 4), VerticalAlignment = VerticalAlignment.Top, SnapsToDevicePixels = true, UseLayoutRounding = true };
         var preview = new Border
         {
             BorderBrush = (Brush)FindResource("Accent"),
