@@ -84,7 +84,7 @@ public partial class StickyNoteWindow : Window
             PlacePhysical();
         };
         Loaded += (_, _) => PlacePhysical();
-        WindowFx.Of(this).AfterFirstFrame = () => { Ready = true; Win32.AllowActivate(Win32.Handle(this)); };
+        WindowFx.Of(this).AfterFirstFrame = () => { PlacePhysical(); Ready = true; Win32.AllowActivate(Win32.Handle(this)); };
 
         EditorHost.PreviewMouseWheel += (_, e) => { if (Keyboard.Modifiers != ModifierKeys.Control) return; e.Handled = true; Meta.Zoom = (float)Math.Clamp(Math.Round(Meta.Zoom + (e.Delta > 0 ? 0.1 : -0.1), 1), 0.6, 3.0); ApplyZoom(); MarkMeta(); };
         EditorHost.PreviewMouseLeftButtonDown += (_, _) => { if (editor == null && !AppEnv.ReadOnly) EnsureEditor().Focus(); };
@@ -130,6 +130,10 @@ public partial class StickyNoteWindow : Window
             else if (!Win32.OnAnyMonitor(x, y, w, h)) { var a = Win32.WorkAreaAtCursor(); x = a.Left + 60; y = a.Top + 60; }
         }
         int px = x + AppEnv.OffsetX, py = y + AppEnv.OffsetY;
+        double dpi = Win32.Scale(this);
+        if (dpi < 0.5) dpi = 1;
+        Width = w / dpi;
+        Height = h / dpi;
         // Record the physical target before WPF applies Left/Top, so a monitor pull is undone exactly.
         Win32.RememberOffScreen(Win32.Handle(this), px, py);
         Win32.Place(this, px, py, w, h);
