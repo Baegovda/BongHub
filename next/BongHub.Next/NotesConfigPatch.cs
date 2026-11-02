@@ -30,7 +30,7 @@ public static class NotesConfigPatch
             if (hit.Found && !hit.IsObject)
             {
                 string existing = text.Substring(hit.ValueStart, hit.ValueEnd - hit.ValueStart);
-                string formatted = Format(value);
+                string formatted = FormatLike(existing, value);
                 if (existing == formatted || Same(existing, value)) { updated = text; return true; }
                 updated = text.Substring(0, hit.ValueStart) + formatted + text.Substring(hit.ValueEnd);
                 return true;
@@ -110,7 +110,7 @@ public static class NotesConfigPatch
     }
 
     /// <summary>
-    /// True when that span only inserts <c>TabOrder</c> or replaces its array.
+    /// True when that span only inserts <c>TabOrder</c>, replaces its array, or reorders the names inside it.
     /// Presets, Pt, Desk, and sibling General keys must stay outside the span.
     /// </summary>
     public static bool TabOrderSpanOnly(string removed, string inserted)
@@ -118,7 +118,144 @@ public static class NotesConfigPatch
         if (string.IsNullOrEmpty(inserted)) return false;
         if (ContainsForeign(removed) || ContainsForeign(inserted)) return false;
         if (inserted.Contains("\"TabOrder\"", StringComparison.Ordinal)) return true;
-        return StartsJsonArray(removed) && StartsJsonArray(inserted);
+        if (StartsJsonArray(removed) && StartsJsonArray(inserted)) return true;
+        // A reorder leaves the brackets in place, so the span is only quoted names, commas, and the original indent.
+        return IsArrayInterior(removed) && IsArrayInterior(inserted);
+    }
+
+    /// <summary>
+    /// Replace an existing value. A string array keeps its brackets, commas, newlines, and indent;
+    /// only the element text moves. Anything else uses <see cref="Format"/>.
+    /// </summary>
+    static string FormatLike(string existing, JsonNode value)
+    {
+        if (value is JsonArray arr && TryRewriteStringArray(existing, arr, out string rewritten)) return rewritten;
+        return Format(value);
+    }
+
+    static bool TryRewriteStringArray(string existing, JsonArray incoming, out string rewritten)
+    {
+        rewritten = "";
+        if (!TrySplitStringArray(existing, out var values, out var gaps)) return false;
+        var next = new List<string>();
+        foreach (var node in incoming)
+        {
+            if (node is not JsonValue jv || !jv.TryGetValue<string>(out string? s)) return false;
+            next.Add(s ?? "");
+        }
+        if (next.Count == values.Count)
+        {
+            var sb = new StringBuilder(existing.Length + 16);
+            for (int i = 0; i < next.Count; i++)
+            {
+                sb.Append(gaps[i]);
+                sb.Append(Quote(next[i]));
+            }
+            sb.Append(gaps[next.Count]);
+            rewritten = sb.ToString();
+            return true;
+        }
+        if (values.Count == 0) return false;
+        string separator = values.Count >= 2 ? gaps[1] : GuessSeparator(gaps[0]);
+        var built = new StringBuilder(existing.Length + next.Count * 16);
+        for (int i = 0; i < next.Count; i++)
+        {
+            built.Append(i == 0 ? gaps[0] : separator);
+            built.Append(Quote(next[i]));
+        }
+        built.Append(gaps[values.Count]);
+        rewritten = built.ToString();
+        return true;
+    }
+
+    /// <summary>Gaps are the raw slices around each quoted element, so commas and indentation stay in the gaps.</summary>
+    static bool TrySplitStringArray(string text, out List<string> values, out List<string> gaps)
+    {
+        values = new List<string>();
+        gaps = new List<string>();
+        int i = 0;
+        while (i < text.Length && text[i] is ' ' or '\t' or '\r' or '\n') i++;
+        if (i >= text.Length || text[i] != '[') return false;
+        int gapStart = 0;
+        i++;
+        bool wantValue = true;
+        bool any = false;
+        while (i < text.Length)
+        {
+            char c = text[i];
+            if (c is ' ' or '\t' or '\r' or '\n') { i++; continue; }
+            if (c == ']')
+            {
+                if (wantValue && any) return false;
+                gaps.Add(text.Substring(gapStart));
+                int j = i + 1;
+                while (j < text.Length && text[j] is ' ' or '\t' or '\r' or '\n') j++;
+                return j == text.Length && gaps.Count == values.Count + 1;
+            }
+            if (!wantValue)
+            {
+                if (c != ',') return false;
+                i++;
+                wantValue = true;
+                continue;
+            }
+            if (c != '"') return false;
+            gaps.Add(text.Substring(gapStart, i - gapStart));
+            if (!ReadJsonString(text, ref i, out string value)) return false;
+            values.Add(value);
+            gapStart = i;
+            wantValue = false;
+            any = true;
+        }
+        return false;
+    }
+
+    static bool ReadJsonString(string text, ref int i, out string value)
+    {
+        value = "";
+        if (i >= text.Length || text[i] != '"') return false;
+        i++;
+        var sb = new StringBuilder();
+        while (i < text.Length)
+        {
+            char c = text[i++];
+            if (c == '"') { value = sb.ToString(); return true; }
+            if (c != '\\') { sb.Append(c); continue; }
+            if (i >= text.Length) return false;
+            char e = text[i++];
+            switch (e)
+            {
+                case '"': case '\\': case '/': sb.Append(e); break;
+                case 'b': sb.Append('\b'); break;
+                case 'f': sb.Append('\f'); break;
+                case 'n': sb.Append('\n'); break;
+                case 'r': sb.Append('\r'); break;
+                case 't': sb.Append('\t'); break;
+                case 'u':
+                    if (i + 4 > text.Length) return false;
+                    if (!int.TryParse(text.Substring(i, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int cp)) return false;
+                    sb.Append((char)cp);
+                    i += 4;
+                    break;
+                default: return false;
+            }
+        }
+        return false;
+    }
+
+    static string GuessSeparator(string prefix)
+    {
+        int nl = prefix.LastIndexOf('\n');
+        if (nl < 0) return prefix.EndsWith(' ') ? ", " : ",";
+        string indent = prefix.Substring(nl + 1);
+        string nlText = prefix.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        return "," + nlText + indent;
+    }
+
+    static bool IsArrayInterior(string s)
+    {
+        if (string.IsNullOrEmpty(s) || s.IndexOf('{') >= 0 || s.IndexOf('}') >= 0 || s.IndexOf('[') >= 0 || s.IndexOf(']') >= 0) return false;
+        return s.IndexOf('"') >= 0;
     }
 
     static bool StartsJsonArray(string s)

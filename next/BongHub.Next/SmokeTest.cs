@@ -119,8 +119,12 @@ public static class SmokeTest
         NotesConfigPatch.ChangedSpan(beforeText, patched, out string removed, out string inserted);
         bool sourceSame = srcBefore == null || File.ReadAllBytes(srcPath!).AsSpan().SequenceEqual(srcBefore);
         bool markers = srcBefore != null || (patched.Contains("PRESET_KEEP") && patched.Contains("PT_KEEP") && patched.Contains("DESK_KEEP"));
-        t.Check("tab order changes only TabOrder bytes", moved && sourceSame && markers && NotesConfigPatch.TabOrderSpanOnly(removed, inserted),
+        bool shapeKept = beforeText.Count(c => c == '\n') == patched.Count(c => c == '\n') && beforeText.Count(c => c == '\r') == patched.Count(c => c == '\r');
+        t.Check("tab order changes only TabOrder bytes", moved && sourceSame && markers && shapeKept && NotesConfigPatch.TabOrderSpanOnly(removed, inserted),
             srcBefore == null ? $"fixture removed={removed.Length} inserted={inserted.Length}" : $"real copy {srcBefore.Length} bytes untouched, removed={removed.Length} inserted={inserted.Length}");
+        // Contrast measures the built-in palette at full opacity. A copied config (Opacity 80) blends the glyphs.
+        File.WriteAllText(AppEnv.ConfigPath, fixture);
+        ConfigStore.Load();
 
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);

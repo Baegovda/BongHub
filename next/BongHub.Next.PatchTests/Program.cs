@@ -22,6 +22,20 @@ if (repo != null)
     Check("Opacity changes one token", OneNumber(text, "Opacity", 81, 82));
     Check("Gradient toggles one token", OneBool(text, "Gradient"));
     Check("FontSize changes one number", OneNumber(text, "FontSize", 17, 19));
+    Check("synced tab order keeps its lines", ReorderSyncedTab(text));
+}
+
+bool ReorderSyncedTab(string text)
+{
+    const string oldBlock = "[\r\n      \"presets\",\r\n      \"windows\",\r\n      \"notes\",\r\n      \"kakao\",\r\n      \"desktop\",\r\n      \"powertoys\",\r\n      \"general\",\r\n      \"about\"\r\n    ]";
+    const string newBlock = "[\r\n      \"windows\",\r\n      \"notes\",\r\n      \"kakao\",\r\n      \"desktop\",\r\n      \"powertoys\",\r\n      \"general\",\r\n      \"about\",\r\n      \"presets\"\r\n    ]";
+    if (!text.Contains(oldBlock)) return false;
+    var arr = new JsonArray();
+    foreach (var k in new[] { "windows", "notes", "kakao", "desktop", "powertoys", "general", "about", "presets" }) arr.Add(JsonValue.Create(k));
+    if (!NotesConfigPatch.TryApply(text, "General", "TabOrder", arr, out string lined)) return false;
+    if (lined != text.Replace(oldBlock, newBlock)) return false;
+    NotesConfigPatch.ChangedSpan(text, lined, out string removed, out string inserted);
+    return NotesConfigPatch.TabOrderSpanOnly(removed, inserted) && !removed.Contains("IdleEnabled") && !inserted.Contains("IdleEnabled");
 }
 
 bool OneNumber(string text, string key, int a, int b)
@@ -163,11 +177,14 @@ const string PrettyOrder = "{\r\n  \"Version\": 2,\r\n  \"Presets\": [{ \"Marker
 var swapped = new JsonArray();
 swapped.Add(JsonValue.Create("about"));
 swapped.Add(JsonValue.Create("presets"));
+string expectedPretty = PrettyOrder.Replace(
+    "[\r\n      \"presets\",\r\n      \"about\"\r\n    ]",
+    "[\r\n      \"about\",\r\n      \"presets\"\r\n    ]");
 Check("pretty tab order replaces only the array", NotesConfigPatch.TryApply(PrettyOrder, "General", "TabOrder", swapped, out string prettyOut)
-    && prettyOut.Contains("PRESET_KEEP") && prettyOut.Contains("PT_KEEP") && prettyOut.Contains("DESK_KEEP") && prettyOut.Contains("\"OverlayOpacity\": 70"));
+    && prettyOut == expectedPretty);
 NotesConfigPatch.ChangedSpan(PrettyOrder, prettyOut, out string prettyRemoved, out string prettyInserted);
-Check("pretty tab order byte span", NotesConfigPatch.TabOrderSpanOnly(prettyRemoved, prettyInserted)
-    && prettyRemoved.TrimStart().StartsWith("[") && prettyInserted.StartsWith("[") && prettyOut.Contains("\"IdleEnabled\": true"));
+Check("pretty tab order byte span", prettyOut == expectedPretty && NotesConfigPatch.TabOrderSpanOnly(prettyRemoved, prettyInserted)
+    && prettyOut.Contains("\"IdleEnabled\": true") && prettyOut.Contains("\"OverlayOpacity\": 70"));
 Check("notes patch still leaves Presets", NotesConfigPatch.TryApply(Shell, "Opacity", JsonValue.Create(9), out string notesOnly)
     && notesOnly.Contains("\"Opacity\": 9") && notesOnly.Contains("PRESET_KEEP") && notesOnly.Contains("PT_KEEP") && notesOnly.Contains("DESK_KEEP"));
 

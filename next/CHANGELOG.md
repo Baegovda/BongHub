@@ -9,7 +9,7 @@
 - 정보 탭에 버전, 구성요소, 단축키, 변경을 적어요.
 - 스모크 **83**, 노트 **89**. 설정 메모리는 작업 집합/private **20/64MB**를 넘기면 안 돼요. 첫 페인트는 프리셋 페이지만 만들어요.
 - 메모 창의 `MaxHeight`는 30000이에요. Windows가 `WM_GETMINMAXINFO`의 `ptMaxTrackSize`를 작업 영역(예: 1100)으로 채우고, WPF는 `Min(MaxHeight, 그 값)`을 다시 써요. 훅이 그 값을 30000으로 올린 뒤에 WPF가 읽어요. 3.4.x는 이 한도를 쓰지 않아요.
-- `--smoketest`는 `--data`를 무시하고 `%TEMP%\bhnext_smoke_<pid>`만 써요. 그 폴더에 config가 있으면 바이트를 임시 폴더로 복사해 `General.TabOrder`만 바뀌는지 보고, 원본 파일은 쓰지 않아요.
+- `--smoketest`는 `--data`를 무시하고 `%TEMP%\bhnext_smoke_<pid>`만 써요. 그 폴더에 config가 있으면 바이트를 임시 폴더로 복사해 `General.TabOrder` 항목 순서만 바뀌는지 봐요. 줄바꿈과 들여쓰기는 유지하고, 원본 파일은 쓰지 않아요. 노트 대비 검사는 그 복사본의 투명도를 쓰지 않고 기본 팔레트로 해요.
 
 ## 0.5.0
 
