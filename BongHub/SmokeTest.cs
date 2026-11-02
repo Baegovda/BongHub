@@ -71,7 +71,7 @@ public static class SmokeTest
         ContrastCheck(t, w, w.FirstSecondary, "secondary text", 4.5);
         ContrastCheck(t, w, w.AppTitle, "sidebar title", 7);
 
-        foreach (var page in new[] { "windows", "notes", "kakao", "desktop", "general", "powertoys", "about" })
+        foreach (var page in new[] { "notes", "kakao", "general", "powertoys", "about" })
         {
             w.Navigate(page);
             t.Check($"tab {page} switch is non-blocking (<60ms)", w.LastNavigateMs < 60, $"{w.LastNavigateMs:0.0} ms");
@@ -99,7 +99,7 @@ public static class SmokeTest
         await TestKit.Delay(400);
         t.Check("reopen from tray after Alt+F4", reopenErr == null && w.IsVisible && w.Root.Opacity > 0.99, reopenErr?.Message ?? $"visible={w.IsVisible}");
         t.Check("reopen did not take focus", TestKit.NotForeground(w));
-        t.Check("eight settings tabs", w.Pages.Count == 8 && w.Pages.Any(p => p.Label == "모니터 프리셋") && w.Pages.Any(p => p.Label == "카톡 광고 제거"));
+        t.Check("six settings tabs", w.Pages.Count == 6 && w.Pages.Any(p => p.Label == "모니터 프로필") && w.Pages.Any(p => p.Label == "카톡 광고 제거") && !w.Pages.Any(p => p.Key == "windows") && !w.Pages.Any(p => p.Key == "desktop"));
         t.Check("startup switch is display only", w.StartupSwitchEnabled == false);
         t.Check("about shows version and hotkeys", w.AboutMentionsVersion && w.AboutMentionsHotkey);
         t.Check("open folder stays inside tests", w.RequestOpenDataFolder() == false && w.FolderLaunches == 0);
@@ -298,6 +298,11 @@ public static class SmokeTest
         w.RememberPreset("작업");
         w.RequestApplyPreset("작업");
         t.Check("preset hotkey does not reapply the active layout", w.LastPresetToast == "이미 작업 상태입니다!" && w.DisplayBlocks == presetBlocks && DisplaySystem.NativeCalls == presetNatives);
+        var snapped = ProfileLayout.Snap(new ProfileBox(13, 17, 200, 100), new ProfileBox(0, 0, 800, 600), 8);
+        w.RequestCaptureWindow();
+        bool captureThrew = false;
+        try { using var livePick = new LiveWindowSurface(); } catch (InvalidOperationException) { captureThrew = true; }
+        t.Check("profile snap and capture stay off real windows", snapped.X == 16 && snapped.Y == 16 && snapped.Right <= 800 && w.LastPick != null && w.LastPick.Title == "메모장" && w.LastPick.W == 640 && captureThrew && LiveWindowSurface.NativeCalls == 0);
 
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);

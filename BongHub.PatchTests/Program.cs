@@ -706,6 +706,45 @@ string clipPlain = NoteClip.Plain(clip);
 string clipRtf = NoteClip.ToRtf(clip);
 Check("note clip keeps text and png", clip.Count == 3 && clipPlain == "안녕 끝" && !clipPlain.Contains("Image") && clip[1].Png is { Length: 4 } && clipRtf.Contains("\\pngblip") && clipRtf.Contains("89504e47"));
 Check("active preset is not applied again", !PresetApplyPolicy.IsCurrent("", "작업") && PresetApplyPolicy.IsCurrent("작업", "작업") && PresetApplyPolicy.Toast("작업") == "이미 작업 상태입니다!" && !PresetApplyPolicy.IsCurrent("작업", "자리비움"));
+var snapped = ProfileLayout.Snap(new ProfileBox(13, 17, 200, 100), new ProfileBox(0, 0, 800, 600), 8);
+Check("profile drag snaps inside the monitor", snapped.X == 16 && snapped.Y == 16 && snapped.Right <= 800 && snapped.Bottom <= 600);
+var fitted = ProfileLayout.Fit(new ProfileBox(0, 0, 960, 540), new ProfileBox(0, 0, 1920, 1080), new ProfileBox(20, 10, 320, 180));
+Check("profile window fits inside the monitor graphic", fitted.X == 20 && fitted.Y == 10 && fitted.W == 160 && fitted.H == 90 && fitted.Right <= 340 && fitted.Bottom <= 190);
+var picked = WindowPicker.From(new TrackedWindow { Process = "notepad.exe", Title = "메모장", Class = "Notepad", X = 40, Y = 48, W = 640, H = 480 });
+var under = WindowPicker.Hit(new[]
+{
+    new TrackedWindow { Process = "explorer.exe", Title = "바탕", Class = "Progman", X = 0, Y = 0, W = 800, H = 600 },
+    new TrackedWindow { Process = "notepad.exe", Title = "메모장", Class = "Notepad", X = 40, Y = 48, W = 640, H = 480 }
+}, 100, 100);
+var copy = under == null ? null : WindowPicker.From(under);
+Check("crosshair copies a fake window", picked.Process == "notepad.exe" && picked.Title == "메모장" && picked.Class == "Notepad" && picked.W == 640 && picked.H == 480
+    && copy != null && copy.Process == "notepad.exe" && copy.Title == "메모장" && copy.Class == "Notepad" && copy.X == 40 && copy.W == 640 && copy.H == 480);
+string profileDoc = ProfileCodec.ToJson(new[] { new ProfileRecord { Name = "작업", Icons = "L1", Windows = { new ProfileWindow { Process = "notepad.exe", Title = "메모장", Class = "Notepad", X = 16, Y = 16, W = 96, H = 64 } } } });
+var profileBack = ProfileCodec.Parse(profileDoc);
+Check("profile json keeps windows and icons", profileBack.Count == 1 && profileBack[0].Name == "작업" && profileBack[0].Icons == "L1" && profileBack[0].Windows.Count == 1 && profileBack[0].Windows[0].Class == "Notepad" && profileBack[0].Windows[0].X == 16 && !profileDoc.Contains("IdleMinutes"));
+string profileRoot = Path.Combine(Path.GetTempPath(), "bonghub_profile_" + Environment.ProcessId);
+try
+{
+    Directory.CreateDirectory(Path.Combine(profileRoot, "notes"));
+    Directory.CreateDirectory(Path.Combine(profileRoot, "desktop"));
+    File.WriteAllText(Path.Combine(profileRoot, "config.json"), "{\"General\":{\"IdleMinutes\":1}}");
+    var remoteProfiles = new MemoryCloud();
+    string profileJson = "{\"profiles\":[{\"name\":\"작업\",\"icons\":\"L1\"}]}";
+    string ran = CloudEngine.Run(new CloudWorkspace
+    {
+        ConfigFile = Path.Combine(profileRoot, "config.json"),
+        NotesDir = Path.Combine(profileRoot, "notes"),
+        DeskDir = Path.Combine(profileRoot, "desktop"),
+        Device = "PC-A",
+        AppVersion = "1.1.0",
+        UtcNow = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc),
+        LocalNow = new DateTime(2026, 1, 2, 9, 0, 0),
+        ProfilesJson = profileJson
+    }, remoteProfiles, true);
+    var tree = remoteProfiles.Snapshot();
+    Check("profiles.json is additive", ran.Length == 0 && tree.ContainsKey("data/profiles.json") && tree.ContainsKey("data/config.json") && Encoding.UTF8.GetString(tree["data/profiles.json"].Bytes) == profileJson);
+}
+finally { try { Directory.Delete(profileRoot, true); } catch { } }
     }
     catch (Exception ex) { Check("cloud exception", false, ex.ToString()); }
     finally { try { if (Directory.Exists(root)) Directory.Delete(root, true); } catch { } }

@@ -119,6 +119,127 @@ public static class BrightSink
     public static BrightSet? Set;
 }
 
+public readonly record struct ProfileBox(int X, int Y, int W, int H)
+{
+    public int Right => X + W;
+    public int Bottom => Y + H;
+}
+
+public sealed class ProfileWindow
+{
+    public string Process = "";
+    public string Title = "";
+    public string Class = "";
+    public int X, Y, W = 96, H = 64;
+}
+
+public sealed class ProfileRecord
+{
+    public string Name = "";
+    public string Icons = "";
+    public List<ProfileWindow> Windows = new();
+}
+
+/// <summary>Monitor-profile geometry. Drag positions snap to a grid and stay inside the monitor. No window API.</summary>
+public static class ProfileLayout
+{
+    public static ProfileBox Snap(ProfileBox window, ProfileBox monitor, int grid)
+    {
+        int g = grid < 1 ? 1 : grid;
+        int x = monitor.X + (int)Math.Round((window.X - monitor.X) / (double)g) * g;
+        int y = monitor.Y + (int)Math.Round((window.Y - monitor.Y) / (double)g) * g;
+        int w = Math.Max(g, window.W);
+        int h = Math.Max(g, window.H);
+        if (x < monitor.X) x = monitor.X;
+        if (y < monitor.Y) y = monitor.Y;
+        if (x + w > monitor.Right) x = Math.Max(monitor.X, monitor.Right - w);
+        if (y + h > monitor.Bottom) y = Math.Max(monitor.Y, monitor.Bottom - h);
+        return new ProfileBox(x, y, Math.Min(w, monitor.W), Math.Min(h, monitor.H));
+    }
+
+    /// <summary>Maps a window from monitor pixels into the on-screen graphic, then snaps it inside that graphic.</summary>
+    public static ProfileBox Fit(ProfileBox window, ProfileBox source, ProfileBox canvas)
+    {
+        if (source.W < 1 || source.H < 1) return Snap(window, canvas, 8);
+        double sx = canvas.W / (double)source.W;
+        double sy = canvas.H / (double)source.H;
+        int x = canvas.X + (int)Math.Round((window.X - source.X) * sx);
+        int y = canvas.Y + (int)Math.Round((window.Y - source.Y) * sy);
+        int w = Math.Max(8, (int)Math.Round(window.W * sx));
+        int h = Math.Max(8, (int)Math.Round(window.H * sy));
+        return Snap(new ProfileBox(x, y, w, h), canvas, 8);
+    }
+}
+
+/// <summary>Additive profile file. It never rewrites <c>config.json</c>.</summary>
+public static class ProfileCodec
+{
+    public static string ToJson(IEnumerable<ProfileRecord> profiles)
+    {
+        var arr = new JsonArray();
+        foreach (var p in profiles)
+        {
+            var wins = new JsonArray();
+            foreach (var w in p.Windows)
+                wins.Add(new JsonObject
+                {
+                    ["process"] = w.Process ?? "",
+                    ["title"] = w.Title ?? "",
+                    ["class"] = w.Class ?? "",
+                    ["x"] = w.X,
+                    ["y"] = w.Y,
+                    ["w"] = w.W,
+                    ["h"] = w.H
+                });
+            arr.Add(new JsonObject { ["name"] = p.Name ?? "", ["icons"] = p.Icons ?? "", ["windows"] = wins });
+        }
+        return new JsonObject { ["profiles"] = arr }.ToJsonString();
+    }
+
+    public static List<ProfileRecord> Parse(string? json)
+    {
+        var list = new List<ProfileRecord>();
+        if (string.IsNullOrWhiteSpace(json)) return list;
+        try
+        {
+            if (JsonNode.Parse(json) is not JsonObject root || root["profiles"] is not JsonArray arr) return list;
+            foreach (var node in arr.OfType<JsonObject>())
+            {
+                var rec = new ProfileRecord { Name = node["name"]?.GetValue<string>() ?? "", Icons = node["icons"]?.GetValue<string>() ?? "" };
+                if (node["windows"] is JsonArray wins)
+                    foreach (var item in wins.OfType<JsonObject>())
+                        rec.Windows.Add(new ProfileWindow
+                        {
+                            Process = item["process"]?.GetValue<string>() ?? "",
+                            Title = item["title"]?.GetValue<string>() ?? "",
+                            Class = item["class"]?.GetValue<string>() ?? "",
+                            X = item["x"]?.GetValue<int>() ?? 0,
+                            Y = item["y"]?.GetValue<int>() ?? 0,
+                            W = item["w"]?.GetValue<int>() ?? 96,
+                            H = item["h"]?.GetValue<int>() ?? 64
+                        });
+                list.Add(rec);
+            }
+        }
+        catch { }
+        return list;
+    }
+}
+
+public static class ProfileCloud
+{
+    public static void Attach(CloudWorkspace ws, string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+        try
+        {
+            string text = File.ReadAllText(path);
+            if (!string.IsNullOrWhiteSpace(text)) ws.ProfilesJson = text;
+        }
+        catch { }
+    }
+}
+
 public static class PresetApplyPolicy
 {
     public static bool IsCurrent(string? active, string? requested)

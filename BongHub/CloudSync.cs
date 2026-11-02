@@ -149,6 +149,8 @@ public sealed class CloudWorkspace
     public string AppVersion = "";
     public DateTime UtcNow = DateTime.UtcNow;
     public DateTime LocalNow = DateTime.Now;
+    /// <summary>Additive cloud file. Empty leaves the 3.4.x tree unchanged.</summary>
+    public string? ProfilesJson;
 }
 
 public static class CloudEngine
@@ -231,6 +233,8 @@ public static class CloudEngine
 
         Put(tree, "data/devices/" + SafeDevice(ws.Device) + ".json", Utf8("{\"device\":" + Quote(ws.Device) + ",\"app\":" + Quote(ws.AppVersion) + ",\"schema\":" + Schema + "}"), ws.UtcNow);
         if (!tree.ContainsKey("README.md")) Put(tree, "README.md", Utf8(Readme), ws.UtcNow);
+        if (!string.IsNullOrEmpty(ws.ProfilesJson))
+            Put(tree, "data/profiles.json", Utf8(ws.ProfilesJson), ws.UtcNow);
         ws.State.LastSync = ws.UtcNow;
     }
 

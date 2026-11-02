@@ -20,6 +20,41 @@ public sealed class WindowRule
     public int Zone;
 }
 
+public sealed class WindowPick
+{
+    public string Process = "";
+    public string Title = "";
+    public string Class = "";
+    public int X, Y, W, H;
+}
+
+/// <summary>Copies what a crosshair drop captured. It does not enumerate real windows.</summary>
+public static class WindowPicker
+{
+    public static WindowPick From(TrackedWindow window) => new()
+    {
+        Process = window.Process ?? "",
+        Title = window.Title ?? "",
+        Class = window.Class ?? "",
+        X = window.X,
+        Y = window.Y,
+        W = window.W,
+        H = window.H
+    };
+
+    /// <summary>The last window that contains the point wins. No enumeration of real windows.</summary>
+    public static TrackedWindow? Hit(IEnumerable<TrackedWindow> windows, int x, int y)
+    {
+        TrackedWindow? best = null;
+        foreach (var w in windows)
+        {
+            if (w.W <= 0 || w.H <= 0) continue;
+            if (x >= w.X && y >= w.Y && x < w.X + w.W && y < w.Y + w.H) best = w;
+        }
+        return best;
+    }
+}
+
 public sealed class TrackedWindow
 {
     public long Id;
