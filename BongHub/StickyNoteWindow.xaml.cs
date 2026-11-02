@@ -446,14 +446,29 @@ public partial class StickyNoteWindow : Window
         RestoreView();
     }
 
-    static bool IsUnder(DependencyObject root, DependencyObject node)
+    /// <summary>Same walk as a left click whose <c>OriginalSource</c> is <paramref name="source"/>.</summary>
+    public bool ClickFrom(DependencyObject source)
+    {
+        textClick = IsUnder(EditorHost, source);
+        return textClick;
+    }
+
+    static bool IsUnder(DependencyObject root, DependencyObject? node)
     {
         while (node != null)
         {
             if (ReferenceEquals(node, root)) return true;
-            node = VisualTreeHelper.GetParent(node) ?? LogicalTreeHelper.GetParent(node);
+            node = NextParent(node);
         }
         return false;
+    }
+
+    /// <summary><see cref="VisualTreeHelper.GetParent"/> throws unless the node is a <see cref="Visual"/> or <see cref="System.Windows.Media.Media3D.Visual3D"/>. A click's source is often a <see cref="Run"/> or <see cref="Paragraph"/>.</summary>
+    static DependencyObject? NextParent(DependencyObject node)
+    {
+        if (node is Visual || node is System.Windows.Media.Media3D.Visual3D)
+            return VisualTreeHelper.GetParent(node);
+        return LogicalTreeHelper.GetParent(node);
     }
 
     void ApplyHeld()
@@ -2009,7 +2024,7 @@ public partial class StickyNoteWindow : Window
     Image? HitImage(Point inEditor)
     {
         var hit = VisualTreeHelper.HitTest(Editor, inEditor)?.VisualHit;
-        while (hit != null && hit is not Image) hit = VisualTreeHelper.GetParent(hit);
+        while (hit != null && hit is not Image) hit = NextParent(hit);
         return hit as Image;
     }
 

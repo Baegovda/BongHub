@@ -174,6 +174,11 @@ public static class NoteTest
         t.Check("phase1 note", host != null);
         if (host == null) return;
         await TestKit.Until(() => host.Ready, 5000);
+        host.Editor.Document.Blocks.Clear();
+        var clickPara = new Paragraph(new Run("클릭"));
+        host.Editor.Document.Blocks.Add(clickPara);
+        var clickRun = clickPara.Inlines.FirstInline as Run;
+        t.Check("click on a run does not throw", clickRun != null && host.ClickFrom(clickRun) && host.ClickFrom(clickPara));
         t.Check("noactivate cleared after show", (Win32.ExStyle(Win32.Handle(host)) & Win32.WS_EX_NOACTIVATE) == 0);
         Win32.EnableWindow(Win32.Handle(host), false);
         host.EnableDuringModal();
