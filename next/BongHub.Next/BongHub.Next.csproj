@@ -5,6 +5,7 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>BongHub.Next</AssemblyName>
     <RootNamespace>BongHub.Next</RootNamespace>
     <ApplicationIcon>..\..\app\res\icon_blocks.ico</ApplicationIcon>

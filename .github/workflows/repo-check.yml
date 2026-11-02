@@ -32,7 +32,8 @@ jobs:
       - name: Notes config patch
         run: dotnet run --project next/BongHub.Next.PatchTests/BongHub.Next.PatchTests.csproj -c Release --nologo
 
-  # Compiles only. Smoke and note tests open WPF windows, so they stay on the owner PC.
+  # Smoke and note tests open WPF windows, so they stay on the owner PC.
+  # The RichEdit step streams one fixture into a hidden msftedit window. It does not show UI.
   windows:
     runs-on: windows-latest
     steps:
@@ -51,3 +52,6 @@ jobs:
       - name: Build tray (warnings are errors)
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File app\build.ps1
+
+      - name: RichEdit RTF round trip (no GUI)
+        run: dotnet run --project next/BongHub.Next.RichEditTests/BongHub.Next.RichEditTests.csproj -c Release --nologo
