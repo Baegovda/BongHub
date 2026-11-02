@@ -140,6 +140,8 @@ public partial class StickyNoteWindow : Window
     }
     IntPtr Hook(IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled)
     {
+        // Runs before WPF's own handler (HwndSource invokes the newest hook first) and leaves handled false.
+        if (msg == Win32.WM_GETMINMAXINFO) Win32.AllowTallWindow(lp);
         Win32.OffScreenHook(h, msg, wp, lp, ref handled);
         if (msg == Win32.WM_ENTERSIZEMOVE) { sizing = true; textTimer.Stop(); metaTimer.Stop(); }
         else if (msg == Win32.WM_EXITSIZEMOVE) { sizing = false; CaptureRect(); FlushMeta(); if (TextDirty) textTimer.Start(); }

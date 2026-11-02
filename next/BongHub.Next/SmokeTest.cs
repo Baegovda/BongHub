@@ -71,7 +71,7 @@ public static class SmokeTest
         ContrastCheck(t, w, w.FirstSecondary, "secondary text", 4.5);
         ContrastCheck(t, w, w.AppTitle, "sidebar title", 7);
 
-        foreach (var page in new[] { "notes", "general", "more", "about" })
+        foreach (var page in new[] { "windows", "notes", "kakao", "desktop", "general", "powertoys", "about" })
         {
             w.Navigate(page);
             t.Check($"tab {page} switch is non-blocking (<60ms)", w.LastNavigateMs < 60, $"{w.LastNavigateMs:0.0} ms");
@@ -99,6 +99,32 @@ public static class SmokeTest
         await TestKit.Delay(400);
         t.Check("reopen from tray after Alt+F4", reopenErr == null && w.IsVisible && w.Root.Opacity > 0.99, reopenErr?.Message ?? $"visible={w.IsVisible}");
         t.Check("reopen did not take focus", TestKit.NotForeground(w));
+        t.Check("eight settings tabs", w.Pages.Count == 8 && w.Pages.Any(p => p.Label == "모니터 프리셋") && w.Pages.Any(p => p.Label == "카톡 광고 제거"));
+        t.Check("startup switch is display only", w.StartupSwitchEnabled == false);
+        t.Check("about shows version and hotkeys", w.AboutMentionsVersion && w.AboutMentionsHotkey);
+        t.Check("open folder stays inside tests", w.RequestOpenDataFolder() == false && w.FolderLaunches == 0);
+        t.Check("smoketest keeps its own temp folder", AppEnv.DataDir.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) && AppEnv.DataDir.Contains("bhnext_smoke_"));
+        string fixture = "{\r\n  \"Version\": 2,\r\n  \"Presets\": [{ \"Name\": \"작업\", \"Hotkey\": \"Ctrl+Alt+1\", \"Marker\": \"PRESET_KEEP\" }],\r\n  \"Pt\": { \"Zones\": { \"Enabled\": false, \"Marker\": \"PT_KEEP\" } },\r\n  \"Desk\": { \"HotkeySave\": \"Ctrl+Alt+S\", \"Marker\": \"DESK_KEEP\" },\r\n  \"General\": { \"OverlayOpacity\": 70 }\r\n}\r\n";
+        // --data is never the write target. When that folder has a real config, the byte diff uses a temp copy of it.
+        string? srcPath = string.IsNullOrEmpty(AppEnv.IgnoredDataDir) ? null : Path.Combine(AppEnv.IgnoredDataDir, "config.json");
+        byte[]? srcBefore = srcPath != null && File.Exists(srcPath) ? File.ReadAllBytes(srcPath) : null;
+        if (srcBefore != null) File.WriteAllBytes(AppEnv.ConfigPath, srcBefore);
+        else File.WriteAllText(AppEnv.ConfigPath, fixture);
+        string beforeText = File.ReadAllText(AppEnv.ConfigPath);
+        ConfigStore.Load();
+        w.ApplyTabOrder(ConfigStore.TabOrder);
+        string moveKey = w.Pages.Count > 1 ? w.Pages[0].Key : "";
+        bool moved = moveKey.Length > 0 && w.MoveTab(moveKey, w.Pages.Count - 1);
+        string patched = File.ReadAllText(AppEnv.ConfigPath);
+        NotesConfigPatch.ChangedSpan(beforeText, patched, out string removed, out string inserted);
+        bool sourceSame = srcBefore == null || File.ReadAllBytes(srcPath!).AsSpan().SequenceEqual(srcBefore);
+        bool markers = srcBefore != null || (patched.Contains("PRESET_KEEP") && patched.Contains("PT_KEEP") && patched.Contains("DESK_KEEP"));
+        bool shapeKept = beforeText.Count(c => c == '\n') == patched.Count(c => c == '\n') && beforeText.Count(c => c == '\r') == patched.Count(c => c == '\r');
+        t.Check("tab order changes only TabOrder bytes", moved && sourceSame && markers && shapeKept && NotesConfigPatch.TabOrderSpanOnly(removed, inserted),
+            srcBefore == null ? $"fixture removed={removed.Length} inserted={inserted.Length}" : $"real copy {srcBefore.Length} bytes untouched, removed={removed.Length} inserted={inserted.Length}");
+        // Contrast measures the built-in palette at full opacity. A copied config (Opacity 80) blends the glyphs.
+        File.WriteAllText(AppEnv.ConfigPath, fixture);
+        ConfigStore.Load();
 
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);

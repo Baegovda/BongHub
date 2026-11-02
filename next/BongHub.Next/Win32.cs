@@ -34,7 +34,7 @@ internal static class Win32
     public static double SystemScale { get { try { return GetDpiForSystem() / 96.0; } catch { return 1; } } }
     public const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_NOOWNERZORDER = 0x200;
     public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_FRAMECHANGED = 0x20;
-    public const int WM_MOVE = 0x3, WM_SIZE = 0x5, WM_WINDOWPOSCHANGING = 0x0046, WM_EXITSIZEMOVE = 0x232, WM_ENTERSIZEMOVE = 0x231, WM_DISPLAYCHANGE = 0x007E, WM_MOUSEACTIVATE = 0x0021;
+    public const int WM_MOVE = 0x3, WM_SIZE = 0x5, WM_WINDOWPOSCHANGING = 0x0046, WM_GETMINMAXINFO = 0x0024, WM_EXITSIZEMOVE = 0x232, WM_ENTERSIZEMOVE = 0x231, WM_DISPLAYCHANGE = 0x007E, WM_MOUSEACTIVATE = 0x0021;
     public const int GWL_EXSTYLE = -20;
     public const long WS_EX_NOACTIVATE = 0x08000000;
     delegate bool MonitorEnumProc(IntPtr monitor, IntPtr hdc, ref RECT rc, IntPtr data);
@@ -62,6 +62,28 @@ internal static class Win32
         OffTarget[h] = (x, y, prev.W, prev.H);
     }
     public static void ForgetOffScreen(IntPtr h) { if (h != IntPtr.Zero) OffTarget.Remove(h); }
+    /// <summary>
+    /// Windows' default <c>ptMaxTrackSize</c> is the monitor work area (1100px tall on the PC that failed).
+    /// WPF then does <c>Min(MaxHeight, that track)</c>, so a finite <c>MaxHeight</c> alone still clamps a 1463px note.
+    /// This raises the structure before WPF reads it. Do not set <c>handled</c>: WPF must copy the raised track
+    /// into its cache and write it back. 3.4.x WinForms does not apply this limit. Not <c>SetWindowsHookEx</c>.
+    /// </summary>
+    public static void AllowTallWindow(IntPtr lp)
+    {
+        if (lp == IntPtr.Zero) return;
+        try
+        {
+            var info = Marshal.PtrToStructure<MINMAXINFO>(lp);
+            const int cap = 30000;
+            if (info.ptMaxTrackSize.X < cap) info.ptMaxTrackSize.X = cap;
+            if (info.ptMaxTrackSize.Y < cap) info.ptMaxTrackSize.Y = cap;
+            if (info.ptMaxSize.X < cap) info.ptMaxSize.X = cap;
+            if (info.ptMaxSize.Y < cap) info.ptMaxSize.Y = cap;
+            Marshal.StructureToPtr(info, lp, false);
+        }
+        catch { }
+    }
+
     /// <summary>
     /// While <see cref="AppEnv.Off"/>, refuse a move onto a real monitor and keep the last Place target.
     /// WPF rewrites NaN Left/Top onto the virtual screen; a left-hand monitor then looks like a clamp.
@@ -91,6 +113,11 @@ internal static class Win32
         }
         catch (Exception e) { AppEnv.Log("offscreen pos: " + e.Message); }
         return IntPtr.Zero;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct MINMAXINFO
+    {
+        public POINT ptReserved, ptMaxSize, ptMaxPosition, ptMinTrackSize, ptMaxTrackSize;
     }
     [StructLayout(LayoutKind.Sequential)]
     struct WINDOWPOS
