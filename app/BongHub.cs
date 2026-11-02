@@ -19,9 +19,9 @@ using WTimer = System.Windows.Forms.Timer;
 [assembly: AssemblyProduct("BongHub")]
 [assembly: AssemblyDescription("BongHub")]
 [assembly: AssemblyCompany("Baegovda")]
-[assembly: AssemblyVersion("3.4.8.0")]
-[assembly: AssemblyFileVersion("3.4.8.0")]
-[assembly: AssemblyInformationalVersion("3.4.8")]
+[assembly: AssemblyVersion("3.4.9.0")]
+[assembly: AssemblyFileVersion("3.4.9.0")]
+[assembly: AssemblyInformationalVersion("3.4.9")]
 
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -695,8 +695,9 @@ static class BlankAutoLogon {
     public static int Run(string[] args){if(args.Length!=2||(args[1]!="enable"&&args[1]!="restore"))return 2;try{Set(args[1]=="enable");return 0;}catch(Exception ex){DarkBox.Show(ex.Message,"무암호 부팅 자동 로그인");return 1;}}
 }
 static class AppInfo {
-    public const string Version = "3.4.8";   // semantic version; build.ps1 reads this line
+    public const string Version = "3.4.9";   // semantic version; build.ps1 reads this line
     public static readonly string[] Changelog = {
+        "3.4.9  UI 예외는 로그 후 트레이 유지 · 종료 중 열린 창 목록 수정 금지 · 메모 저장·이미지 창 프로시저 예외 차단",
         "3.4.8  Next가 메모를 저장 중이면 트레이를 시작하지 않음 · 메모 저장 잠금(Local\\BongHub_NotesWriter) · csc 경고 정리",
         "3.4.7  메모 첫 창 드래그 활성화 지연 제거 · 이동 중 저장 타이머 재시작 제거 · 이미지 메타데이터 미리 준비",
         "3.4.6  메모 이미지/디자인 전면 개선 · 무암호 로컬 계정 부팅 자동 로그인 설정·복원",
@@ -1090,7 +1091,7 @@ class ImageViewer : ChromeForm {
             e.Handled = true;
         };
         Shown += (s, e) => { if (imgW <= cv.Width && imgH <= cv.Height) cv.ZoomTo(1f, cv.Center, false); else cv.FitView(false); };
-        FormClosed += (s, e) => img.Dispose();
+        FormClosed += (s, e) => { cv.StopForClose(); img.Dispose(); };
     }
     public ViewCanvas Canvas { get { return cv; } }
     protected override void OnPaint(PaintEventArgs e) {
@@ -1102,24 +1103,29 @@ class ImageViewer : ChromeForm {
     }
 }
 class ViewCanvas : Control {
-    readonly Image img; public float Zoom = 1f, Target = 1f; PointF off, offGoal; WTimer anim; Point last; bool panning; bool fitMode;
+    readonly Image img; public float Zoom = 1f, Target = 1f; PointF off, offGoal; WTimer anim; Point last; bool panning; bool fitMode; bool alive = true;
     public event Action Changed;
+    public void StopForClose() { alive = false; Changed = null; if (anim != null) anim.Stop(); }
     public ViewCanvas(Image i) {
         img = i; BackColor = Color.FromArgb(14, 14, 26);
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
         anim = new WTimer { Interval = 15 };
         anim.Tick += (s, e) => {
-            Zoom += (Target - Zoom) * 0.3f; off.X += (offGoal.X - off.X) * 0.3f; off.Y += (offGoal.Y - off.Y) * 0.3f;
-            if (Math.Abs(Target - Zoom) < 0.002f * Target && Math.Abs(offGoal.X - off.X) < 0.5f && Math.Abs(offGoal.Y - off.Y) < 0.5f) { Zoom = Target; off = offGoal; anim.Stop(); }
-            Invalidate(); if (Changed != null) Changed();
+            if (!alive || IsDisposed || img == null) { if (anim != null) anim.Stop(); return; }
+            try {
+                Zoom += (Target - Zoom) * 0.3f; off.X += (offGoal.X - off.X) * 0.3f; off.Y += (offGoal.Y - off.Y) * 0.3f;
+                if (Math.Abs(Target - Zoom) < 0.002f * Target && Math.Abs(offGoal.X - off.X) < 0.5f && Math.Abs(offGoal.Y - off.Y) < 0.5f) { Zoom = Target; off = offGoal; anim.Stop(); }
+                Invalidate(); if (Changed != null) Changed();
+            } catch (Exception ex) { alive = false; if (anim != null) anim.Stop(); CrashLog.Write("ViewerZoom", ex); }
         };
         Resize += (s, e) => { if (fitMode) FitView(false); else { Clamp(ref offGoal, Target); off = offGoal; Invalidate(); } };
     }
     protected override void Dispose(bool disposing) { if (disposing && anim != null) { anim.Stop(); anim.Dispose(); anim=null; Changed=null; } base.Dispose(disposing); }
     public PointF Center { get { return new PointF(Width / 2f, Height / 2f); } }
-    float FitZoom { get { return Math.Max(0.01f, Math.Min((Width - UI.S(16)) / (float)img.Width, (Height - UI.S(16)) / (float)img.Height)); } }
-    public void FitView(bool smooth) { fitMode = true; float z = Math.Min(1f, FitZoom); Go(z, new PointF((Width - img.Width * z) / 2f, (Height - img.Height * z) / 2f), smooth); }
+    float FitZoom { get { if (!alive || img == null) return 1f; return Math.Max(0.01f, Math.Min((Width - UI.S(16)) / (float)Math.Max(1, img.Width), (Height - UI.S(16)) / (float)Math.Max(1, img.Height))); } }
+    public void FitView(bool smooth) { if (!alive || img == null) return; fitMode = true; float z = Math.Min(1f, FitZoom); Go(z, new PointF((Width - img.Width * z) / 2f, (Height - img.Height * z) / 2f), smooth); }
     public void ZoomTo(float z, PointF at, bool smooth) {
+        if (!alive || img == null) return;
         fitMode = false; z = Math.Max(0.02f, Math.Min(32f, z));
         // keep the image point under `at` fixed
         float ix = (at.X - offGoal.X) / Target, iy = (at.Y - offGoal.Y) / Target;
@@ -1132,6 +1138,7 @@ class ViewCanvas : Control {
         if (Changed != null) Changed();
     }
     void Clamp(ref PointF o, float z) {
+        if (!alive || img == null) return;
         float w = img.Width * z, h = img.Height * z;
         o.X = w <= Width ? (Width - w) / 2f : Math.Max(Width - w, Math.Min(0, o.X));
         o.Y = h <= Height ? (Height - h) / 2f : Math.Max(Height - h, Math.Min(0, o.Y));
@@ -1146,14 +1153,17 @@ class ViewCanvas : Control {
     protected override void OnMouseUp(MouseEventArgs e) { panning = false; Cursor = Cursors.Default; base.OnMouseUp(e); }
     protected override void OnMouseDoubleClick(MouseEventArgs e) { if (e.Button != MouseButtons.Left) return; if (Math.Abs(Target - 1f) < 0.01f && FitZoom < 1f) FitView(true); else if (Math.Abs(Target - 1f) < 0.01f) FitView(true); else ZoomTo(1f, e.Location, true); }
     protected override void OnPaint(PaintEventArgs e) {
-        var g = e.Graphics;
-        bool moving = anim.Enabled || panning;
-        g.InterpolationMode = Zoom >= 2f ? InterpolationMode.NearestNeighbor : moving ? InterpolationMode.Bilinear : InterpolationMode.HighQualityBicubic;
-        g.PixelOffsetMode = PixelOffsetMode.Half;
-        // checker for transparent images
-        var r = new RectangleF(off.X, off.Y, img.Width * Zoom, img.Height * Zoom);
-        using (var b = new SolidBrush(Color.FromArgb(30, 30, 46))) g.FillRectangle(b, r);
-        g.DrawImage(img, r);
+        if (!alive || img == null) return;
+        try {
+            var g = e.Graphics;
+            bool moving = anim.Enabled || panning;
+            g.InterpolationMode = Zoom >= 2f ? InterpolationMode.NearestNeighbor : moving ? InterpolationMode.Bilinear : InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+            // checker for transparent images
+            var r = new RectangleF(off.X, off.Y, img.Width * Zoom, img.Height * Zoom);
+            using (var b = new SolidBrush(Color.FromArgb(30, 30, 46))) g.FillRectangle(b, r);
+            g.DrawImage(img, r);
+        } catch (Exception ex) { alive = false; if (anim != null) anim.Stop(); CrashLog.Write("ViewerPaint", ex); }
     }
 }
 // ================= Overlay =================
@@ -2890,10 +2900,24 @@ static class Notes {
     // re-reads notes after the cloud brought newer copies; open notes are reopened with the new content
     public static void ReloadFromDisk() {
         var open = new HashSet<string>(forms.Keys);
-        foreach (var f in forms.Values.ToList()) { f.Discard = true; f.Close(); }
-        forms.Clear(); loaded = false; EnsureLoaded();
-        foreach (var m in All.ToList()) if (m.Open && (open.Contains(m.Id) || Cfg.OpenOnStartup)) Open(m, false);
+        foreach (var f in forms.Values.ToList()) {
+            try { if (f != null && !f.IsDisposed) { f.Discard = true; f.Close(); } }
+            catch (Exception ex) { CrashLog.Write("NoteReload", ex); }
+        }
+        forms.Clear(); loaded = false;
+        try { EnsureLoaded(); } catch (Exception ex) { CrashLog.Write("NoteReload", ex); }
+        foreach (var m in All.ToList()) if (m.Open && (open.Contains(m.Id) || Cfg.OpenOnStartup)) {
+            try { Open(m, false); } catch (Exception ex) { CrashLog.Write("NoteReload", ex); }
+        }
         Fire();
+    }
+    // Application.Exit is already enumerating OpenForms. Closing a note here removes it from that ArrayList.
+    public static void PrepareForAppExit() {
+        foreach (var f in forms.Values.ToList()) {
+            if (f == null || f.IsDisposed) continue;
+            try { f.Flush(); } catch (Exception ex) { CrashLog.Write("NoteFlush", ex); }
+            f.Discard = true;
+        }
     }
     public static void FlushAll() { foreach (var f in forms.Values.ToList()) f.Flush(); }
     public static void Shutdown() { FlushAll(); foreach (var f in forms.Values.ToList()) { f.Discard = true; f.Close(); } forms.Clear(); }
@@ -2978,7 +3002,9 @@ class RichBox : RichTextBox {
     float Dpi { get { if (cachedDpi <= 0) using (var g = CreateGraphics()) cachedDpi = g.DpiX; return cachedDpi; } }
     public int PictureParseCount;
     public List<PictInfo> Pictures() {
-        if (cache == null) { PictureParseCount++; cache = ParsePicts(Rtf); }
+        if (cache != null) return cache;
+        try { PictureParseCount++; cache = ParsePicts(Rtf ?? ""); }
+        catch (Exception ex) { CrashLog.Write("Pictures", ex); cache = new List<PictInfo>(); }
         return cache;
     }
     public void PrimePictures(string rtf){if(!string.IsNullOrEmpty(rtf)){cache=ParsePicts(rtf);PictureParseCount++;}}
@@ -3030,23 +3056,34 @@ class RichBox : RichTextBox {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr h, int m, ref GETTEXTEX w, StringBuilder l);
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, ref GETTEXTLENGTHEX w, IntPtr l);
     public string RawText() {
-        if (!IsHandleCreated) return "";
-        var gl = new GETTEXTLENGTHEX { flags = 1 | 8, codepage = 1200 }; int n = (int)SendMessage(Handle, 0x045F, ref gl, IntPtr.Zero);
-        var sb = new StringBuilder(n + 2); var gt = new GETTEXTEX { cb = (n + 2) * 2, flags = 4, codepage = 1200 };
-        SendMessage(Handle, 0x045E, ref gt, sb); return sb.ToString();
+        if (!IsHandleCreated || IsDisposed) return "";
+        try {
+            var gl = new GETTEXTLENGTHEX { flags = 1 | 8, codepage = 1200 }; int n = (int)SendMessage(Handle, 0x045F, ref gl, IntPtr.Zero);
+            if (n < 0 || n > 8 * 1024 * 1024) return Text ?? "";
+            var sb = new StringBuilder(n + 2); var gt = new GETTEXTEX { cb = (n + 2) * 2, flags = 4, codepage = 1200 };
+            SendMessage(Handle, 0x045E, ref gt, sb); return sb.ToString();
+        } catch (Exception ex) { CrashLog.Write("RawText", ex); return ""; }
     }
-    public List<int> ObjectChars() { if (objectCache != null) return objectCache; var t = RawText(); var l = new List<int>(); for (int k = 0; k < t.Length; k++) if (t[k] == '\uFFFC') l.Add(k); return objectCache = l; }
+    public List<int> ObjectChars() {
+        if (objectCache != null) return objectCache;
+        try { var t = RawText(); var l = new List<int>(); for (int k = 0; k < t.Length; k++) if (t[k] == '\uFFFC') l.Add(k); return objectCache = l; }
+        catch (Exception ex) { CrashLog.Write("ObjectChars", ex); return objectCache = new List<int>(); }
+    }
     public Rectangle ImageRect(int ci) {
-        var objs = ObjectChars(); int nth = objs.IndexOf(ci); var ps = Pictures(); if (nth < 0 || nth >= ps.Count) return Rectangle.Empty;
-        var p0 = GetPositionFromCharIndex(ci); float k = Dpi / 1440f * ZoomFactor;
-        return new Rectangle(p0.X, p0.Y, Math.Max(4, (int)(ps[nth].GoalW * k)), Math.Max(4, (int)(ps[nth].GoalH * k)));
+        try {
+            var objs = ObjectChars(); int nth = objs.IndexOf(ci); var ps = Pictures(); if (nth < 0 || nth >= ps.Count) return Rectangle.Empty;
+            var p0 = GetPositionFromCharIndex(ci); float k = Dpi / 1440f * ZoomFactor;
+            return new Rectangle(p0.X, p0.Y, Math.Max(4, (int)(ps[nth].GoalW * k)), Math.Max(4, (int)(ps[nth].GoalH * k)));
+        } catch (Exception ex) { CrashLog.Write("ImageRect", ex); return Rectangle.Empty; }
     }
     public int ImageAt(Point pt) {
-        var objects = ObjectChars();
-        int near = GetCharIndexFromPosition(pt), at = objects.BinarySearch(near);
-        if (at < 0) at = ~at;
-        for (int i = Math.Max(0, at - 1); i < Math.Min(objects.Count, at + 2); i++) if (ImageRect(objects[i]).Contains(pt)) return objects[i];
-        return -1;
+        try {
+            var objects = ObjectChars();
+            int near = GetCharIndexFromPosition(pt), at = objects.BinarySearch(near);
+            if (at < 0) at = ~at;
+            for (int i = Math.Max(0, at - 1); i < Math.Min(objects.Count, at + 2); i++) if (ImageRect(objects[i]).Contains(pt)) return objects[i];
+            return -1;
+        } catch (Exception ex) { CrashLog.Write("ImageAt", ex); return -1; }
     }
     Rectangle[] Handles(Rectangle r) {
         int s = UI.S(8), h = s / 2;
@@ -3060,8 +3097,10 @@ class RichBox : RichTextBox {
     static readonly Cursor[] HCur = { Cursors.SizeNWSE, Cursors.SizeNESW, Cursors.SizeNWSE, Cursors.SizeNESW, Cursors.SizeNS, Cursors.SizeWE, Cursors.SizeNS, Cursors.SizeWE };
     int HandleAt(Point p) { if (SelImage < 0) return -1; var hs = Handles(ImageRect(SelImage)); for (int i = 0; i < hs.Length; i++) { var r = hs[i]; r.Inflate(UI.S(3), UI.S(3)); if (r.Contains(p)) return i; } return -1; }
     bool LinkAt(Point p) {
-        int ci=GetCharIndexFromPosition(p); if(linkCache==null){linkCache=new List<Tuple<int,int>>();string t=RawText();foreach(Match m in Regex.Matches(t,@"(?i)(?:https?://|mailto:|www\.)[^\s<>]+"))linkCache.Add(Tuple.Create(m.Index,m.Index+m.Length));}
-        return linkCache.Any(x=>ci>=x.Item1&&ci<x.Item2);
+        try {
+            int ci=GetCharIndexFromPosition(p); if(linkCache==null){linkCache=new List<Tuple<int,int>>();string t=RawText();foreach(Match m in Regex.Matches(t,@"(?i)(?:https?://|mailto:|www\.)[^\s<>]+"))linkCache.Add(Tuple.Create(m.Index,m.Index+m.Length));}
+            return linkCache.Any(x=>ci>=x.Item1&&ci<x.Item2);
+        } catch (Exception ex) { CrashLog.Write("LinkAt", ex); return false; }
     }
 
     public void SetImageSize(int ci, int wPx, int hPx) {
@@ -3128,11 +3167,12 @@ class RichBox : RichTextBox {
 
     protected override void WndProc(ref Message m) {
         if (ImageTools) {
+            try {
             switch (m.Msg) {
                 case 0x0215: if (handle >= 0 || imageDrag >= 0) { handle=-1; imageDrag=-1; movingImage=false; EndOutline(); Invalidate(); } break;
                 case 0x0201: { // LBUTTONDOWN
                     var p = Pt(m); int h = HandleAt(p);
-                    if (h >= 0) { handle = h; dragStart = p; startRect = ImageRect(SelImage); dragRect = startRect; aspect = startRect.Width / (float)Math.Max(1, startRect.Height); Capture = true; Focus(); if (outline == null) outline = new ImageDragOutline(); using (var im = ImageOf(SelImage)) outline.BeginResize(im, startRect, this, BackColor); outline.ShowResize(startRect, this); if (!outline.Visible) outline.Show(FindForm()); Invalidate(Rectangle.Inflate(startRect, UI.S(12), UI.S(12))); return; }
+                    if (h >= 0) { handle = h; dragStart = p; startRect = ImageRect(SelImage); dragRect = startRect; aspect = startRect.Height < 1 ? 1f : startRect.Width / (float)startRect.Height; if (aspect < 0.05f) aspect = 1f; Capture = true; Focus(); if (outline == null) outline = new ImageDragOutline(); using (var im = ImageOf(SelImage)) outline.BeginResize(im, startRect, this, BackColor); outline.ShowResize(startRect, this); if (!outline.Visible) outline.Show(FindForm()); Invalidate(Rectangle.Inflate(startRect, UI.S(12), UI.S(12))); return; }
                     int ci = ImageAt(p);
                     if (ci >= 0) {
                         bool extendTextSelection = (ModifierKeys & Keys.Shift) != 0 || (SelectionLength > 1 && ci >= SelectionStart && ci < SelectionStart + SelectionLength);
@@ -3151,13 +3191,16 @@ class RichBox : RichTextBox {
                         if (handle == 0 || handle == 3 || handle == 7) w -= dx; else if (handle == 1 || handle == 2 || handle == 5) w += dx;
                         if (handle == 0 || handle == 1 || handle == 4) hh -= dy; else if (handle == 2 || handle == 3 || handle == 6) hh += dy;
                         bool free = (ModifierKeys & Keys.Shift) != 0;
+                        if (aspect < 0.05f) aspect = 1f;
                         if (!free) { if (handle == 4 || handle == 6) w = (int)(hh * aspect); else hh = (int)(w / aspect); }
                         int maxW = MaxImageWidth != null ? MaxImageWidth() : ClientSize.Width - UI.S(8);
                         w = Math.Max(UI.S(24), Math.Min(maxW, w)); hh = Math.Max(UI.S(16), hh); if (!free) hh = (int)(w / aspect);
                         dragRect = new Rectangle(r.X, r.Y, w, hh); if (outline != null) outline.ShowResize(dragRect, this);
-                        if (tip == null) tip = new ToolTip();
-                        int nth = ObjectChars().IndexOf(SelImage); var ps = Pictures(); float sc = nth >= 0 && ps[nth].PixW > 0 ? w / (ps[nth].PixW * Dpi / 96f) : 1;
-                        tip.Show(w + " × " + hh + " px  ·  " + Math.Round(sc * 100) + "%" + (free ? "  (자유 비율)" : ""), this, p.X + UI.S(14), p.Y + UI.S(18));
+                        int nth = ObjectChars().IndexOf(SelImage); var ps = Pictures(); float sc = nth >= 0 && nth < ps.Count && ps[nth].PixW > 0 ? w / (ps[nth].PixW * Dpi / 96f) : 1;
+                        try {
+                            if (tip == null) tip = new ToolTip();
+                            tip.Show(w + " × " + hh + " px  ·  " + Math.Round(sc * 100) + "%" + (free ? "  (자유 비율)" : ""), this, p.X + UI.S(14), p.Y + UI.S(18));
+                        } catch (Exception ex) { CrashLog.Write("ImageTip", ex); }
                         Cursor = HCur[handle];
                         return;
                     }
@@ -3181,15 +3224,27 @@ class RichBox : RichTextBox {
                     if (imageDrag >= 0) {
                         int ci = imageDrag, dest = dropIndex; bool move = movingImage; EndOutline();
                         imageDrag = -1; movingImage = false; dropIndex = -1; UpdateDropMark(); Capture = false; Cursor = Cursors.IBeam; Invalidate();
-                        if (move) MoveImage(ci, dest);
+                        if (move) try { MoveImage(ci, dest); } catch (Exception ex) { CrashLog.Write("MoveImage", ex); }
                         return;
                     }
-                    if (handle >= 0) { EndOutline(); handle = -1; Capture = false; Cursor = Cursors.IBeam; if (tip != null) tip.Hide(this); SetImageSize(SelImage, dragRect.Width, dragRect.Height); return; }
+                    if (handle >= 0) {
+                        int sel = SelImage, rw = dragRect.Width, rh = dragRect.Height;
+                        EndOutline(); handle = -1; Capture = false; Cursor = Cursors.IBeam;
+                        try { if (tip != null) tip.Hide(this); } catch (Exception ex) { CrashLog.Write("ImageTip", ex); }
+                        try { SetImageSize(sel, rw, rh); } catch (Exception ex) { CrashLog.Write("ImageResize", ex); }
+                        return;
+                    }
                     break;
                 case 0x0205: { var p = Pt(m); int ci = ImageAt(p); if (ci >= 0) { Select(ci, 1); SelImage = ci; Invalidate(); ShowImageMenu(ci, p); return; } break; } // RBUTTONUP
                 case 0x0204: { var p = Pt(m); if (ImageAt(p) >= 0) return; break; }
                 case 0x007B: { var p = PointToClient(Cursor.Position); if (ImageAt(p) >= 0) return; break; } // WM_CONTEXTMENU over a picture
                 case 0x0100: if (SelImage >= 0 && ((int)m.WParam == 0x2E || (int)m.WParam == 0x08) && SelectionLength == 1 && SelectionStart == SelImage) { DeleteImage(SelImage); return; } break;
+            }
+            } catch (Exception ex) {
+                CrashLog.Write("NoteImage", ex);
+                handle = -1; imageDrag = -1; movingImage = false; dropIndex = -1; Capture = false;
+                try { EndOutline(); } catch { }
+                try { Cursor = Cursors.IBeam; } catch { }
             }
         }
         if (PaintBack != null) {
@@ -3199,7 +3254,7 @@ class RichBox : RichTextBox {
         base.WndProc(ref m);
         if ((m.Msg == 0x0115 || m.Msg == 0x020A) && ImageTools && SelImage >= 0 && handle < 0 && imageDrag < 0) Invalidate();
         if (PaintBack != null && (m.Msg == 0x0115 || m.Msg == 0x020A || m.Msg == 0x0005)) Invalidate();
-        if (m.Msg == 0x000F && ImageTools && SelImage >= 0) PaintSelection();
+        if (m.Msg == 0x000F && ImageTools && SelImage >= 0) try { PaintSelection(); } catch (Exception ex) { CrashLog.Write("ImagePaint", ex); }
 
     }
     protected override void OnSelectionChanged(EventArgs e) { if (SelImage >= 0 && !(SelectionStart == SelImage && SelectionLength == 1) && handle < 0) { SelImage = -1; Cursor = Cursors.IBeam; Invalidate(); } base.OnSelectionChanged(e); }
@@ -3558,11 +3613,18 @@ class NoteForm : Form {
     public void Raise() { if (!Visible) Show(); Native.SetWindowPos(Handle, TopMost ? new IntPtr(-1) : IntPtr.Zero, 0, 0, 0, 0, 0x13); }
     public void ActivateEdit() { AllowActivation(); Activate(); rtb.Focus(); }
     void Kick() { save.Stop(); save.Start(); }
+    int flushFails;
     public void Flush() {
-        if (Discard) return; save.Stop();
-        if (dirtyText) { Notes.SaveRtf(M, rtb.Rtf); M.Text = rtb.Text; }
-        if (dirtyText || dirtyMeta) { M.X = Left; M.Y = Top; M.W = Width; M.H = Height; M.Zoom = rtb.ZoomFactor; M.TopMost = TopMost; Notes.SaveMeta(M); }
-        dirtyText = dirtyMeta = false;
+        if (Discard || IsDisposed) return; save.Stop();
+        try {
+            if (dirtyText) { Notes.SaveRtf(M, rtb.Rtf); M.Text = rtb.Text; }
+            if (dirtyText || dirtyMeta) { M.X = Left; M.Y = Top; M.W = Width; M.H = Height; M.Zoom = rtb.ZoomFactor; M.TopMost = TopMost; Notes.SaveMeta(M); }
+            dirtyText = dirtyMeta = false; flushFails = 0;
+        } catch (Exception ex) {
+            // Rtf/ZoomFactor throw from the save timer's WndProc. Leave the note dirty and retry a few times.
+            CrashLog.Write("NoteFlush", ex);
+            if (++flushFails <= 3 && !IsDisposed) Kick();
+        }
     }
     public void PreviewColor(string key) { ApplyColorFor(key ?? M.Color); }
     public void ApplyColor() { ApplyColorFor(M.Color); }
@@ -3716,12 +3778,15 @@ class NoteForm : Form {
         if(m.Msg==0x0231){interactiveMove=true;save.Stop();ResizeGlide.Live=true;}
         if(m.Msg==0x0232){interactiveMove=false;ResizeGlide.Live=false;if(dirtyMeta||dirtyText)Kick();Invalidate(true);}
         if (m.Msg == 0x84) {
-            base.WndProc(ref m);
-            long lp = m.LParam.ToInt64();
-            var p = PointToClient(new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF)));
-            int g = UI.S(9); bool l = p.X < g, r = p.X >= Width - g, t = p.Y < g, b = p.Y >= Height - g;
-            int ht = t && l ? 13 : t && r ? 14 : b && l ? 16 : b && r ? 17 : l ? 10 : r ? 11 : t ? 12 : b ? 15 : 0;
-            if (ht != 0) m.Result = (IntPtr)ht;
+            try {
+                base.WndProc(ref m);
+                if (!IsHandleCreated) return;
+                long lp = m.LParam.ToInt64();
+                var p = PointToClient(new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF)));
+                int g = UI.S(9); bool l = p.X < g, r = p.X >= Width - g, t = p.Y < g, b = p.Y >= Height - g;
+                int ht = t && l ? 13 : t && r ? 14 : b && l ? 16 : b && r ? 17 : l ? 10 : r ? 11 : t ? 12 : b ? 15 : 0;
+                if (ht != 0) m.Result = (IntPtr)ht;
+            } catch (Exception ex) { CrashLog.Write("NoteHit", ex); }
             return;
         }
         base.WndProc(ref m);
@@ -3782,19 +3847,29 @@ class ChromeForm : Form {
         if(m.Msg==0x0232) { ResizeGlide.Live=false; Invalidate(true); }
         if (m.Msg == 0x0083 && m.WParam != IntPtr.Zero) { // WM_NCCALCSIZE: whole window is client area
             if (IsZoomed(Handle)) {
-                var p = (NCCALC)Marshal.PtrToStructure(m.LParam, typeof(NCCALC));
-                // maximized: client = monitor work area exactly (never under the taskbar)
-                var wa = Screen.FromRectangle(Rectangle.FromLTRB(p.r0.L, p.r0.T, p.r0.R, p.r0.B)).WorkingArea;
-                p.r0.L = Math.Max(p.r0.L, wa.Left); p.r0.T = Math.Max(p.r0.T, wa.Top); p.r0.R = Math.Min(p.r0.R, wa.Right); p.r0.B = Math.Min(p.r0.B, wa.Bottom);
-                if (wa.Bottom == Screen.FromRectangle(wa).Bounds.Bottom && wa.Height == Screen.FromRectangle(wa).Bounds.Height) p.r0.B -= 1; // auto-hide taskbar stays reachable
-                Marshal.StructureToPtr(p, m.LParam, false);
+                try {
+                    var p = (NCCALC)Marshal.PtrToStructure(m.LParam, typeof(NCCALC));
+                    var proposed = Rectangle.FromLTRB(p.r0.L, p.r0.T, p.r0.R, p.r0.B);
+                    // an empty proposed rect (monitor switch, restore) makes Screen.FromRectangle throw inside this WndProc
+                    if (proposed.Width > 0 && proposed.Height > 0) {
+                        var screen = Screen.FromRectangle(proposed);
+                        var wa = screen.WorkingArea;
+                        p.r0.L = Math.Max(p.r0.L, wa.Left); p.r0.T = Math.Max(p.r0.T, wa.Top); p.r0.R = Math.Min(p.r0.R, wa.Right); p.r0.B = Math.Min(p.r0.B, wa.Bottom);
+                        if (wa.Bottom == screen.Bounds.Bottom && wa.Height == screen.Bounds.Height) p.r0.B -= 1; // auto-hide taskbar stays reachable
+                        Marshal.StructureToPtr(p, m.LParam, false);
+                    }
+                } catch (Exception ex) { CrashLog.Write("NcCalc", ex); }
             }
             m.Result = IntPtr.Zero; return;
         }
         if (m.Msg == 0x0084) { // WM_NCHITTEST
-            base.WndProc(ref m);
-            var pt = PointToClient(new Point(unchecked((short)(long)m.LParam), unchecked((short)((long)m.LParam >> 16))));
-            m.Result = (IntPtr)Hit(pt); return;
+            try {
+                base.WndProc(ref m);
+                if (!IsHandleCreated) { m.Result = (IntPtr)1; return; }
+                var pt = PointToClient(new Point(unchecked((short)(long)m.LParam), unchecked((short)((long)m.LParam >> 16))));
+                m.Result = (IntPtr)Hit(pt);
+            } catch (Exception ex) { CrashLog.Write("ChromeHit", ex); m.Result = (IntPtr)1; }
+            return;
         }
         base.WndProc(ref m);
     }
@@ -3845,8 +3920,11 @@ class TitleBar : Control {
     public bool OverButton(Point p) { return BtnAt(p) >= 0; }
     protected override void WndProc(ref Message m) {
         if (m.Msg == 0x0084) { // let the form decide caption / resize, except over our buttons
-            var p = PointToClient(new Point(unchecked((short)(long)m.LParam), unchecked((short)((long)m.LParam >> 16))));
-            if (BtnAt(p) < 0) { m.Result = (IntPtr)(-1); return; }
+            try {
+                if (!IsHandleCreated) { m.Result = (IntPtr)(-1); return; }
+                var p = PointToClient(new Point(unchecked((short)(long)m.LParam), unchecked((short)((long)m.LParam >> 16))));
+                if (BtnAt(p) < 0) { m.Result = (IntPtr)(-1); return; }
+            } catch (Exception ex) { CrashLog.Write("TitleHit", ex); m.Result = (IntPtr)(-1); return; }
         }
         base.WndProc(ref m);
     }
@@ -5029,7 +5107,7 @@ class SettingsForm : ChromeForm, IMessageFilter {
                 break; }
             case "grab": {
                 sec.Full(UI.HintL("일반 창과 최대화 창을 지원해요. 관리자 권한으로 실행된 앱은 BongHub도 관리자 권한이 필요합니다. 보안 데스크톱과 잠금 화면은 이동 대상이 아닙니다."));
-                var elevate=UI.Btn("관리자 권한으로 다시 시작…");elevate.Click+=(a,b)=>{try{Flush();Notes.FlushAll();Process.Start(new ProcessStartInfo(Application.ExecutablePath,"restart "+Process.GetCurrentProcess().Id){UseShellExecute=true,Verb="runas",WorkingDirectory=Path.GetDirectoryName(Application.ExecutablePath)});Application.Exit();}catch(System.ComponentModel.Win32Exception ex){if(ex.NativeErrorCode!=1223)DarkBox.Show(this,ex.Message,"다시 시작");}};sec.Full(elevate);
+                var elevate=UI.Btn("관리자 권한으로 다시 시작…");elevate.Click+=(a,b)=>{try{Flush();Notes.FlushAll();Process.Start(new ProcessStartInfo(Application.ExecutablePath,"restart "+Process.GetCurrentProcess().Id){UseShellExecute=true,Verb="runas",WorkingDirectory=Path.GetDirectoryName(Application.ExecutablePath)});AppShutdown.Request();}catch(System.ComponentModel.Win32Exception ex){if(ex.NativeErrorCode!=1223)DarkBox.Show(this,ex.Message,"다시 시작");}};sec.Full(elevate);
                 var mod = new DarkCombo { DropDownStyle = ComboBoxStyle.DropDownList, Width = UI.S(140), Font = UI.Base }; mod.Items.AddRange(new object[] { "Alt", "Win", "Ctrl+Alt" }); mod.SelectedIndex = Math.Max(0, mod.Items.IndexOf(x.Grab.Modifier));
                 mod.SelectedIndexChanged += (s, e) => { if (loading) return; x.Grab.Modifier = (string)mod.SelectedItem; Changed(); PtRefresh(); };
                 sec.Row("보조 키", mod, "보조 키 + 왼쪽 드래그 = 이동");
@@ -5155,7 +5233,7 @@ class SettingsForm : ChromeForm, IMessageFilter {
     }
     protected override void OnFormClosing(FormClosingEventArgs e) {
         if (saveTimer.Enabled) Flush();
-        if (saveError != null && e.CloseReason == CloseReason.UserClosing) {
+        if (saveError != null && e.CloseReason == CloseReason.UserClosing && !AppShutdown.Active) {
             var r = DarkBox.Show(this, saveError.Replace(" (저장 보류)", "") + "\n\n고치지 않고 닫으면 마지막으로 저장된 설정이 유지돼요. 닫을까요?", "BongHub", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (r != DialogResult.Yes) { e.Cancel = true; return; }
         }
@@ -5581,6 +5659,11 @@ static class Zones {
         bool wantKeys = Cfg.Enabled && Cfg.WinArrows;
         if (wantKeys && kHook == IntPtr.Zero) { ui = SynchronizationContext.Current; kProc = KeyHook; kHook = SetWindowsHookEx(13, kProc, GetModuleHandle(null), 0); }
         else if (!wantKeys && kHook != IntPtr.Zero) { UnhookWindowsHookEx(kHook); kHook = IntPtr.Zero; }
+    }
+    // Unhook without Form.Close. Application.Exit is enumerating OpenForms; closing an overlay here throws in MoveNext.
+    public static void ReleaseHooks() {
+        if (hStart != IntPtr.Zero) { try { Native.UnhookWinEvent(hStart); Native.UnhookWinEvent(hEnd); } catch { } hStart = hEnd = IntPtr.Zero; try { EndDrag(false); } catch { } }
+        if (kHook != IntPtr.Zero) { try { UnhookWindowsHookEx(kHook); } catch { } kHook = IntPtr.Zero; }
     }
     static bool Key(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
     public static bool Excluded(IntPtr h) {
@@ -6494,6 +6577,7 @@ static class PeekSpace {
         if(!enable && host!=null){host.Dispose();host=null;if(pressed){pressed=false;if(previousRelease!=null)previousRelease();}}
         open=action;release=onRelease;if(enable && host==null)host=new InputHookHost(13,Hook);
     }
+    public static void Disarm() { release = null; open = null; Apply(false, null); }
     public static bool HandleSpace(bool down,IntPtr foreground,bool eligible) {
         if(!down){if(!pressed)return false;pressed=false;if(release!=null)release();return true;}
         if(pressed)return true;if(!eligible)return false;pressed=true;if(open!=null)open(foreground);return true;
@@ -7261,7 +7345,7 @@ class TrayApp : Form {
         var st = new ToolStripMenuItem("설정…", null, (s, e) => OpenSettings()); st.Font = new Font(st.Font, FontStyle.Bold);
         menu.Items.Add(st);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("종료", null, (s, e) => { icon.Visible = false; Application.Exit(); });
+        menu.Items.Add("종료", null, (s, e) => { try { icon.Visible = false; } catch { } AppShutdown.Request(); });
         icon.ContextMenuStrip = menu;
         if (old != null) old.Dispose();
     }
@@ -7460,13 +7544,88 @@ class TrayApp : Form {
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e) {
-        PeekSpace.Apply(false, null); UnregisterAll(); if (watcher != null) watcher.SetRules(new WindowRule[0]);
-        try { Zones.Apply(new ZonesCfg()); GrabMove.Apply(new GrabCfg()); } catch { }
+        // Application.ExitInternal foreach-es OpenForms and calls this. Closing any other form
+        // removes it from that ArrayList, and ArrayListEnumeratorSimple.MoveNext throws.
+        bool appExit = e.CloseReason == CloseReason.ApplicationExitCall;
+        if (appExit) PeekSpace.Disarm(); else PeekSpace.Apply(false, null);
+        UnregisterAll(); if (watcher != null) watcher.SetRules(new WindowRule[0]);
+        try { if (appExit) Zones.ReleaseHooks(); else Zones.Apply(new ZonesCfg()); GrabMove.Apply(new GrabCfg()); } catch { }
         if (cfg.Desk.SaveOnExit && !Core.Busy && !deskRestore.Enabled) { try { string err; Desk.SaveAuto(out err); } catch { } }
-        try { Notes.Shutdown(); } catch { }
+        try { if (appExit) Notes.PrepareForAppExit(); else Notes.Shutdown(); } catch { }
         try { Cloud.FlushOnExit(); } catch { }
         try { if (Kakao.IsRunning()) Kakao.Stop(); } catch { }
-        icon.Visible = false; base.OnFormClosing(e);
+        try { icon.Visible = false; } catch { }
+        base.OnFormClosing(e);
+    }
+}
+
+// Closes satellite windows from a snapshot, then the tray. Never calls Application.Exit:
+// ExitInternal enumerates OpenForms while OnFormClosing closes notes and overlays.
+static class AppShutdown {
+    public static bool Active;
+    public static Form[] Snapshot() {
+        var list = new List<Form>();
+        try {
+            int n = Application.OpenForms.Count;
+            for (int i = 0; i < n; i++) {
+                try {
+                    Form f = Application.OpenForms[i];
+                    if (f != null && !f.IsDisposed) list.Add(f);
+                } catch (ArgumentOutOfRangeException) { break; }
+            }
+        } catch (InvalidOperationException) { }
+        return list.ToArray();
+    }
+    public static void Request() {
+        if (Active) return;
+        Active = true;
+        try {
+            try { Notes.Shutdown(); } catch (Exception ex) { CrashLog.Write("FormClose", ex); }
+            Form[] open = Snapshot();
+            Form tray = null;
+            foreach (Form f in open) if (f is TrayApp) tray = f;
+            foreach (Form f in open) {
+                if (f == null || f.IsDisposed || f == tray) continue;
+                try { f.Close(); } catch (Exception ex) { CrashLog.Write("FormClose", ex); }
+            }
+            try { if (tray != null && !tray.IsDisposed) tray.Close(); } catch (Exception ex) { CrashLog.Write("FormClose", ex); }
+        } finally {
+            bool trayOpen = false;
+            foreach (Form f in Snapshot()) if (f is TrayApp) trayOpen = true;
+            if (trayOpen) Active = false;
+        }
+    }
+}
+
+static class CrashLog {
+    static readonly object gate = new object();
+    static string lastKey; static DateTime lastAt;
+    public static string FilePath { get { return Path.Combine(Core.Dir, "crash.log"); } }
+    public static void Write(string kind, Exception ex) {
+        try {
+            string key = kind + "|" + (ex == null ? "" : ex.GetType().FullName + "|" + ex.Message);
+            var now = DateTime.UtcNow;
+            lock (gate) {
+                if (key == lastKey && (now - lastAt).TotalSeconds < 10) return;
+                lastKey = key; lastAt = now;
+                Directory.CreateDirectory(Core.Dir);
+                var info = new FileInfo(FilePath);
+                if (info.Exists && info.Length > 512 * 1024) return;
+                var sb = new StringBuilder();
+                sb.Append("---- ").Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")).Append(' ').Append(kind).Append(' ').Append(AppInfo.Version).AppendLine(" ----");
+                sb.AppendLine(ex == null ? "(null)" : ex.ToString());
+                File.AppendAllText(FilePath, sb.ToString(), new UTF8Encoding(false));
+            }
+        } catch { }
+    }
+    public static void InstallKeepAlive() {
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (s, e) => { CrashLog.Write("ThreadException", e.Exception); };
+        AppDomain.CurrentDomain.UnhandledException += (s, e) => {
+            var ex = e.ExceptionObject as Exception;
+            if (ex == null) ex = new Exception(e.ExceptionObject == null ? "" : e.ExceptionObject.ToString());
+            CrashLog.Write(e.IsTerminating ? "UnhandledException terminating" : "UnhandledException", ex);
+        };
     }
 }
 
@@ -7611,6 +7770,7 @@ static class Program {
         using (var single = new Mutex(true, @"Local\BongHub_Tray", out created)) {
             if (!created) { NotesWriterLock.Release(); return 1; }
             try {
+                CrashLog.InstallKeepAlive();
                 UI.Init(1f);
                 Application.Run(new TrayApp());
             } finally { NotesWriterLock.Release(); }
