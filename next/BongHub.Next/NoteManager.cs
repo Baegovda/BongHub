@@ -57,21 +57,39 @@ public static class NoteManager
     }
 
     static int trimScheduled;
-    /// <summary>One compacting collection after startup, so discarded bitmaps are gone before the 20s idle sample. Runs after the first frame is recorded.</summary>
+    /// <summary>
+    /// One compacting collection after startup, then a working-set trim of pages we no longer touch.
+    /// Armed only after the first frame is recorded (or immediately when there is no settings window), and delayed so the open animation has dropped its full-window surface.
+    /// The baseline waits 20s after the ready line, so this finishes before the sample. It does not change first_frame_ms.
+    /// </summary>
     static void ScheduleIdleTrim()
     {
         if (Interlocked.Exchange(ref trimScheduled, 1) != 0) return;
-        Application.Current.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
+        void arm()
         {
-            try
-            {
-                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
-                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
-                GC.WaitForPendingFinalizers();
-                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
-            }
-            catch (Exception e) { AppEnv.Log("trim: " + e.Message); }
-        });
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+            timer.Tick += (_, _) => { timer.Stop(); TrimOnce(); };
+            timer.Start();
+        }
+        var main = App.Instance.MainWin;
+        if (main != null && !WindowFx.Of(main).Revealed)
+            WindowFx.Of(main).AfterFirstFrame += arm;
+        else
+            Application.Current.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, arm);
+    }
+
+    static void TrimOnce()
+    {
+        try
+        {
+            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+            Win32.TrimWorkingSet();
+            AppEnv.NoteIdleTrim();
+        }
+        catch (Exception e) { AppEnv.Log("trim: " + e.Message); }
     }
 
     internal static void Forget(StickyNoteWindow w) { if (open.TryGetValue(w.Meta.Id, out var x) && x == w) { open.Remove(w.Meta.Id); Changed?.Invoke(); } }

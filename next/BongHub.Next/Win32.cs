@@ -19,6 +19,13 @@ internal static class Win32
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern uint GetDpiForSystem();
+    [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetProcessWorkingSetSize(IntPtr process, IntPtr minimum, IntPtr maximum);
+    /// <summary>Drop pages the process no longer touches (startup code, freed segments). Does not free committed private bytes.</summary>
+    public static void TrimWorkingSet()
+    {
+        try { SetProcessWorkingSetSize(GetCurrentProcess(), (IntPtr)(-1), (IntPtr)(-1)); } catch { }
+    }
     public static double SystemScale { get { try { return GetDpiForSystem() / 96.0; } catch { return 1; } } }
     public const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_NOOWNERZORDER = 0x200;
     public const int WM_MOVE = 0x3, WM_SIZE = 0x5, WM_EXITSIZEMOVE = 0x232;

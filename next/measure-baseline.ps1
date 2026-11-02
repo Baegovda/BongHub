@@ -1,6 +1,8 @@
 # Phase 0 memory baseline for BongHub.Next.
 # Windows only. Does not start BongHub.exe, does not switch monitors, does not write data/ or %LOCALAPPDATA%\BongHub.
 # A Next tray icon appears during tray_only and settings_hidden, then that process exits. Windows stay at (-30000,-30000).
+# Judge gc_concurrent=true medians of WorkingSet64 AND PrivateMemorySize64 against the same ceilings.
+# render_mode=software. Trimming the working set does not lower private bytes.
 #Requires -Version 5.1
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -96,6 +98,12 @@ function Median($Values) {
     return [int]$sorted[[int](($sorted.Count - 1) / 2)]
 }
 
+function Read-Metric([string]$Text, [string]$Name) {
+    $m = [regex]::Match($Text, ('(?m)^' + [regex]::Escape($Name) + '=(\d+)'))
+    if ($m.Success) { return [int]$m.Groups[1].Value }
+    return $null
+}
+
 function Read-Text([string]$Path) {
     for ($n = 0; $n -lt 20; $n++) {
         try { return [IO.File]::ReadAllText($Path) } catch { Start-Sleep -Milliseconds 50 }
@@ -114,6 +122,7 @@ function Stop-Measured([System.Diagnostics.Process]$Proc) {
 }
 
 function Assert-Startup([string]$Text, [string]$Scenario) {
+    if ($Text -notmatch '(?m)^render_mode=software') { Fail "$Scenario render_mode is not software" }
     switch ($Scenario) {
         'tray_only' {
             if ($Text -notmatch '(?m)^tray_visible_ms=\d+') { Fail 'tray_only missing tray_visible_ms' }
@@ -124,6 +133,7 @@ function Assert-Startup([string]$Text, [string]$Scenario) {
         }
         'settings' {
             if ($Text -notmatch '(?m)^first_frame_ms=\d+') { Fail 'settings missing first_frame_ms' }
+            if ($Text -notmatch '(?m)^hwnd_render_mode=SoftwareOnly') { Fail 'settings hwnd_render_mode is not SoftwareOnly' }
             if ($Text -match '(?m)^tray_visible_ms=') { Fail 'settings registered a tray icon' }
             if ($Text -notmatch '(?m)^main_window_created=1') { Fail 'settings main_window_created is not 1' }
             if ($Text -notmatch '(?m)^startup_notes_opened=0') { Fail 'settings startup_notes_opened is not 0' }
@@ -132,12 +142,14 @@ function Assert-Startup([string]$Text, [string]$Scenario) {
         'settings_hidden' {
             if ($Text -notmatch '(?m)^tray_visible_ms=\d+') { Fail 'settings_hidden missing tray_visible_ms' }
             if ($Text -notmatch '(?m)^first_frame_ms=\d+') { Fail 'settings_hidden missing first_frame_ms' }
+            if ($Text -notmatch '(?m)^hwnd_render_mode=SoftwareOnly') { Fail 'settings_hidden hwnd_render_mode is not SoftwareOnly' }
             if ($Text -notmatch '(?m)^main_window_created=1') { Fail 'settings_hidden main_window_created is not 1' }
             if ($Text -notmatch '(?m)^startup_notes_opened=0') { Fail 'settings_hidden startup_notes_opened is not 0' }
             if ($Text -notmatch '(?m)^settings_hidden=1') { Fail 'settings_hidden missing settings_hidden=1' }
         }
         'notes7' {
             if ($Text -notmatch '(?m)^first_frame_ms=\d+') { Fail 'notes7 missing first_frame_ms' }
+            if ($Text -notmatch '(?m)^hwnd_render_mode=SoftwareOnly') { Fail 'notes7 hwnd_render_mode is not SoftwareOnly' }
             if ($Text -match '(?m)^tray_visible_ms=') { Fail 'notes7 registered a tray icon' }
             if ($Text -notmatch '(?m)^main_window_created=1') { Fail 'notes7 main_window_created is not 1' }
             if ($Text -notmatch '(?m)^startup_notes_opened=7') { Fail 'notes7 startup_notes_opened is not 7' }
@@ -165,6 +177,8 @@ try {
         foreach ($sc in $scenarios) {
             $ws = New-Object System.Collections.Generic.List[int]
             $priv = New-Object System.Collections.Generic.List[int]
+            $frames = New-Object System.Collections.Generic.List[int]
+            $trays = New-Object System.Collections.Generic.List[int]
             for ($i = 1; $i -le 3; $i++) {
                 $data = Join-Path $env:TEMP ("bhnext_mem_" + $PID + "_" + $sc.Name + "_" + $gcLabel + "_" + $i)
                 $out = Join-Path $data 'out'
@@ -198,6 +212,10 @@ try {
                 $privMb = [int]($proc.PrivateMemorySize64 / 1MB)
                 $ws.Add($wsMb)
                 $priv.Add($privMb)
+                $frameMs = Read-Metric $startupText 'first_frame_ms'
+                if ($null -ne $frameMs) { $frames.Add($frameMs) }
+                $trayMs = Read-Metric $startupText 'tray_visible_ms'
+                if ($null -ne $trayMs) { $trays.Add($trayMs) }
                 $startupText = Read-Text $startupPath
                 Assert-Startup $startupText $sc.Name
                 $lines.Add(("run={0} scenario={1} gc_concurrent={2} ws_mb={3} private_mb={4}" -f $i, $sc.Name, $gcLabel, $wsMb, $privMb))
@@ -208,7 +226,10 @@ try {
                 $proc = $null
                 Remove-Item -Recurse -Force $data -ErrorAction SilentlyContinue
             }
-            $lines.Add(("median scenario={0} gc_concurrent={1} ws_mb={2} private_mb={3}" -f $sc.Name, $gcLabel, (Median @($ws)), (Median @($priv))))
+            $medianLine = "median scenario={0} gc_concurrent={1} ws_mb={2} private_mb={3}" -f $sc.Name, $gcLabel, (Median @($ws)), (Median @($priv))
+            if ($frames.Count -gt 0) { $medianLine += " first_frame_ms=$(Median @($frames))" }
+            if ($trays.Count -gt 0) { $medianLine += " tray_visible_ms=$(Median @($trays))" }
+            $lines.Add($medianLine)
         }
     }
 }
@@ -220,6 +241,9 @@ finally {
     Remove-Item Env:DOTNET_gcConcurrent -ErrorAction SilentlyContinue
 }
 
+$lines.Add('')
+$lines.Add('targets gc_concurrent=true medians: tray_only ws<=120 and private<=120, tray_visible_ms<=500; settings ws<=150 and private<=150, first_frame_ms<=700; notes7 ws<=180 and private<=180')
+$lines.Add('render_mode=software and hwnd_render_mode=SoftwareOnly are required. idle_trim=1 in the startup text only means the trim ran. Private bytes are the committed number; trimming the working set does not lower private.')
 [IO.File]::WriteAllText($logPath, (($lines -join "`r`n") + "`r`n"), $utf8)
 Write-Host "wrote $logPath"
-Write-Host 'Done. csproj default is ConcurrentGarbageCollection=true. Judge gc_concurrent=true medians against the plan targets.'
+Write-Host 'Done. Judge gc_concurrent=true medians. Working set AND private must meet the same ceilings. render_mode=software.'

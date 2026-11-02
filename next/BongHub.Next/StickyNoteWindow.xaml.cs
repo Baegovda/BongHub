@@ -145,6 +145,8 @@ public partial class StickyNoteWindow : Window
         for (int i = 0; i < n; i++)
         {
             var p = picts[i];
+            // Already decoded near the display size. HighQuality keeps a second scaled copy and is slow in the software rasterizer.
+            RenderOptions.SetBitmapScalingMode(images[i], BitmapScalingMode.Linear);
             int edge = RtfPict.TargetEdge(p.GoalW, p.GoalH, dpi, Meta.Zoom, p.SourceW, p.SourceH);
             try
             {
@@ -152,7 +154,6 @@ public partial class StickyNoteWindow : Window
                 if (bmp != null)
                 {
                     images[i].Source = bmp;
-                    RenderOptions.SetBitmapScalingMode(images[i], BitmapScalingMode.HighQuality);
                     maxEdge = Math.Max(maxEdge, Math.Max(bmp.PixelWidth, bmp.PixelHeight));
                     pixels += (long)bmp.PixelWidth * bmp.PixelHeight;
                     p.Bytes = [];
@@ -164,6 +165,12 @@ public partial class StickyNoteWindow : Window
         }
         DisplayImageMaxEdge = maxEdge;
         DisplayImagePixels = pixels;
+    }
+    /// <summary>True when every picture in the document is scaled linearly (no cached high-quality copy).</summary>
+    public bool DisplayImagesUseLinearScaling()
+    {
+        var images = CollectImages(Editor.Document);
+        return images.Count > 0 && images.All(im => RenderOptions.GetBitmapScalingMode(im) == BitmapScalingMode.Linear);
     }
     static List<Image> CollectImages(FlowDocument doc)
     {

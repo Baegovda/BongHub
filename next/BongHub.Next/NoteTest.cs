@@ -71,6 +71,7 @@ public static class NoteTest
         {
             t.Check("display images are screen-sized", img.w.DisplayImageMaxEdge > 0 && img.w.DisplayImageMaxEdge <= RtfPict.MaxEdge,
                 $"max edge {img.w.DisplayImageMaxEdge}, pixels {img.w.DisplayImagePixels}");
+            t.Check("display images scale linearly", img.w.DisplayImagesUseLinearScaling());
             long payloadBefore = RtfPict.PayloadBytes(File.ReadAllBytes(NoteStore.RtfPath(img.m.Id)));
             var rtfHashBefore = after[img.m.Id + ".rtf"];
             img.w.Editor.Document.Blocks.Add(new Paragraph(new Run("이미지 보존 테스트")));

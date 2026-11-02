@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -6,7 +7,7 @@ using System.Windows.Threading;
 
 namespace BongHub.Next;
 
-/// <summary>Short, GPU-friendly animations (opacity + render transforms only; never layout).</summary>
+/// <summary>Short animations (opacity + render transforms only; never layout). Clocks are removed when they finish so a window does not keep a full-size intermediate surface.</summary>
 public static class Fx
 {
     public static bool Enabled { get; set; } = true;
@@ -19,6 +20,35 @@ public static class Fx
 
     public static DoubleAnimation Anim(double to, int ms, IEasingFunction? ease = null) => new(to, D(ms)) { EasingFunction = ease ?? Out };
     public static DoubleAnimation Anim(double from, double to, int ms, IEasingFunction? ease = null) => new(from, to, D(ms)) { EasingFunction = ease ?? Out };
+
+    /// <summary>
+    /// One clock per property. FillBehavior.Stop plus an explicit base value when it ends.
+    /// A held opacity or scale clock keeps a full-window intermediate surface for the life of the window.
+    /// A newer clock on the same property invalidates the older completion so it cannot clear the new one.
+    /// </summary>
+    sealed class ClockGen { public readonly Dictionary<DependencyProperty, int> Map = new(); }
+    static readonly ConditionalWeakTable<DependencyObject, ClockGen> Clocks = new();
+    static int Bump(DependencyObject target, DependencyProperty dp)
+    {
+        var map = Clocks.GetOrCreateValue(target).Map;
+        map.TryGetValue(dp, out int n);
+        map[dp] = n + 1;
+        return n + 1;
+    }
+    static bool IsCurrent(DependencyObject target, DependencyProperty dp, int token)
+        => Clocks.TryGetValue(target, out var gen) && gen.Map.TryGetValue(dp, out int cur) && cur == token;
+    static void Play(DependencyObject target, DependencyProperty dp, DoubleAnimation anim, Action done)
+    {
+        anim.FillBehavior = FillBehavior.Stop;
+        int token = Bump(target, dp);
+        anim.Completed += (_, _) =>
+        {
+            if (!IsCurrent(target, dp, token)) return;
+            target.BeginAnimation(dp, null);
+            done();
+        };
+        target.BeginAnimation(dp, anim);
+    }
 
     static ScaleTransform EnsureScale(UIElement el)
     {
@@ -39,16 +69,29 @@ public static class Fx
     public static void Appear(UIElement el, double fromScale = 0.965, int ms = 240)
     {
         var st = EnsureScale(el);
+        // Drop any in-flight completion before removing clocks. BeginAnimation(null) must not reapply the old base.
+        Bump(el, UIElement.OpacityProperty);
+        Bump(st, ScaleTransform.ScaleXProperty);
+        Bump(st, ScaleTransform.ScaleYProperty);
+        el.BeginAnimation(UIElement.OpacityProperty, null);
         el.Opacity = 1;
+        st.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        st.BeginAnimation(ScaleTransform.ScaleYProperty, null);
         st.ScaleX = 1;
         st.ScaleY = 1;
-        var fade = Anim(0, 1, (int)(ms * 0.7));
-        var sx = Anim(fromScale, 1, ms, Spring);
-        var sy = Anim(fromScale, 1, ms, Spring);
-        fade.FillBehavior = sx.FillBehavior = sy.FillBehavior = FillBehavior.Stop;
-        el.BeginAnimation(UIElement.OpacityProperty, fade);
-        st.BeginAnimation(ScaleTransform.ScaleXProperty, sx);
-        st.BeginAnimation(ScaleTransform.ScaleYProperty, sy);
+        Play(el, UIElement.OpacityProperty, Anim(0, 1, (int)(ms * 0.7)), () => el.Opacity = 1);
+        Play(st, ScaleTransform.ScaleXProperty, Anim(fromScale, 1, ms, Spring), () =>
+        {
+            st.ScaleX = 1;
+            if (ReferenceEquals(el.RenderTransform, st) && Math.Abs(st.ScaleY - 1) < 0.001)
+                el.RenderTransform = Transform.Identity;
+        });
+        Play(st, ScaleTransform.ScaleYProperty, Anim(fromScale, 1, ms, Spring), () =>
+        {
+            st.ScaleY = 1;
+            if (ReferenceEquals(el.RenderTransform, st) && Math.Abs(st.ScaleX - 1) < 0.001)
+                el.RenderTransform = Transform.Identity;
+        });
     }
 
     /// <summary>Close: fade out + scale to 0.97 (≈150ms), then <paramref name="done"/>.</summary>
@@ -56,6 +99,10 @@ public static class Fx
     {
         if (!Enabled) { done(); return; }
         var st = EnsureScale(el);
+        // Invalidate an in-flight Appear/Fade so its completion cannot restore opacity 1 and cancel this close.
+        Bump(el, UIElement.OpacityProperty);
+        Bump(st, ScaleTransform.ScaleXProperty);
+        Bump(st, ScaleTransform.ScaleYProperty);
         var a = Anim(0, ms); a.Completed += (_, _) => done();
         st.BeginAnimation(ScaleTransform.ScaleXProperty, Anim(0.97, ms));
         st.BeginAnimation(ScaleTransform.ScaleYProperty, Anim(0.97, ms));
@@ -66,16 +113,22 @@ public static class Fx
     public static void SlideIn(UIElement el, double dy = 14, int ms = 260)
     {
         var t = EnsureTranslate(el);
+        Bump(el, UIElement.OpacityProperty);
+        Bump(t, TranslateTransform.YProperty);
+        el.BeginAnimation(UIElement.OpacityProperty, null);
         el.Opacity = 1;
+        t.BeginAnimation(TranslateTransform.YProperty, null);
         t.Y = 0;
-        var fade = Anim(0, 1, (int)(ms * 0.8));
-        var move = Anim(dy, 0, ms, OutQuint);
-        fade.FillBehavior = move.FillBehavior = FillBehavior.Stop;
-        el.BeginAnimation(UIElement.OpacityProperty, fade);
-        t.BeginAnimation(TranslateTransform.YProperty, move);
+        Play(el, UIElement.OpacityProperty, Anim(0, 1, (int)(ms * 0.8)), () => el.Opacity = 1);
+        Play(t, TranslateTransform.YProperty, Anim(dy, 0, ms, OutQuint), () =>
+        {
+            t.Y = 0;
+            if (ReferenceEquals(el.RenderTransform, t)) el.RenderTransform = Transform.Identity;
+        });
     }
 
-    public static void Fade(UIElement el, double to, int ms = 150) => el.BeginAnimation(UIElement.OpacityProperty, Anim(to, ms));
+    public static void Fade(UIElement el, double to, int ms = 150)
+        => Play(el, UIElement.OpacityProperty, Anim(to, ms), () => el.Opacity = to);
     public static void MoveX(TranslateTransform t, double to, int ms = 280) => t.BeginAnimation(TranslateTransform.XProperty, Anim(to, ms, Spring));
     public static void MoveY(TranslateTransform t, double to, int ms = 280) => t.BeginAnimation(TranslateTransform.YProperty, Anim(to, ms, Spring));
 }
@@ -101,9 +154,21 @@ public static class WindowFx
             st.CloakedAtCreate = Dwm.Cloaked(h);
             Dwm.Dark(h); Dwm.Round(h); Dwm.BorderColor(h, Color.FromRgb(0x2A, 0x2E, 0x3A));
             var src = HwndSource.FromHwnd(h);
-            st.Backdrop = wantBackdrop && Dwm.Backdrop(h, 2);
-            if (src?.CompositionTarget != null) src.CompositionTarget.BackgroundColor = st.Backdrop ? Colors.Transparent : solid;
-            w.Background = st.Backdrop ? Brushes.Transparent : new SolidColorBrush(solid);
+            var target = src?.CompositionTarget;
+            if (target != null) target.RenderMode = RenderMode.SoftwareOnly;
+            // ProcessRenderMode is the real switch (it overrides a per-target Default). Software presents an opaque client:
+            // a #D0 tint over a transparent target is premultiplied against black and looks darker than #0D1018.
+            // DWM Mica is still requested; the solid fallback (the colors used when Mica is unavailable) covers it.
+            bool software = RenderOptions.ProcessRenderMode == RenderMode.SoftwareOnly
+                || target == null
+                || target.RenderMode == RenderMode.SoftwareOnly;
+            bool micaApi = wantBackdrop && Dwm.Backdrop(h, 2);
+            bool mica = micaApi && !software;
+            st.Backdrop = mica;
+            if (target != null) target.BackgroundColor = mica ? Colors.Transparent : solid;
+            var solidBrush = new SolidColorBrush(solid);
+            solidBrush.Freeze();
+            w.Background = mica ? Brushes.Transparent : solidBrush;
         };
         w.ContentRendered += (_, _) =>
         {
