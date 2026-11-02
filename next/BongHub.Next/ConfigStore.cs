@@ -1,6 +1,4 @@
 using System.Text;
-using System.Text.Encodings.Web;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace BongHub.Next;
@@ -9,8 +7,8 @@ public sealed class PresetSnapshot { public string Name { get; set; } = ""; publ
 public sealed class NotesSettings { public string DefaultColor = "g:blocks"; public bool Gradient = true; public float FontSize = 11; public int Opacity = 100; public bool OpenOnStartup = true; public string Hotkey = "Ctrl+Alt+N"; }
 
 /// <summary>
-/// Reads 3.4.7's config.json and patches single keys in place (every other key is preserved verbatim),
-/// so instant-apply settings never drop data the stable version owns.
+/// Reads 3.4.x config.json. A Notes change replaces that one JSON value and leaves every other byte alone,
+/// so instant-apply settings do not rewrite the file the stable app and the cloud sync both own.
 /// </summary>
 public static class ConfigStore
 {
@@ -44,20 +42,19 @@ public static class ConfigStore
     static bool Bool(JsonNode? n, bool d) { try { return n?.GetValue<bool>() ?? d; } catch { return d; } }
     static double Num(JsonNode? n, double d) { try { return n?.GetValue<double>() ?? d; } catch { return d; } }
 
-    /// <summary>Instant apply: patch Notes.&lt;key&gt; in config.json (atomic). Returns false when read-only or failed.</summary>
+    /// <summary>Instant apply: splice Notes.&lt;key&gt; into config.json. Returns false when read-only or the file cannot be patched without a full rewrite.</summary>
     public static bool SetNotesValue(string key, JsonNode value)
     {
         if (AppEnv.DenyWrite()) return false;
         try
         {
-            JsonObject root = File.Exists(AppEnv.ConfigPath) ? (JsonNode.Parse(File.ReadAllText(AppEnv.ConfigPath, Encoding.UTF8)) as JsonObject ?? new JsonObject()) : new JsonObject { ["Version"] = 2 };
-            if (root["Notes"] is not JsonObject notes) { notes = new JsonObject(); root["Notes"] = notes; }
-            notes[key] = value;
-            var json = root.ToJsonString(new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
-            Directory.CreateDirectory(AppEnv.DataDir);
-            var tmp = AppEnv.ConfigPath + ".tmp"; File.WriteAllText(tmp, json, new UTF8Encoding(false));
-            if (File.Exists(AppEnv.ConfigPath)) File.Replace(tmp, AppEnv.ConfigPath, null); else File.Move(tmp, AppEnv.ConfigPath);
-            Writes++; return true;
+            if (!NotesConfigPatch.TryWriteFile(AppEnv.ConfigPath, key, value, out bool changed))
+            {
+                AppEnv.Log("config patch failed: Notes." + key);
+                return false;
+            }
+            if (changed) Writes++;
+            return true;
         }
         catch (Exception e) { AppEnv.Log("config patch failed: " + e.Message); return false; }
     }
