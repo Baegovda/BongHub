@@ -1,10 +1,10 @@
 # BongHub
 
-Windows 트레이 유틸리티입니다. 부제는 "석봉이의 유틸 창고"입니다. 1.0.0부터 WinForms 3.4.x 트레이는 없고, 이 WPF 앱이 `BongHub.exe`예요.
+Windows 트레이 유틸리티입니다. 부제는 "석봉이의 유틸 창고"입니다. 1.0.0부터 WinForms 3.4.x 트레이는 없고, 이 WPF 앱이 `BongHub.exe`예요. 지금 버전은 **1.0.1**이에요.
 
 ## 현재 버전
 
-- **소스:** **1.0.0** (`BongHub/BongHub.csproj`, `AppEnv.Version`, 파일 버전 **1.0.0.0**)
+- **소스:** **1.0.1** (`BongHub/BongHub.csproj`, `AppEnv.Version`, 파일 버전 **1.0.1.0**)
 - **시험:** 스모크 **107**, 노트 **89**. 0.4.0에서 확인된 유휴(작업 집합/private)는 트레이 **8/18MB**, 설정 **20/64MB**, 메모 7개 **22/94MB**를 넘기면 안 돼요
 - **데이터:** `%LOCALAPPDATA%\BongHub\` (`config.json`, `notes\`, `desktop\layouts.json`). 형식은 3.4.x와 같아요
 - **저장권:** `Local\BongHub_NotesWriter`. 먼저 잡은 프로세스만 그 폴더에 써요

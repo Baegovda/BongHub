@@ -127,7 +127,7 @@ string korean = NotesConfigPatch.Format(JsonValue.Create("안녕"));
 Check("Korean string is not escaped", korean == "\"안녕\"");
 
 // --- file bytes, temp directory only ---
-string dir = Path.Combine(Path.GetTempPath(), "bhnext_patch_" + Environment.ProcessId);
+string dir = Path.Combine(Path.GetTempPath(), "bonghub_patch_" + Environment.ProcessId);
 Directory.CreateDirectory(dir);
 try
 {
@@ -221,7 +221,7 @@ int movesBefore = mem.Moves;
 var refused = IconMatch.Apply(mem, iconTarget);
 Check("auto-arrange refuses without moving", !refused.Ok && refused.Error.Contains("자동 정렬") && mem.Moves == movesBefore && mem.Icons[0].X == 11 && mem.Refreshes == 1);
 
-string iconDir = Path.Combine(Path.GetTempPath(), "bhnext_icons_" + Environment.ProcessId);
+string iconDir = Path.Combine(Path.GetTempPath(), "bonghub_icons_" + Environment.ProcessId);
 try
 {
     var store = new LayoutStore(iconDir);
@@ -358,7 +358,7 @@ Check("json pretty", prettyJson.Contains("\n") && prettyJson.Contains("\"y\": \"
 Check("key:value -> json", (PasteText.ToJson("host: a.b\nport = 80") ?? "").Contains("\"port\": 80"));
 Check("custom regex action", PasteText.ApplyCustom("010-1234-5678", "regex", "[^0-9]", "") == "01012345678");
 Check("custom dedupe", PasteText.ApplyCustom("b\na\nb", "dedupe").Replace("\r", "") == "b\na");
-string peekDir = Path.Combine(Path.GetTempPath(), "bhnext_peek_" + Environment.ProcessId);
+string peekDir = Path.Combine(Path.GetTempPath(), "bonghub_peek_" + Environment.ProcessId);
 Directory.CreateDirectory(peekDir);
 try
 {
@@ -465,7 +465,7 @@ if (repo != null)
     string hash;
     using (var sha = System.Security.Cryptography.SHA256.Create()) hash = Convert.ToHexString(sha.ComputeHash(helper));
     Check("helper bytes match 3.4.x", hash == KakaoFiles.Sha256 && helper.Length > 0);
-    string tempHelper = Path.Combine(Path.GetTempPath(), "bhnext_kakao_" + Environment.ProcessId, "helper.bin");
+    string tempHelper = Path.Combine(Path.GetTempPath(), "bonghub_kakao_" + Environment.ProcessId, "helper.bin");
     try
     {
         bool wrote = KakaoFiles.WriteIfChanged(tempHelper, new byte[] { 1, 2, 3 });
@@ -494,13 +494,13 @@ void RunExtras()
     var oldB = PresetExtras.Bright; var oldF = PresetExtras.FindDesk; var oldR = PresetExtras.RestoreDesk; var oldS = PresetExtras.Signature; var oldSl = PresetExtras.Sleep;
     var oldSt = PresetExtras.StampFile; var oldWS = PresetExtras.WorkStampFile; var oldMx = PresetExtras.WorkMutexName;
     var oldFW = PresetExtras.FindWork; var oldLW = PresetExtras.LaunchWork; var oldLM = PresetExtras.WorkLaunchMissing;
-    string dir = Path.Combine(Path.GetTempPath(), "bhnext_extras_" + Environment.ProcessId);
+    string dir = Path.Combine(Path.GetTempPath(), "bonghub_extras_" + Environment.ProcessId);
     try
     {
         Directory.CreateDirectory(dir);
         PresetExtras.StampFile = Path.Combine(dir, "desk.stamp");
         PresetExtras.WorkStampFile = Path.Combine(dir, "work.stamp");
-        PresetExtras.WorkMutexName = "BongHubNextExtras" + Environment.ProcessId;
+        PresetExtras.WorkMutexName = "BongHubExtras" + Environment.ProcessId;
         try { File.Delete(PresetExtras.StampFile); } catch { }
         try { File.Delete(PresetExtras.WorkStampFile); } catch { }
         int slept = 0; PresetExtras.Sleep = ms => slept += ms;
@@ -600,7 +600,7 @@ void RunExtras()
 
 void RunCloud()
 {
-    string root = Path.Combine(Path.GetTempPath(), "bhnext_cloud_" + Environment.ProcessId);
+    string root = Path.Combine(Path.GetTempPath(), "bonghub_cloud_" + Environment.ProcessId);
     var real = repo == null ? null : File.ReadAllBytes(Path.Combine(repo, "data", "config.json"));
     try
     {

@@ -45,7 +45,7 @@ public partial class App : Application
         bool test = AppEnv.Smoke || AppEnv.NoteTest;
         if (!test)
         {
-            // Off-screen runs (--off, --idle-hidden, the memory baseline) must not signal a running Next to show its window.
+            // Off-screen runs (--off, --idle-hidden, the memory baseline) must not signal a running BongHub to show its window.
             // They still take the notes writer lock when the data folder is the real one. Temp --data does not.
             if (!AppEnv.Off)
             {
@@ -63,7 +63,7 @@ public partial class App : Application
             AppEnv.ClaimWriterOrReadOnly();
         }
 
-        NextSettings.Load();
+        AppSettings.Load();
         ConfigStore.Load();
         NoteStore.Load();
         AppEnv.Mark("data_loaded");

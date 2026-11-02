@@ -100,7 +100,7 @@ public static class NoteHotkey
     static void EnsureWindow()
     {
         if (source != null || !NativeAllowed) return;
-        var p = new HwndSourceParameters("BongHubNextHotkey")
+        var p = new HwndSourceParameters("BongHubHotkey")
         {
             WindowStyle = 0,
             ExtendedWindowStyle = 0,

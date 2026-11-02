@@ -1,5 +1,9 @@
 # BongHub
 
+## 1.0.1
+
+사이드바 부제와 문서에 남아 있던 옛 제품 이름을 BongHub로 바꿨어요. 시험 수는 스모크 **107**, 노트 **89**예요.
+
 ## 1.0.0
 
 3.4.x WinForms 트레이를 걷어내고, 이 WPF 앱이 BongHub예요. 실행 파일은 `BongHub.exe`예요.
@@ -69,7 +73,7 @@
 - 정보 탭에 버전, 구성요소, 단축키, 변경을 적어요.
 - 스모크 **83**, 노트 **89**. 설정 메모리는 작업 집합/private **20/64MB**를 넘기면 안 돼요. 첫 페인트는 프리셋 페이지만 만들어요.
 - 메모 창의 `MaxHeight`는 30000이에요. Windows가 `WM_GETMINMAXINFO`의 `ptMaxTrackSize`를 작업 영역(예: 1100)으로 채우고, WPF는 `Min(MaxHeight, 그 값)`을 다시 써요. 훅이 그 값을 30000으로 올린 뒤에 WPF가 읽어요. 3.4.x는 이 한도를 쓰지 않아요.
-- `--smoketest`는 `--data`를 무시하고 `%TEMP%\bhnext_smoke_<pid>`만 써요. 그 폴더에 config가 있으면 바이트를 임시 폴더로 복사해 `General.TabOrder` 항목 순서만 바뀌는지 봐요. 줄바꿈과 들여쓰기는 유지하고, 원본 파일은 쓰지 않아요. 노트 대비 검사는 그 복사본의 투명도를 쓰지 않고 기본 팔레트로 해요.
+- `--smoketest`는 `--data`를 무시하고 `%TEMP%\bonghub_smoke_<pid>`만 써요. 그 폴더에 config가 있으면 바이트를 임시 폴더로 복사해 `General.TabOrder` 항목 순서만 바뀌는지 봐요. 줄바꿈과 들여쓰기는 유지하고, 원본 파일은 쓰지 않아요. 노트 대비 검사는 그 복사본의 투명도를 쓰지 않고 기본 팔레트로 해요.
 
 ## 0.5.0
 
@@ -111,7 +115,7 @@
 - 대상 프레임워크를 `net10.0-windows`로 올렸어요. SDK 기준은 10.0.403이고, 같은 10 기능 대역의 더 높은 SDK로 진행할 수 있어요.
 - 트레이를 H.NotifyIcon.Wpf 2.4.1로 바꿨어요. `UseWindowsForms`는 뺐어요. 왼쪽 클릭은 설정을 열고, 오른쪽 클릭은 다크 메뉴, 종료만 프로세스를 끝내요.
 - 게시는 ReadyToRun, `win-x64`, 프레임워크 종속이에요. 단일 파일, 트림, Native AOT는 꺼 두었어요.
-- 메모리 기준선은 `next/measure-baseline.ps1`예요. 트레이만, 설정 창, 설정 창을 숨긴 뒤, 메모 7개를 각 3회 재고, `ConcurrentGarbageCollection`을 켠 경우와 끈 경우를 같이 남겨요. 기본값은 여전히 꺼짐이에요.
+- 메모리 기준선은 `measure-baseline.ps1`예요. 트레이만, 설정 창, 설정 창을 숨긴 뒤, 메모 7개를 각 3회 재고, `ConcurrentGarbageCollection`을 켠 경우와 끈 경우를 같이 남겨요. 기본값은 여전히 꺼짐이에요.
 - `startup.txt`에 트레이 아이콘이 보인 시각과 첫 `ContentRendered`를 같이 적어요.
 - `%LOCALAPPDATA%\BongHub`의 형식과 `Local\BongHub_NotesWriter` 잠금 순서는 그대로예요. `Local\BongHub_Tray`는 만들지 않아요.
 - Notes 설정 한 키를 저장할 때 `config.json`에서 그 값만 바꾸고, 나머지 바이트는 그대로 둬요. 값이 같으면 파일을 다시 쓰지 않아요.

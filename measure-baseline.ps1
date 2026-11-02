@@ -220,7 +220,7 @@ try {
             $frames = New-Object System.Collections.Generic.List[int]
             $trays = New-Object System.Collections.Generic.List[int]
             for ($i = 1; $i -le 3; $i++) {
-                $data = Join-Path $env:TEMP ("bhnext_mem_" + $PID + "_" + $sc.Name + "_" + $gcLabel + "_" + $i)
+                $data = Join-Path $env:TEMP ("bonghub_mem_" + $PID + "_" + $sc.Name + "_" + $gcLabel + "_" + $i)
                 $out = Join-Path $data 'out'
                 if (Test-Path $data) { Remove-Item -Recurse -Force $data }
                 New-Item -ItemType Directory -Force -Path $out | Out-Null

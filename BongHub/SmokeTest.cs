@@ -103,7 +103,7 @@ public static class SmokeTest
         t.Check("startup switch is display only", w.StartupSwitchEnabled == false);
         t.Check("about shows version and hotkeys", w.AboutMentionsVersion && w.AboutMentionsHotkey);
         t.Check("open folder stays inside tests", w.RequestOpenDataFolder() == false && w.FolderLaunches == 0);
-        t.Check("smoketest keeps its own temp folder", AppEnv.DataDir.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) && AppEnv.DataDir.Contains("bhnext_smoke_"));
+        t.Check("smoketest keeps its own temp folder", AppEnv.DataDir.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) && AppEnv.DataDir.Contains("bonghub_smoke_"));
         string fixture = "{\r\n  \"Version\": 2,\r\n  \"Presets\": [{ \"Name\": \"작업\", \"Hotkey\": \"Ctrl+Alt+1\", \"Marker\": \"PRESET_KEEP\" }],\r\n  \"Pt\": { \"Zones\": { \"Enabled\": false, \"Marker\": \"PT_KEEP\" } },\r\n  \"Desk\": { \"HotkeySave\": \"Ctrl+Alt+S\", \"Marker\": \"DESK_KEEP\" },\r\n  \"General\": { \"OverlayOpacity\": 70 }\r\n}\r\n";
         // --data is never the write target. When that folder has a real config, the byte diff uses a temp copy of it.
         string? srcPath = string.IsNullOrEmpty(AppEnv.IgnoredDataDir) ? null : Path.Combine(AppEnv.IgnoredDataDir, "config.json");
@@ -248,7 +248,7 @@ public static class SmokeTest
         try { KakaoNative.Start(""); } catch (InvalidOperationException) { kakaoThrew = true; }
         t.Check("kakao stays off real windows", kakaoThrew && w.KakaoBlocks == kakaoBlocks + 1 && w.KakaoAction == "blocked" && KakaoSystem.NativeCalls == 0 && KakaoSystem.ProcessStarts == 0 && KakaoSystem.WindowCalls == 0 && KakaoSystem.ProcessQueries == 0);
 
-        string cloudRoot = Path.Combine(Path.GetTempPath(), "bhnext_smoke_cloud_" + Environment.ProcessId);
+        string cloudRoot = Path.Combine(Path.GetTempPath(), "bonghub_smoke_cloud_" + Environment.ProcessId);
         try
         {
             Directory.CreateDirectory(cloudRoot);

@@ -299,7 +299,7 @@ public static class PresetExtras
     public static Func<bool> WorkLaunchMissing = () => false;
     public static Func<LinkedWork, bool, string> LaunchWork = (_, _) => "";
     public static int WorkRuns, DeskRestores;
-    public static string WorkMutexName = "BongHubNextLinkedWorkTest";
+    public static string WorkMutexName = "BongHubLinkedWorkTest";
     public static string WorkStampFile = "";
     public static string StampFile = "";
 
