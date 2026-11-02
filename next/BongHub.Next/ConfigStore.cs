@@ -5,7 +5,8 @@ namespace BongHub.Next;
 
 public sealed class PresetSnapshot { public string Name { get; set; } = ""; public string Hotkey { get; set; } = ""; }
 public sealed class NotesSettings { public string DefaultColor = "g:blocks"; public bool Gradient = true; public float FontSize = 11; public int Opacity = 100; public bool OpenOnStartup = true; public string Hotkey = "Ctrl+Alt+N"; }
-public sealed class RuleSnapshot { public string Name = ""; public bool Enabled = true; }
+public sealed class RuleSnapshot { public string Name = ""; public string Process = ""; public bool Enabled = true; }
+public sealed class WorkspaceSnapshot { public string Name = ""; public List<WorkspaceItem> Apps = new(); }
 public sealed class ToySnapshot { public string Name = ""; public bool Enabled; public string Hotkey = ""; }
 
 /// <summary>
@@ -24,6 +25,8 @@ public static class ConfigStore
     public static bool OverlayEnabled { get; private set; } = true;
     public static int OverlayOpacity { get; private set; } = 82;
     public static List<RuleSnapshot> Rules { get; } = new();
+    public static List<WindowRule> WindowRules { get; } = new();
+    public static List<WorkspaceSnapshot> Workspaces { get; } = new();
     public static bool KakaoAdBlock { get; private set; }
     public static bool KakaoDark { get; private set; }
     public static string DeskHotkeySave { get; private set; } = "";
@@ -40,7 +43,7 @@ public static class ConfigStore
 
     public static void Load()
     {
-        Presets.Clear(); Notes = new NotesSettings(); TabOrder.Clear(); Rules.Clear(); PowerToys.Clear();
+        Presets.Clear(); Notes = new NotesSettings(); TabOrder.Clear(); Rules.Clear(); WindowRules.Clear(); Workspaces.Clear(); PowerToys.Clear();
         IdleEnabled = true; IdleMinutes = 30; IdlePreset = ""; SkipIfAudio = true; OverlayEnabled = true; OverlayOpacity = 82;
         KakaoAdBlock = false; KakaoDark = false; DeskHotkeySave = ""; DeskHotkeyRestore = "";
         DeskAutoSave = true; DeskAutoSaveMinutes = 10; DeskSaveOnExit = true; DeskSaveBeforeSwitch = true; DeskRestoreOnChange = true; DeskRestoreOnStartup = false;
@@ -70,7 +73,19 @@ public static class ConfigStore
                 OverlayOpacity = Math.Clamp((int)Num(g["OverlayOpacity"], 82), 20, 100);
             }
             if (root?["GlobalRules"] is JsonArray rules)
-                foreach (var r in rules.OfType<JsonObject>()) Rules.Add(new RuleSnapshot { Name = Str(r["Name"]), Enabled = Bool(r["Enabled"], true) });
+                foreach (var r in rules.OfType<JsonObject>())
+                {
+                    var rule = new WindowRule
+                    {
+                        Enabled = Bool(r["Enabled"], true), Name = Str(r["Name"]), Process = Str(r["Process"]), Title = Str(r["Title"]),
+                        TitleRegex = Bool(r["TitleRegex"], false), Class = Str(r["Class"]), Monitor = Str(r["Monitor"]),
+                        Action = Str(r["Action"]).Length > 0 ? Str(r["Action"]) : "pos",
+                        X = (int)Num(r["X"], 0), Y = (int)Num(r["Y"], 0), W = (int)Num(r["W"], 1280), H = (int)Num(r["H"], 800),
+                        Pin = Bool(r["Pin"], false), Keep = Bool(r["Keep"], false), Zone = (int)Num(r["Zone"], 0)
+                    };
+                    WindowRules.Add(rule);
+                    Rules.Add(new RuleSnapshot { Name = rule.Name, Process = rule.Process, Enabled = rule.Enabled });
+                }
             if (root?["Kakao"] is JsonObject k) { KakaoAdBlock = Bool(k["AdBlock"], false); KakaoDark = Bool(k["Dark"], false); }
             if (root?["Desk"] is JsonObject d)
             {
@@ -87,6 +102,15 @@ public static class ConfigStore
             {
                 Toy("Zones", pt["Zones"]); Toy("Grab", pt["Grab"]); Toy("Workspaces", pt["Work"]);
                 Toy("Palette", pt["Palette"]); Toy("Paste", pt["Paste"]); Toy("Peek", pt["Peek"]); Toy("Resizer", pt["Resizer"]);
+                if (pt["Work"] is JsonObject work && work["Items"] is JsonArray items)
+                    foreach (var item in items.OfType<JsonObject>())
+                    {
+                        var ws = new WorkspaceSnapshot { Name = Str(item["Name"]) };
+                        if (item["Apps"] is JsonArray apps)
+                            foreach (var a in apps.OfType<JsonObject>())
+                                ws.Apps.Add(new WorkspaceItem { Enabled = Bool(a["Enabled"], true), Process = Str(a["Process"]), Title = Str(a["Title"]), Path = Str(a["Path"]), X = (int)Num(a["X"], 0), Y = (int)Num(a["Y"], 0), W = (int)Num(a["W"], 0), H = (int)Num(a["H"], 0), State = Str(a["State"]).Length > 0 ? Str(a["State"]) : "normal" });
+                        Workspaces.Add(ws);
+                    }
             }
             if (Presets.Count == 0) Defaults();
         }
@@ -155,6 +179,20 @@ public static class ConfigStore
         }
     }
     public static void SetDeskMinutes(int minutes) { DeskAutoSaveMinutes = Math.Clamp(minutes, 1, 240); }
+    public static bool SetRuleEnabled(int index, bool enabled)
+    {
+        if (AppEnv.DenyWrite()) return false;
+        try
+        {
+            if (!NotesConfigPatch.TryWriteArrayField(AppEnv.ConfigPath, "GlobalRules", index, "Enabled", JsonValue.Create(enabled), out bool changed))
+                return false;
+            if (index >= 0 && index < Rules.Count) Rules[index].Enabled = enabled;
+            if (index >= 0 && index < WindowRules.Count) WindowRules[index].Enabled = enabled;
+            if (changed) Writes++;
+            return true;
+        }
+        catch (Exception e) { AppEnv.Log("config patch failed: " + e.Message); return false; }
+    }
     public static int CountNotes() => NoteStore.All.Count;
 }
 
