@@ -189,11 +189,15 @@ Check("notes patch still leaves Presets", NotesConfigPatch.TryApply(Shell, "Opac
     && notesOnly.Contains("\"Opacity\": 9") && notesOnly.Contains("PRESET_KEEP") && notesOnly.Contains("PT_KEEP") && notesOnly.Contains("DESK_KEEP"));
 
 const string DeskCfg = "{\"Version\":2,\"Presets\":[{\"Marker\":\"PRESET_KEEP\"}],\"Pt\":{\"Marker\":\"PT_KEEP\"},\"Desk\":{\"AutoSave\":true,\"Marker\":\"DESK_KEEP\",\"HotkeySave\":\"Ctrl+Alt+S\"},\"General\":{\"OverlayOpacity\":70}}";
+const string DeskPretty = "{\r\n  \"Presets\": [{ \"Marker\": \"PRESET_KEEP\" }],\r\n  \"Pt\": { \"Marker\": \"PT_KEEP\" },\r\n  \"Desk\": {\r\n    \"AutoSave\": true,\r\n    \"Marker\": \"DESK_KEEP\",\r\n    \"HotkeySave\": \"Ctrl+Alt+S\"\r\n  },\r\n  \"General\": { \"OverlayOpacity\": 70 }\r\n}\r\n";
 Check("desk autosave splices one token", NotesConfigPatch.TryApply(DeskCfg, "Desk", "AutoSave", JsonValue.Create(false), out string desked)
-    && desked.Contains("\"AutoSave\":false") && desked.Contains("PRESET_KEEP") && desked.Contains("PT_KEEP") && desked.Contains("DESK_KEEP")
-    && desked.Contains("\"HotkeySave\":\"Ctrl+Alt+S\"") && desked.Contains("\"OverlayOpacity\":70"));
+    && desked == DeskCfg.Replace("\"AutoSave\":true", "\"AutoSave\":false"));
+Check("desk autosave keeps pretty formatting", NotesConfigPatch.TryApply(DeskPretty, "Desk", "AutoSave", JsonValue.Create(false), out string deskPretty)
+    && deskPretty == DeskPretty.Replace("\"AutoSave\": true", "\"AutoSave\": false"));
 NotesConfigPatch.ChangedSpan(DeskCfg, desked, out string deskRemoved, out string deskInserted);
-Check("desk autosave byte span", deskRemoved == "true" && deskInserted == "false");
+Check("desk autosave byte span", OnlyToken(DeskCfg, desked, out string deskOld, out string deskNew) && deskOld == "true" && deskNew == "false"
+    && !deskRemoved.Contains("DESK_KEEP") && !deskInserted.Contains("DESK_KEEP") && !deskRemoved.Contains("PRESET_KEEP") && !deskInserted.Contains("PT_KEEP"),
+    "removed=[" + deskRemoved + "] inserted=[" + deskInserted + "]");
 
 Check("screen description puts the primary first", ScreenMap.Describe("1920x1080@0,0;2560x1440@1920,0*") == "모니터 2대 · 2560×1440(주) + 1920×1080");
 string screen = ScreenMap.Key(new[] { new MonitorSpec(1920, 1080, 0, 0, false), new MonitorSpec(2560, 1440, 1920, 0, true) });
