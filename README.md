@@ -5,7 +5,7 @@ Windows 트레이 유틸리티입니다. 부제는 "석봉이의 유틸 창고"�
 ## 현재 버전
 
 - **소스:** **1.3.0** (`BongHub/BongHub.csproj`, `AppEnv.Version`, `AppInfo.Version`, 파일 버전 **1.3.0.0**)
-- **시험:** 스모크 **123**, 노트 **117**. 0.4.0에서 확인된 유휴(작업 집합/private)는 트레이 **8/18MB**, 설정 **20/64MB**, 메모 7개 **22/94MB**를 넘기면 안 돼요
+- **시험:** 스모크 **123**, 노트 **127**. 0.4.0에서 확인된 유휴(작업 집합/private)는 트레이 **8/18MB**, 설정 **20/64MB**, 메모 7개 **22/94MB**를 넘기면 안 돼요
 - **데이터:** `%LOCALAPPDATA%\BongHub\` (`config.json`, `notes\`, `desktop\layouts.json`). 형식은 3.4.x와 같아요. 모니터 프로필은 `profiles.json`으로 옆에 더해요
 - **저장권:** `Local\BongHub_NotesWriter`. 먼저 잡은 프로세스만 그 폴더에 써요
 - **로그:** `%LOCALAPPDATA%\BongHub\error.log`
@@ -40,7 +40,7 @@ BongHub.exe --smoketest
 BongHub.exe --notetest --data <notes 복사본>
 ```
 
-`--smoketest`와 `--notetest`는 화면 밖이고 저장권 잠금, git, 카톡 창, 모니터 전환을 하지 않아요. 기대값은 스모크 **123 PASS**, 노트 **117 PASS**예요. 탭은 모니터 프로필, 스티커 메모, 카톡 광고 제거, PowerToys, 일반, 정보 여섯 개예요. 옛 기록은 `test-logs/`에 있어요.
+`--smoketest`와 `--notetest`는 화면 밖이고 저장권 잠금, git, 카톡 창, 모니터 전환을 하지 않아요. 기대값은 스모크 **123 PASS**, 노트 **127 PASS**예요. 탭은 모니터 프로필, 스티커 메모, 카톡 광고 제거, PowerToys, 일반, 정보 여섯 개예요. 옛 기록은 `test-logs/`에 있어요.
 
 패치 검사:
 

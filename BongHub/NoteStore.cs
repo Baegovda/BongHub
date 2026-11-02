@@ -33,6 +33,8 @@ public static class NoteStore
     static string Dir => AppEnv.NotesDir;
     public static string MetaPath(string id) => Path.Combine(Dir, id + ".json");
     public static string RtfPath(string id) => Path.Combine(Dir, id + ".rtf");
+    public static string PendingRtfPath(string id, string stamp) => Path.Combine(Dir, id + ".rtf.pending-" + stamp);
+    public static string[] PendingRtfs(string id) => Directory.Exists(Dir) ? Directory.GetFiles(Dir, id + ".rtf.pending-*") : [];
 
     public static void Load()
     {
@@ -58,6 +60,27 @@ public static class NoteStore
 
     public static bool SaveMeta(NoteMeta m) { m.Modified = DateTime.Now; var ok = Write(MetaPath(m.Id), new UTF8Encoding(false).GetBytes(Serialize(m))); Changed?.Invoke(); return ok; }
     public static bool SaveRtf(NoteMeta m, byte[] rtf) => Write(RtfPath(m.Id), rtf);
+    /// <summary>The edit the image guard would not put over the existing file. The old <c>.rtf</c> stays.</summary>
+    public static bool SavePendingRtf(NoteMeta m, byte[] rtf)
+        => Write(PendingRtfPath(m.Id, DateTime.Now.ToString("yyyyMMddHHmmssfff")), rtf);
+    public static string? NewestPendingRtf(string id)
+    {
+        string? best = null;
+        DateTime bestTime = DateTime.MinValue;
+        foreach (var file in PendingRtfs(id))
+        {
+            DateTime t;
+            try { t = File.GetLastWriteTimeUtc(file); }
+            catch { continue; }
+            if (best == null || t >= bestTime) { best = file; bestTime = t; }
+        }
+        return best;
+    }
+    public static void ClearPendingRtf(string id)
+    {
+        foreach (var file in PendingRtfs(id))
+            try { File.Delete(file); } catch (Exception e) { AppEnv.Log($"pending delete {file}: {e.Message}"); }
+    }
     public static string? LoadRtf(string id) { try { return File.ReadAllText(RtfPath(id), Encoding.UTF8); } catch { return null; } }
 
     public static NoteMeta Create(string defaultColor, int x, int y, int w, int h)
@@ -75,6 +98,7 @@ public static class NoteStore
             All.Remove(m);
             if (File.Exists(MetaPath(m.Id))) File.Delete(MetaPath(m.Id));
             if (File.Exists(RtfPath(m.Id))) File.Delete(RtfPath(m.Id));
+            ClearPendingRtf(m.Id);
             Changed?.Invoke();
             return true;
         }
@@ -134,6 +158,12 @@ public static class NoteColors
         new[] { "g:plumgray", "플럼 그레이", "8D8294", "665D6B" }, new[] { "g:smoke", "스모크", "9A9DA1", "72767A" }, new[] { "g:terracotta", "테라코타", "AA806B", "805F50" } };
     public static readonly Color Text = C(240, 240, 246);
     public static readonly Color DarkText = C(28, 28, 30);
+    /// <summary>Foreground stored by 1.2 notes beside <see cref="Text"/>. It is not a chosen color.</summary>
+    public static readonly Color LegacyText = C(236, 236, 240);
+    /// <summary>True for the automatic inks. A run in one of these colors follows the note instead of keeping the stored value.</summary>
+    public static bool IsAutomaticInk(Color c)
+        => Rgb(c, Text) || Rgb(c, DarkText) || Rgb(c, LegacyText);
+    static bool Rgb(Color a, Color b) => a.R == b.R && a.G == b.G && a.B == b.B;
     /// <summary>Same ink as the body, nudged toward white so the bold title reads a little stronger.</summary>
     public static Color TitleInk => Mix(Text, Colors.White, 0.42);
     /// <summary>Dark ink on a light note, light ink on a dark note. Title and body share it.</summary>

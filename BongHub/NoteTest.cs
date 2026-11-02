@@ -269,6 +269,9 @@ public static class NoteTest
         var (gw, gh) = NoteImages.ScaleGoals(100, 50, 0.5);
         t.Check("50% goals are half the 96dpi twips", gw == 750 && gh == 375, $"{gw}x{gh}");
         t.Check("8MB warning threshold", NoteImages.OverWarn(NoteImages.WarnBytes + 1) && !NoteImages.OverWarn(NoteImages.WarnBytes));
+        var gif = Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7");
+        var gifBuilt = NoteImages.FromEncoded(gif, 120);
+        t.Check("gif bytes become a png", gifBuilt != null && !gifBuilt.Jpeg && gifBuilt.Bytes.Length > 8 && gifBuilt.Bytes[0] == 0x89 && gifBuilt.Bytes[1] == (byte)'P' && gifBuilt.Group.Contains("\\pngblip"));
         t.Check("link hit", NoteLinks.TryHit("see https://example.com/a now", 6, out var url) && url == "https://example.com/a");
         t.Check("link miss", !NoteLinks.TryHit("see https://example.com/a now", 0, out _));
         t.Check("www link gains https", NoteLinks.TryHit("www.example.com", 0, out var www) && www == "https://www.example.com");
@@ -330,6 +333,49 @@ public static class NoteTest
         var afterEdit = File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id));
         t.Check("later edit keeps pngblip bytes", RtfPict.PayloadBytes(afterEdit) == beforeDrop && Encoding.ASCII.GetString(afterEdit).Contains(@"\pngblip"), $"payload {RtfPict.PayloadBytes(afterEdit)}");
         t.Check("editor shows the edit", picNote.PlainText().Contains("리치") || picNote.PlainText().Contains("떨어짐"), picNote.PlainText());
+
+        var guardNote = NoteManager.NewNote();
+        t.Check("guard note opened", guardNote != null);
+        if (guardNote != null)
+        {
+            await TestKit.Until(() => guardNote.Ready, 5000);
+            guardNote.InsertImageFile(pngPath);
+            guardNote.FlushText();
+            int pictsBeforeLoose = RtfPict.Parse(File.ReadAllBytes(NoteStore.RtfPath(guardNote.Meta.Id))).Count;
+            int guardsBeforeLoose = guardNote.ImageGuardHits;
+            guardNote.InsertLooseImageForTest();
+            guardNote.FlushText();
+            var looseParsed = RtfPict.Parse(File.ReadAllBytes(NoteStore.RtfPath(guardNote.Meta.Id)));
+            string tinyHex = Convert.ToHexString(RtfPict.TinyPngBytes).ToLowerInvariant();
+            t.Check("loose image is stored as png", guardNote.ImageGuardHits == guardsBeforeLoose && looseParsed.Count == pictsBeforeLoose + 1 && looseParsed.All(p => p.Group.Contains("\\pngblip")) && looseParsed.Any(p => RtfPict.BlipHex(p.Group) == tinyHex), $"picts {looseParsed.Count} guard {guardNote.ImageGuardHits}");
+            long richPayload = RtfPict.PayloadBytes(File.ReadAllBytes(NoteStore.RtfPath(guardNote.Meta.Id)));
+            guardNote.ForcePictMismatchForTest();
+            NoteManager.FlushAll();
+            long afterQuit = RtfPict.PayloadBytes(File.ReadAllBytes(NoteStore.RtfPath(guardNote.Meta.Id)));
+            string? pending = NoteStore.NewestPendingRtf(guardNote.Meta.Id);
+            t.Check("quit flush keeps the rtf and writes a pending copy", guardNote.ImageGuardHits > guardsBeforeLoose && afterQuit == richPayload && pending != null && new FileInfo(pending).Length > 20, $"payload {richPayload} → {afterQuit} pending {pending ?? "none"}");
+            string guardId = guardNote.Meta.Id;
+            guardNote.CloseNote();
+            await TestKit.Delay(300);
+            var reopened = NoteManager.Open(guardId, activate: false);
+            t.Check("pending rtf loads when it is newer", reopened != null);
+            if (reopened != null)
+            {
+                await TestKit.Until(() => reopened.Ready, 5000);
+                reopened.Editor.Document.Blocks.Add(new Paragraph(new Run("이어쓰기")));
+                reopened.FlushText();
+                long still = RtfPict.PayloadBytes(File.ReadAllBytes(NoteStore.RtfPath(guardId)));
+                t.Check("pending edit does not replace a richer rtf", reopened.PlainText().Contains("떨어짐") && reopened.PlainText().Contains("이어쓰기") && still == richPayload, $"text '{reopened.PlainText()}' payload {still}/{richPayload}");
+            }
+            else t.Check("pending edit does not replace a richer rtf", false, "no reopen");
+        }
+        else
+        {
+            t.Check("loose image is stored as png", false, "no note");
+            t.Check("quit flush keeps the rtf and writes a pending copy", false, "no note");
+            t.Check("pending rtf loads when it is newer", false, "no note");
+            t.Check("pending edit does not replace a richer rtf", false, "no note");
+        }
 
         var viewNote = NoteManager.NewNote();
         ImageViewerWindow? viewer = null;
@@ -465,6 +511,32 @@ public static class NoteTest
             inkBad = "mist";
         }
         t.Check("note ink clears 7 on light and dark colors", inkOk, inkBad);
+        var legacy = NoteStore.Create("g:lemon", 120, 120, 280, 240);
+        legacy.Color = "g:lemon";
+        NoteStore.SaveMeta(legacy);
+        string legacyRtf = "{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl{\\f0\\fswiss\\fcharset0 Calibri;}}{\\colortbl ;\\red240\\green240\\blue246;\\red236\\green236\\blue240;\\red0\\green0\\blue255;}\\pard\\cf1\\f0\\fs22 base\\par\\cf2 old\\par\\cf3 blue\\par}";
+        File.WriteAllBytes(NoteStore.RtfPath(legacy.Id), Encoding.ASCII.GetBytes(legacyRtf));
+        var legacyNote = NoteManager.Open(legacy.Id, activate: false);
+        t.Check("legacy note opened", legacyNote != null);
+        if (legacyNote != null)
+        {
+            await TestKit.Until(() => legacyNote.Ready, 5000);
+            var lemonInk = NoteColors.Ink("g:lemon");
+            t.Check("legacy default ink follows the note", legacyNote.TextInheritsInk("base") && legacyNote.TextInheritsInk("old") && legacyNote.PlainText().Contains("base") && lemonInk != NoteColors.Text && NoteColors.Contrast(lemonInk, NoteColors.Body("g:lemon")) >= 7);
+            t.Check("legacy custom color stays", legacyNote.TextKeepsColor("blue", 0, 0, 255));
+            legacyNote.Editor.Document.Blocks.Add(new Paragraph(new Run(" added")));
+            legacyNote.FlushText();
+            var savedLegacy = File.ReadAllBytes(NoteStore.RtfPath(legacyNote.Meta.Id));
+            string savedText = RtfPict.Latin1.GetString(savedLegacy);
+            bool applied = NoteRtf.AppliesAutomaticInk(savedLegacy);
+            t.Check("legacy default color is not written back", !applied && savedText.Contains("blue") && savedText.Contains("added") && savedText.Contains("\\red0\\green0\\blue255"), applied ? "automatic cf remains" : savedText.Length > 180 ? savedText[..180] : savedText);
+        }
+        else
+        {
+            t.Check("legacy default ink follows the note", false, "no note");
+            t.Check("legacy custom color stays", false, "no note");
+            t.Check("legacy default color is not written back", false, "no note");
+        }
         if (host != null)
         {
             host.Editor.Document.Blocks.Clear();

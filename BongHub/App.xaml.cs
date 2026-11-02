@@ -183,6 +183,7 @@ public partial class App : Application
         if (ShuttingDown) return;
         ShuttingDown = true;
         Environment.ExitCode = exitCode;
+        // Tray 종료 and --quit both land here. Flush uses the image-guard path, including a pending sidecar.
         NoteManager.FlushAll();
         tray?.Dispose(); tray = null;
         Shutdown(exitCode);

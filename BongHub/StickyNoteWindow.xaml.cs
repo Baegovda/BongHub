@@ -17,6 +17,8 @@ public partial class StickyNoteWindow : Window
     public bool Ready { get; private set; }
     public bool TextDirty { get; private set; }
     public int RtfWrites, MetaWrites, ImageGuardHits;
+    /// <summary>Picts in the on-disk RTF when a newer pending file has fewer. A later save must not replace that file.</summary>
+    int richerPicts;
     public string LoadStatus = "ok";          // ok | empty | corrupt | missing
     /// <summary>Longest edge of a picture bitmap actually shown. 0 when the note has no picture.</summary>
     public int DisplayImageMaxEdge { get; private set; }
@@ -535,7 +537,17 @@ public partial class StickyNoteWindow : Window
         try
         {
             var path = NoteStore.RtfPath(Meta.Id);
-            var bytes = File.Exists(path) ? File.ReadAllBytes(path) : null;
+            string? pendingPath = NoteStore.NewestPendingRtf(Meta.Id);
+            bool pendingWins = pendingPath != null && (!File.Exists(path) || File.GetLastWriteTimeUtc(pendingPath) >= File.GetLastWriteTimeUtc(path));
+            var loadPath = pendingWins ? pendingPath! : path;
+            var bytes = File.Exists(loadPath) ? File.ReadAllBytes(loadPath) : null;
+            richerPicts = 0;
+            if (pendingWins && File.Exists(path))
+            {
+                int mainCount = CountPict(File.ReadAllBytes(path));
+                int loadedCount = bytes == null ? 0 : CountPict(bytes);
+                if (mainCount > loadedCount) richerPicts = mainCount;
+            }
             if (bytes == null) LoadStatus = "missing";
             else if (bytes.Length == 0) LoadStatus = "empty";
             if (bytes is { Length: > 0 })
@@ -634,7 +646,22 @@ public partial class StickyNoteWindow : Window
         d.FontFamily = (FontFamily)FindResource("UiFont");
         d.FontSize = PointsToDip(ClampPt(ConfigStore.Notes.FontSize));
         d.LineHeight = double.NaN;
+        ReleaseAutomaticInk(d);
         ApplyInk();
+    }
+    /// <summary>Stored #F0F0F6 / #ECECF0 / the current automatic ink become inherited, so the note color picks the brush. The document brush itself stays.</summary>
+    static void ReleaseAutomaticInk(FlowDocument doc)
+    {
+        void Walk(DependencyObject node)
+        {
+            foreach (var child in LogicalTreeHelper.GetChildren(node).OfType<DependencyObject>())
+            {
+                if (child is TextElement el && el.ReadLocalValue(TextElement.ForegroundProperty) is SolidColorBrush brush && NoteColors.IsAutomaticInk(brush.Color))
+                    el.ClearValue(TextElement.ForegroundProperty);
+                Walk(child);
+            }
+        }
+        Walk(doc);
     }
     static SolidColorBrush InkBrush(Color color)
     {
@@ -700,6 +727,10 @@ public partial class StickyNoteWindow : Window
         if (!TextDirty) return;
         RememberView();
         TextDirty = false;
+        bool wasLoading = loading;
+        loading = true;
+        try { AdoptScreenImages(); }
+        finally { loading = wasLoading; }
         byte[] wpfRtf = SaveRtfWithoutLinkChrome();
         byte[]? rtf = wpfRtf;
         if (originalPicts.Count > 0)
@@ -716,14 +747,17 @@ public partial class StickyNoteWindow : Window
             var injected = InjectPicts(wpfRtf, originalPicts);
             if (injected != null) { rtf = injected; emitted = CountPict(rtf); }
         }
+        if (rtf != null) rtf = NoteRtf.StripAutomaticInk(rtf);
         byte[] onDisk = [];
         try { if (File.Exists(NoteStore.RtfPath(Meta.Id))) onDisk = File.ReadAllBytes(NoteStore.RtfPath(Meta.Id)); } catch { onDisk = []; }
-        var chosen = NoteRtf.Choose(onDisk.Length > 0 ? onDisk : (rtf ?? []), rtf ?? [], DocImageCount(), originalPicts.Count, out var dropWarn);
+        int held = Math.Max(originalPicts.Count, richerPicts);
+        var chosen = NoteRtf.Choose(onDisk.Length > 0 ? onDisk : (rtf ?? []), rtf ?? [], DocImageCount(), held, out var dropWarn);
         Meta.Text = PlainText();
         if (dropWarn != null)
         {
             ImageGuardHits++;
-            AppEnv.Log($"image guard: kept existing rtf for {Meta.Id} {dropWarn}");
+            bool pending = NoteStore.SavePendingRtf(Meta, rtf ?? []);
+            AppEnv.Log($"image guard: kept existing rtf for {Meta.Id} {dropWarn}" + (pending ? " pending saved" : " pending FAILED"));
             metaDirty = true; FlushMeta();
             RestoreView();
             return;
@@ -734,9 +768,75 @@ public partial class StickyNoteWindow : Window
             try { File.Copy(NoteStore.RtfPath(Meta.Id), NoteStore.RtfPath(Meta.Id) + ".corrupt-" + DateTime.Now.ToString("yyyyMMddHHmmss")); } catch { }
             corruptBackedUp = true;
         }
-        if (NoteStore.SaveRtf(Meta, rtf!)) { RtfWrites++; sourcePictCount = originalPicts.Count > 0 ? originalPicts.Count : emitted; WarnIfLarge(); }
+        if (NoteStore.SaveRtf(Meta, rtf!))
+        {
+            RtfWrites++;
+            sourcePictCount = originalPicts.Count > 0 ? originalPicts.Count : emitted;
+            richerPicts = 0;
+            NoteStore.ClearPendingRtf(Meta.Id);
+            WarnIfLarge();
+        }
         metaDirty = true; FlushMeta();
         RestoreView();
+    }
+    /// <summary>
+    /// A picture on screen with no PNG/JPEG group (GIF, metafile, or a paste WPF will not write)
+    /// becomes a PNG group so the save can include it. Original PNG/JPEG groups stay.
+    /// </summary>
+    void AdoptScreenImages()
+    {
+        var images = CollectImages(Document);
+        if (images.Count == 0) return;
+        int fit = Math.Max(80, (int)(EditorHost.ActualWidth > 1 ? EditorHost.ActualWidth - 24 : 260));
+        var nextPicts = new List<RtfPict.Pict>();
+        var nextViews = new List<Image>();
+        foreach (var image in images)
+        {
+            int known = pictViews.IndexOf(image);
+            RtfPict.Pict? pict = known >= 0 && known < originalPicts.Count ? originalPicts[known] : null;
+            var source = image.Source as BitmapSource ?? RenderImage(image);
+            bool tiny = source != null && source.PixelWidth <= 1 && source.PixelHeight <= 1;
+            if (pict != null && (RtfPict.IsRaster(pict.Group) || tiny || source == null))
+            {
+                nextPicts.Add(pict);
+                nextViews.Add(image);
+                continue;
+            }
+            var built = source == null ? null : NoteImages.FromBitmap(source, fit);
+            if (built == null)
+            {
+                if (pict != null) { nextPicts.Add(pict); nextViews.Add(image); }
+                else AppEnv.Log($"image png: could not encode a screen image for {Meta.Id}");
+                continue;
+            }
+            AppEnv.Log(pict == null ? $"image png: stored an untracked screen image for {Meta.Id}" : $"image png: converted a non-raster pict for {Meta.Id}");
+            var shown = NoteImages.Display(built.Bytes, built.PxW, built.PxH, built.GoalW, built.GoalH, Win32.SystemScale, Meta.Zoom);
+            if (shown != null)
+            {
+                image.Source = shown;
+                RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.Linear);
+                if (double.IsNaN(image.Width) || image.Width < 1) image.Width = built.GoalW / 15.0;
+                if (double.IsNaN(image.Height) || image.Height < 1) image.Height = built.GoalH / 15.0;
+            }
+            nextPicts.Add(new RtfPict.Pict { Group = built.Group, GoalW = built.GoalW, GoalH = built.GoalH, SourceW = built.PxW, SourceH = built.PxH });
+            nextViews.Add(image);
+        }
+        if (nextViews.Count != images.Count) return;
+        originalPicts.Clear();
+        originalPicts.AddRange(nextPicts);
+        pictViews.Clear();
+        pictViews.AddRange(nextViews);
+    }
+    static BitmapSource? RenderImage(Image image)
+    {
+        double w = image.ActualWidth > 1 ? image.ActualWidth : image.Width;
+        double h = image.ActualHeight > 1 ? image.ActualHeight : image.Height;
+        if (w < 1 || h < 1 || double.IsNaN(w) || double.IsNaN(h)) return null;
+        int pw = Math.Max(1, (int)Math.Ceiling(w)), ph = Math.Max(1, (int)Math.Ceiling(h));
+        var rtb = new RenderTargetBitmap(pw, ph, 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(image);
+        rtb.Freeze();
+        return rtb;
     }
     static byte[]? InjectPicts(byte[] wpf, List<RtfPict.Pict> picts)
     {
@@ -763,6 +863,35 @@ public partial class StickyNoteWindow : Window
         int mb = (int)(bytes / 1024 / 1024);
         LargeWarn.Text = "이 메모가 " + mb + "MB로 커졌어요. 이미지가 많으면 저장과 클라우드 동기화가 느려질 수 있어요.";
         LargeWarn.Visibility = Visibility.Visible;
+    }
+    /// <summary>An on-screen picture with no saved group, the shape of a GIF or metafile WPF will not write back.</summary>
+    public void InsertLooseImageForTest()
+    {
+        var bmp = new BitmapImage();
+        bmp.BeginInit();
+        bmp.StreamSource = new MemoryStream(RtfPict.TinyPngBytes);
+        bmp.CacheOption = BitmapCacheOption.OnLoad;
+        bmp.EndInit();
+        bmp.Freeze();
+        var image = new Image { Source = bmp, Width = 16, Height = 16, Stretch = Stretch.Fill };
+        var para = Document.Blocks.OfType<Paragraph>().FirstOrDefault();
+        if (para == null) { para = new Paragraph(); Document.Blocks.Add(para); }
+        new InlineUIContainer(image, para.ContentEnd);
+        TextDirty = true;
+    }
+    public bool TextInheritsInk(string sample)
+    {
+        var run = EnumRuns(Document).FirstOrDefault(r => (r.Text ?? "").Contains(sample));
+        if (run == null) return false;
+        if (run.ReadLocalValue(TextElement.ForegroundProperty) != DependencyProperty.UnsetValue) return false;
+        var ink = NoteColors.Ink(Meta.Color);
+        return (run.Foreground as SolidColorBrush)?.Color == ink;
+    }
+    public bool TextKeepsColor(string sample, byte r, byte g, byte b)
+    {
+        var run = EnumRuns(Document).FirstOrDefault(x => (x.Text ?? "").Contains(sample));
+        var color = (run?.Foreground as SolidColorBrush)?.Color;
+        return color.HasValue && color.Value.R == r && color.Value.G == g && color.Value.B == b;
     }
     /// <summary>Drops WPF pictures without updating the saved groups, so the next flush has to keep the file.</summary>
     public void ForcePictMismatchForTest()
@@ -1545,6 +1674,7 @@ public partial class StickyNoteWindow : Window
                 run.ClearValue(TextElement.ForegroundProperty);
                 run.ClearValue(Inline.TextDecorationsProperty);
             }
+            ReleaseAutomaticInk(Document);
             using var ms = new MemoryStream();
             new TextRange(Document.ContentStart, Document.ContentEnd).Save(ms, DataFormats.Rtf);
             return ms.ToArray();
