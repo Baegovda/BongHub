@@ -159,11 +159,10 @@ public static class WindowFx
             if (target != null) target.RenderMode = RenderMode.SoftwareOnly;
             // ProcessRenderMode is the real switch (it overrides a per-target Default). Software presents an opaque client:
             // a #D0 tint over a transparent target is premultiplied against black and looks darker than #0D1018.
-            // DWM Mica is still requested; the solid fallback (the colors used when Mica is unavailable) covers it.
             bool targetSoftware = target != null && target.RenderMode == RenderMode.SoftwareOnly;
             bool software = RenderOptions.ProcessRenderMode == RenderMode.SoftwareOnly || target == null || targetSoftware;
-            bool micaApi = wantBackdrop && Dwm.Backdrop(h, 2);
-            bool mica = micaApi && !software;
+            // Software paints an opaque client, so the Mica call would not show through and it sits on the first-frame path.
+            bool mica = wantBackdrop && !software && Dwm.Backdrop(h, 2);
             st.Backdrop = mica;
             if (target != null) target.BackgroundColor = mica ? Colors.Transparent : solid;
             var solidBrush = new SolidColorBrush(solid);
@@ -174,8 +173,11 @@ public static class WindowFx
         {
             st.FirstFrameMs = st.Clock.Elapsed.TotalMilliseconds;
             if (w is MainWindow) AppEnv.Mark("main_content_rendered");
-            if (Fx.Enabled) Fx.Appear(content);
-            // reveal after one more render pass so the compositor surely has a painted frame
+            // The settings window's first paint stays at opacity 1. A root opacity animation renders the whole window
+            // into an intermediate surface; in software that second raster is inside first_frame_ms. Notes still fade.
+            // Reappear() fades the settings window when it is shown again.
+            if (Fx.Enabled && w is not MainWindow) Fx.Appear(content);
+            // reveal after this render pass. Appear is not pending, so this frame is the one the compositor has.
             w.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
             {
                 Dwm.Cloak(st.Hwnd, false); st.Revealed = true; st.CloakedAfterReveal = Dwm.Cloaked(st.Hwnd);

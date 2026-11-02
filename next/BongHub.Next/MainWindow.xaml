@@ -20,11 +20,11 @@
         </LinearGradientBrush>
       </Border.Background>
     </Border>
-    <!-- glow alpha is in the brush, not UIElement.Opacity, so the ellipse is not a retained offscreen surface -->
-    <Ellipse Grid.ColumnSpan="2" Width="520" Height="520" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-260,-180,0" IsHitTestVisible="False">
+    <!-- Collapsed until the first frame is recorded. A software raster of these radial fills is on the startup path otherwise. -->
+    <Ellipse x:Name="GlowA" Visibility="Collapsed" Grid.ColumnSpan="2" Width="520" Height="520" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-260,-180,0" IsHitTestVisible="False">
       <Ellipse.Fill><RadialGradientBrush><GradientStop Color="#384C8AFE" Offset="0"/><GradientStop Color="#004C8AFE" Offset="1"/></RadialGradientBrush></Ellipse.Fill>
     </Ellipse>
-    <Ellipse Grid.ColumnSpan="2" Width="440" Height="440" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="120,0,0,-240" IsHitTestVisible="False">
+    <Ellipse x:Name="GlowB" Visibility="Collapsed" Grid.ColumnSpan="2" Width="440" Height="440" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="120,0,0,-240" IsHitTestVisible="False">
       <Ellipse.Fill><RadialGradientBrush><GradientStop Color="#24E47EF4" Offset="0"/><GradientStop Color="#00E47EF4" Offset="1"/></RadialGradientBrush></Ellipse.Fill>
     </Ellipse>
 

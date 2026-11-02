@@ -105,6 +105,7 @@ public partial class App : Application
         if (page != null) w.Navigate(page);
         bool first = !w.EverShown;
         if (first)
+        {
             WindowFx.Of(w).AfterFirstFrame += () =>
             {
                 int tier = 0;
@@ -113,7 +114,10 @@ public partial class App : Application
                 try { hwndRender = HwndSource.FromHwnd(Win32.Handle(w))?.CompositionTarget?.RenderMode; } catch { }
                 AppEnv.NoteFirstFrame(NoteManager.Windows.Count, tier, GC.GetTotalMemory(false) / 1048576, hwndRender?.ToString() ?? "null");
             };
-        if (!w.IsVisible) { w.Show(); if (first) AppEnv.Mark("show_returned"); if (!first) w.Reappear(); }
+            // After the timestamp, so the radial-glow raster is not inside first_frame_ms.
+            WindowFx.Of(w).AfterFirstFrame += w.ShowDecorations;
+        }
+        if (!w.IsVisible) { AppEnv.Mark("show_begin"); w.Show(); if (first) AppEnv.Mark("show_returned"); if (!first) w.Reappear(); }
         if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
         if (!AppEnv.Off) w.Activate();
     }
