@@ -407,10 +407,11 @@ public static class NoteTest
         foreach (var key in NoteColors.PaletteKeys)
         {
             var ink = NoteColors.LinkInk(key);
-            if (NoteColors.Contrast(ink, NoteColors.SurfA(key)) < 4.5 || NoteColors.Contrast(ink, NoteColors.SurfB(key)) < 4.5)
+            double linkRatio = Math.Min(NoteColors.Contrast(ink, NoteColors.SurfA(key)), Math.Min(NoteColors.Contrast(ink, NoteColors.SurfB(key)), NoteColors.Contrast(ink, NoteColors.Body(key))));
+            if (linkRatio < 4.5)
             {
                 linkReadable = false;
-                linkBad = key;
+                linkBad = key + " " + linkRatio.ToString("0.00");
                 break;
             }
         }
@@ -420,12 +421,48 @@ public static class NoteTest
         foreach (var key in NoteColors.PaletteKeys)
         {
             var fg = NoteColors.Ink(key);
-            if (NoteColors.Contrast(fg, NoteColors.SurfA(key)) < 7 || NoteColors.Contrast(fg, NoteColors.SurfB(key)) < 7)
+            if (fg != NoteColors.DarkText && fg != NoteColors.Text)
             {
                 inkOk = false;
-                inkBad = key;
+                inkBad = key + " ink";
                 break;
             }
+            NoteColors.Raw(key, out var rawA, out var rawB);
+            var samples = new[] { (NoteColors.SurfA(key), rawA), (NoteColors.SurfB(key), rawB) };
+            foreach (var (surf, raw) in samples)
+            {
+                bool towardWhite = NoteColors.Lum(surf) + 1e-9 >= NoteColors.Lum(raw);
+                bool hue = towardWhite
+                    ? surf.R >= raw.R && surf.G >= raw.G && surf.B >= raw.B
+                    : surf.R <= raw.R && surf.G <= raw.G && surf.B <= raw.B;
+                if (!hue)
+                {
+                    inkOk = false;
+                    inkBad = key + " hue";
+                    break;
+                }
+            }
+            if (!inkOk) break;
+            double ratio = Math.Min(NoteColors.Contrast(fg, NoteColors.SurfA(key)), Math.Min(NoteColors.Contrast(fg, NoteColors.SurfB(key)), NoteColors.Contrast(fg, NoteColors.Body(key))));
+            if (ratio < 7)
+            {
+                inkOk = false;
+                inkBad = key + " " + ratio.ToString("0.00");
+                break;
+            }
+        }
+        NoteColors.Raw("g:lemon", out var lemonA, out var lemonB);
+        NoteColors.Raw("yellow", out var yellowA, out var yellowB);
+        NoteColors.Raw("g:mist", out var mistA, out var mistB);
+        if (inkOk && (NoteColors.SurfA("g:lemon") != lemonA || NoteColors.SurfB("g:lemon") != lemonB || NoteColors.SurfA("yellow") != yellowA || NoteColors.SurfB("yellow") != yellowB))
+        {
+            inkOk = false;
+            inkBad = "vivid";
+        }
+        if (inkOk && (NoteColors.Lum(NoteColors.SurfA("g:mist")) <= NoteColors.Lum(mistA) || NoteColors.Lum(NoteColors.SurfB("g:mist")) <= NoteColors.Lum(mistB)))
+        {
+            inkOk = false;
+            inkBad = "mist";
         }
         t.Check("note ink clears 7 on light and dark colors", inkOk, inkBad);
         if (host != null)

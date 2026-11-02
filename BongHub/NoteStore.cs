@@ -142,16 +142,7 @@ public static class NoteColors
         string k = string.IsNullOrEmpty(key) ? "g:blocks" : key!;
         var a = SurfA(k);
         var b = SurfB(k);
-        double dark = Math.Min(Contrast(DarkText, a), Contrast(DarkText, b));
-        double light = Math.Min(Contrast(Text, a), Contrast(Text, b));
-        if (dark >= 7.2 && dark >= light) return DarkText;
-        if (light >= 7.2 && light >= dark) return Text;
-        bool useDark = dark >= light;
-        Color ink = useDark ? DarkText : Text;
-        Color toward = useDark ? Colors.Black : Colors.White;
-        for (int n = 0; n < 16 && (Contrast(ink, a) < 7.2 || Contrast(ink, b) < 7.2); n++)
-            ink = Mix(ink, toward, 0.18);
-        return ink;
+        return Cover(DarkText, a, b) >= Cover(Text, a, b) ? DarkText : Text;
     }
     /// <summary>iOS blue, darkened on light notes and lightened on dark notes.</summary>
     public static Color LinkInk(string? key)
@@ -162,7 +153,7 @@ public static class NoteColors
         Color toward = onLight ? C(0x00, 0x2A, 0x6E) : Colors.White;
         var bgA = SurfA(k);
         var bgB = SurfB(k);
-        for (int n = 0; n < 24 && (Contrast(ink, bgA) < 4.5 || Contrast(ink, bgB) < 4.5); n++)
+        for (int n = 0; n < 24 && Cover(ink, bgA, bgB) < 4.5; n++)
             ink = Mix(ink, toward, 0.14);
         return ink;
     }
@@ -195,20 +186,46 @@ public static class NoteColors
     public static Color Mix(Color x, Color y, double t) => C((byte)(x.R + (y.R - x.R) * t), (byte)(x.G + (y.G - x.G) * t), (byte)(x.B + (y.B - x.B) * t));
     public static double Lum(Color c) { static double f(double v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4); } return 0.2126 * f(c.R) + 0.7152 * f(c.G) + 0.0722 * f(c.B); }
     public static Color Body(string k) => Mix(SurfA(k), SurfB(k), 0.5);
-    public static Color SurfA(string k)
+    public static Color SurfA(string k) { Raw(k, out var a, out var b); return Face(a, b).a; }
+    public static Color SurfB(string k) { Raw(k, out var a, out var b); return Face(a, b).b; }
+    public static Color Swatch(string k) { Raw(k, out var a, out var b); return Face(a, b).a; }
+    public static Color SwatchB(string k) { Raw(k, out var a, out var b); return Face(a, b).b; }
+    /// <summary>Solid ratio the pixel sampler still clears. Rendered text reads a little under this.</summary>
+    const double InkNeed = 7.35;
+    static readonly Dictionary<(int, int), (Color a, Color b)> faces = new();
+    static double Cover(Color ink, Color a, Color b)
+        => Math.Min(Contrast(ink, a), Math.Min(Contrast(ink, b), Contrast(ink, Mix(a, b, 0.5))));
+    /// <summary>
+    /// A mid stop where neither black nor the light ink reaches 7:1 is mixed toward white
+    /// until dark text does. A dark note mixes the light end toward black so light text does.
+    /// The mix stays on the line to white or black, so the hue holds.
+    /// </summary>
+    static (Color a, Color b) Face(Color a, Color b)
     {
-        if (!Grad && I(k) >= 0) return swatch[I(k)];
-        Raw(k, out var a, out _);
-        return a;
+        var key = ((a.R << 16) | (a.G << 8) | a.B, (b.R << 16) | (b.G << 8) | b.B);
+        if (faces.TryGetValue(key, out var hit)) return hit;
+        double dark = Cover(DarkText, a, b), light = Cover(Text, a, b);
+        if (dark < InkNeed && light < InkNeed)
+        {
+            bool useDark = dark >= light;
+            Color ink = useDark ? DarkText : Text;
+            Color toward = useDark ? Colors.White : Colors.Black;
+            for (int n = 0; n < 48 && Cover(ink, a, b) < InkNeed; n++)
+            {
+                if (Contrast(ink, a) <= Contrast(ink, b)) a = Nudge(a, toward);
+                else b = Nudge(b, toward);
+            }
+        }
+        var made = (a, b);
+        faces[key] = made;
+        return made;
     }
-    public static Color SurfB(string k)
+    static Color Nudge(Color x, Color toward)
     {
-        if (!Grad && I(k) >= 0) return partner[I(k)];
-        Raw(k, out _, out var b);
-        return b;
+        var n = Mix(x, toward, 0.04);
+        return n != x ? n : C(Step(x.R, toward.R), Step(x.G, toward.G), Step(x.B, toward.B));
     }
-    public static Color Swatch(string k) { Raw(k, out var a, out _); return a; }
-    public static Color SwatchB(string k) { Raw(k, out _, out var b); return b; }
+    static byte Step(byte v, byte dest) => v == dest ? v : (byte)(v + (dest > v ? 1 : -1));
     public static string Name(string k) { int i = I(k); if (i >= 0) return Names[i]; var g = Gradients.FirstOrDefault(x => x[0] == k); return g != null ? g[1] : k.StartsWith("c:") ? "맞춤" : "블록"; }
     public static string Custom(Color a, Color b) => "c:" + a.R.ToString("X2") + a.G.ToString("X2") + a.B.ToString("X2") + ":" + b.R.ToString("X2") + b.G.ToString("X2") + b.B.ToString("X2");
     public static bool TryCustom(string textA, string textB, out string key)

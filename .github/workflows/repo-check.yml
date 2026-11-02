@@ -66,6 +66,7 @@ jobs:
           if ($p.ExitCode -ne 0) { exit $p.ExitCode }
 
       - name: Note test
+        if: always()
         run: |
           $copy = Join-Path (Get-Location) "artifacts/notes-data"
           $out = Join-Path (Get-Location) "artifacts/notes"
