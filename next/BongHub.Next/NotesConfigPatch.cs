@@ -86,6 +86,29 @@ public static class NotesConfigPatch
         }
     }
 
+    /// <summary>Replaces one field inside a nested object such as <c>Pt.Zones.Enabled</c>. Other bytes stay.</summary>
+    public static bool TryApplyNested(string text, string section, string child, string field, JsonNode? value, out string updated)
+    {
+        updated = text;
+        if (string.IsNullOrEmpty(text) || value is null || !IsKey(section) || !IsKey(child) || !IsKey(field)) return false;
+        var r = new R(text);
+        r.SkipWs();
+        if (r.Eof || r.C != '{') return false;
+        if (!r.ReadObject(out _, out _, out _, out var sec, wantChild: section)) return false;
+        if (!sec.Found || !sec.IsObject) return false;
+        var mid = new R(text) { I = sec.ValueStart };
+        if (!mid.ReadObject(out _, out _, out _, out var obj, wantChild: child)) return false;
+        if (!obj.Found || !obj.IsObject) return false;
+        var inner = new R(text) { I = obj.ValueStart };
+        if (!inner.ReadObject(out _, out _, out _, out var hit, wantChild: field)) return false;
+        if (!hit.Found || hit.IsObject) return false;
+        string existing = text.Substring(hit.ValueStart, hit.ValueEnd - hit.ValueStart);
+        string formatted = FormatLike(existing, value);
+        if (existing == formatted || Same(existing, value)) return true;
+        updated = text.Substring(0, hit.ValueStart) + formatted + text.Substring(hit.ValueEnd);
+        return true;
+    }
+
     /// <summary>Minimal config when the file does not exist yet. 3.4.x pretty-print uses CRLF and two-space indents.</summary>
     public static string CreateNew(string key, JsonNode value)
     {
@@ -143,6 +166,24 @@ public static class NotesConfigPatch
         try { text = enc.GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0)); }
         catch (DecoderFallbackException) { return false; }
         if (!TryApplyArrayField(text, arrayKey, index, field, value, out string updated)) return false;
+        if (updated == text) return true;
+        WriteAtomic(path, enc.GetBytes(updated), bom);
+        changed = true;
+        return true;
+    }
+
+    public static bool TryWriteNested(string path, string section, string child, string field, JsonNode? value, out bool changed)
+    {
+        changed = false;
+        if (string.IsNullOrEmpty(path) || value is null || !IsKey(section) || !IsKey(child) || !IsKey(field)) return false;
+        var enc = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+        if (!File.Exists(path)) return false;
+        byte[] bytes = File.ReadAllBytes(path);
+        bool bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+        string text;
+        try { text = enc.GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0)); }
+        catch (DecoderFallbackException) { return false; }
+        if (!TryApplyNested(text, section, child, field, value, out string updated)) return false;
         if (updated == text) return true;
         WriteAtomic(path, enc.GetBytes(updated), bom);
         changed = true;
