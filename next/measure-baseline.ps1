@@ -1,5 +1,6 @@
 # Phase 0 memory baseline for BongHub.Next.
-# Windows only. Does not start BongHub.exe, does not switch monitors, does not write data/ or %LOCALAPPDATA%\BongHub.
+# Windows only. Does not start BongHub.exe, does not switch monitors, does not read or write data/ or %LOCALAPPDATA%\BongHub.
+# The notes7 scenario writes its own 7 notes into the temp data copy. It does not use data/notes.
 # A Next tray icon appears during tray_only and settings_hidden, then that process exits. Windows stay at (-30000,-30000).
 # Judge gc_concurrent=true medians of WorkingSet64 AND PrivateMemorySize64 against the same ceilings.
 # render_mode=software. Trimming the working set does not lower private bytes.
@@ -33,10 +34,6 @@ if (($dll.IndexOf('ReadyToRun') -lt 0) -and ($dll.IndexOf($rtr) -lt 0)) { Fail '
 $rtText = [IO.File]::ReadAllText($rt)
 if ($rtText -notmatch '"System\.GC\.Concurrent"') { Fail 'runtimeconfig is missing System.GC.Concurrent (csproj ConcurrentGarbageCollection)' }
 
-$notesSrc = Join-Path $root 'data\notes'
-$noteJson = @(Get-ChildItem -Path $notesSrc -Filter '*.json' | Where-Object { $_.Name -notlike '_*' })
-if ($noteJson.Count -ne 7) { Fail "expected 7 note json files in data/notes, found $($noteJson.Count). Do not edit data/." }
-
 $logDir = Join-Path $root 'next\test-logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $logPath = Join-Path $logDir 'baseline_memory.txt'
@@ -55,6 +52,7 @@ $lines.Add('idle_seconds=20')
 $lines.Add('runs_per_cell=3')
 $lines.Add('gc_default=true')
 $lines.Add('note=0.4.0 csproj default is ConcurrentGarbageCollection=true. This script still measures both and restores true.')
+$lines.Add('notes7_source=generated count=7 image_notes=1')
 
 function Set-Gc([bool]$On) {
     $raw = [IO.File]::ReadAllText($rt)
@@ -81,15 +79,57 @@ function Write-Config([string]$Dir, [bool]$OpenOnStartup) {
     [IO.File]::WriteAllText((Join-Path $Dir 'config.json'), $json.Trim(), $utf8)
 }
 
-function Copy-Notes([string]$Dir) {
-    $dest = Join-Path $Dir 'notes'
+# 1x1 transparent PNG, same bytes as the RichEdit fixture. One note only, so notes7 does not decode the synced photos.
+$script:ImageRtf = @'
+{\rtf1\ansi\ansicpg949\deff0{\fonttbl{\f0\fnil\fcharset129 Malgun Gothic;}}
+\viewkind4\uc1\pard\f0\fs24 baseline image \u-21000?\u-17988?{\pict\pngblip\picw1\pich1\picwgoal15\pichgoal15
+89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082}\par}
+'@
+
+function New-TextRtf([string]$Plain) {
+    return ('{{\rtf1\ansi\deff0{{\fonttbl{{\f0\fnil Arial;}}}}\pard\f0\fs22 {0}\par}}' -f $Plain)
+}
+
+function Write-BaselineNotes([string]$Dir) {
+    $full = [IO.Path]::GetFullPath($Dir)
+    $tempRoot = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+    if (-not $full.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase)) { Fail "notes dir is not under TEMP: $full" }
+    $dataRoot = [IO.Path]::GetFullPath((Join-Path $root 'data')).TrimEnd('\') + '\'
+    if ($full.StartsWith($dataRoot, [StringComparison]::OrdinalIgnoreCase)) { Fail "refusing to write under data/: $full" }
+    $dest = Join-Path $full 'notes'
     New-Item -ItemType Directory -Force -Path $dest | Out-Null
-    foreach ($j in $noteJson) {
-        Copy-Item -Path $j.FullName -Destination (Join-Path $dest $j.Name)
-        $rtf = [IO.Path]::ChangeExtension($j.FullName, '.rtf')
-        if (Test-Path -LiteralPath $rtf) {
-            Copy-Item -Path $rtf -Destination (Join-Path $dest ([IO.Path]::GetFileName($rtf)))
-        }
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    for ($i = 1; $i -le 7; $i++) {
+        $id = 'b1base{0:d6}' -f $i
+        $text = "baseline note $i"
+        $rtf = $(if ($i -eq 7) { $script:ImageRtf } else { New-TextRtf $text })
+        $y = 80 + ($i * 24)
+        $meta = '{"Id":"ID","Color":"g:blocks","X":120,"Y":YY,"W":330,"H":330,"TopMost":false,"Open":true,"Zoom":1.0,"Text":"TEXT","Modified":"\/Date(1700000000000)\/"}'
+        $meta = $meta.Replace('ID', $id).Replace('YY', [string]$y).Replace('TEXT', $text)
+        [IO.File]::WriteAllText((Join-Path $dest ($id + '.json')), $meta, $utf8)
+        [IO.File]::WriteAllText((Join-Path $dest ($id + '.rtf')), $rtf.Trim(), $utf8)
+    }
+    Assert-GeneratedNotes $dest
+}
+
+function Assert-GeneratedNotes([string]$Dest) {
+    $json = @(Get-ChildItem -LiteralPath $Dest -Filter '*.json' | Where-Object { $_.Name -notlike '_*' })
+    $rtf = @(Get-ChildItem -LiteralPath $Dest -Filter '*.rtf')
+    if ($json.Count -ne 7) { Fail "generated note json count is $($json.Count), expected 7" }
+    if ($rtf.Count -ne 7) { Fail "generated note rtf count is $($rtf.Count), expected 7" }
+    $images = 0
+    foreach ($file in $rtf) {
+        if ($file.Length -le 0) { Fail "generated rtf is empty: $($file.Name)" }
+        $body = [IO.File]::ReadAllText($file.FullName)
+        if ([string]::IsNullOrWhiteSpace($body)) { Fail "generated rtf is blank: $($file.Name)" }
+        if ($body -match '\\pngblip') { $images++ }
+    }
+    if ($images -ne 1) { Fail "expected exactly one image note, found $images" }
+    foreach ($file in $json) {
+        $meta = [IO.File]::ReadAllText($file.FullName)
+        if ($meta -notmatch '"Open"\s*:\s*true') { Fail "generated note is not Open: $($file.Name)" }
+        $id = [IO.Path]::GetFileNameWithoutExtension($file.Name)
+        if (-not (Test-Path -LiteralPath (Join-Path $Dest ($id + '.rtf')))) { Fail "generated note has no rtf: $id" }
     }
 }
 
@@ -185,7 +225,7 @@ try {
                 if (Test-Path $data) { Remove-Item -Recurse -Force $data }
                 New-Item -ItemType Directory -Force -Path $out | Out-Null
                 Write-Config $data ([bool]$sc.OpenOnStartup)
-                if ($sc.Notes) { Copy-Notes $data }
+                if ($sc.Notes) { Write-BaselineNotes $data }
                 $argList = @($sc.Args) + @('--data', $data, '--out', $out)
                 Write-Host ("run {0} gc={1} #{2}" -f $sc.Name, $gcLabel, $i)
                 $proc = Start-Process -FilePath $exe -ArgumentList $argList -PassThru -WorkingDirectory $pub

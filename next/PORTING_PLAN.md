@@ -501,7 +501,7 @@ Stop-Process -Id $p.Id
 
 같은 방법으로 설정 창(`--off`만, `--tray` 없음)과, 메모 7개 복사본을 연 경우를 각 3회 재고 중앙값을 `next/test-logs/`에 남겨요. 로그 파일은 결과 txt만 커밋하고 `bin/`은 커밋하지 않아요.
 
-이 절차는 `next/measure-baseline.ps1`에 있어요. 시나리오는 네 가지예요. 계획의 3종(트레이만, 설정 창, 메모 7개)에, 설정 창을 만든 뒤 숨긴 상태(`--tray --off --idle-hidden`)를 더해요. 목표 표의 “트레이만”은 MainWindow를 아직 만들지 않은 상태이고, 숨긴 창 행은 그 트리를 그대로 들고 있는 상태예요. 스크립트는 준비 줄(`next_startup.txt`)이 생긴 뒤 20초를 쉬고 재요. `data/`와 `%LOCALAPPDATA%\BongHub`는 쓰지 않아요. 스크립트는 동시 GC를 끈 경우와 켠 경우를 각 3회 재요. csproj 기본값은 0.4.0부터 true이고, 스크립트는 끝나면 runtimeconfig도 true로 돌려놔요. 판정은 `gc_concurrent=true` 중앙값이에요. 창을 끄는 동안의 멈춤은 이 스크립트가 재지 않아요. 실모니터에서 드래그하지 않아요.
+이 절차는 `next/measure-baseline.ps1`에 있어요. 시나리오는 네 가지예요. 계획의 3종(트레이만, 설정 창, 메모 7개)에, 설정 창을 만든 뒤 숨긴 상태(`--tray --off --idle-hidden`)를 더해요. 목표 표의 “트레이만”은 MainWindow를 아직 만들지 않은 상태이고, 숨긴 창 행은 그 트리를 그대로 들고 있는 상태예요. 스크립트는 준비 줄(`next_startup.txt`)이 생긴 뒤 20초를 쉬고 재요. `data/`와 `%LOCALAPPDATA%\BongHub`는 읽지도 쓰지도 않아요. 메모 7개는 동기화된 `data/notes` 개수와 무관하게, 스크립트가 임시 폴더에 고정으로 만들어요. 본문이 있는 RTF 7개이고 그 중 하나는 1×1 PNG예요. 스크립트는 동시 GC를 끈 경우와 켠 경우를 각 3회 재요. csproj 기본값은 0.4.0부터 true이고, 스크립트는 끝나면 runtimeconfig도 true로 돌려놔요. 판정은 `gc_concurrent=true` 중앙값이에요. 창을 끄는 동안의 멈춤은 이 스크립트가 재지 않아요. 실모니터에서 드래그하지 않아요.
 
 시작은 기존 `next_startup.txt`와 같이 프로세스 시작 시각부터 첫 `ContentRendered`까지예요 (`first_frame_ms`). 트레이 시점은 아이콘이 보인 직후 `tray_visible_ms`로 같은 파일에 남겨요. `--out`이 있을 때만 써요. 트레이만이면 `main_window_created=0`이고 `first_frame_ms`는 없어요.
 

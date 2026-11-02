@@ -44,7 +44,7 @@ BongHub.Next.exe --notetest --data <notes 복사본>
 powershell -ExecutionPolicy Bypass -File next\measure-baseline.ps1
 ```
 
-BongHub.Next가 이미 켜져 있으면 그 Next만 종료한 뒤에 실행하세요. `BongHub.exe`(3.4.x)는 끄지 마세요. 프리셋 CLI, MMT, 실제 모니터, `%LOCALAPPDATA%\BongHub`, `data/` 쓰기는 하지 않아요. 트레이만·숨긴 설정 창 구간에는 알림 영역 아이콘이 잠깐 보였다가 그 프로세스가 끝나면 사라져요. 창은 화면 밖에 있어요.
+BongHub.Next가 이미 켜져 있으면 그 Next만 종료한 뒤에 실행하세요. `BongHub.exe`(3.4.x)는 끄지 마세요. 프리셋 CLI, MMT, 실제 모니터, `%LOCALAPPDATA%\BongHub`, `data/` 읽기·쓰기는 하지 않아요. 메모 7개는 `data/notes`를 복사하지 않아요. 스크립트가 임시 폴더에 고정된 7개(본문이 있는 RTF, 그 중 1×1 PNG 한 장)를 만들고, 그 7개가 열렸는지로 판정해요. 트레이만·숨긴 설정 창 구간에는 알림 영역 아이콘이 잠깐 보였다가 그 프로세스가 끝나면 사라져요. 창은 화면 밖에 있어요.
 
 결과 파일: `next/test-logs/baseline_memory.txt`. 시나리오 4개(트레이만, 설정 창, 숨긴 설정 창, 메모 7개) × GC 동시 수집 꺼짐/켜짐 × 3회, 각 중앙값. 준비된 뒤 20초 유휴의 `WorkingSet64`·`PrivateMemorySize64`예요. 판정은 **gc_concurrent=true**(csproj 기본값) 중앙값이고, **작업 집합과 private 둘 다** 아래 숫자 이하여야 해요. 작업 집합만 내리고 private가 그대로면 실패한 거예요. `render_mode=software`와, 창이 있는 시나리오의 `hwnd_render_mode=SoftwareOnly`가 스타트업 텍스트에 있어야 해요. `render_tier`는 하드웨어 능력을 적으므로 2여도 소프트웨어 렌더가 켜진 상태일 수 있어요. `idle_trim=1`은 정리가 돌았다는 표시일 뿐이고, 그 직후의 작업 집합 숫자는 로그에 없어요.
 
