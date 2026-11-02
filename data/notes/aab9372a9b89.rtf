@@ -26,4 +26,42 @@ CI \'c5\'eb\'b0\'fa\'c7\'cf\'b8\'e9 \'b8\'d3\'c1\'f6\'b1\'ee\'c1\'f6 \'b9\'d9\'b
 \par
 \par
 \par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+URGENT and time-limited. Work fast. Read AGENTS.md -> docs/HANDOFF.md -> docs/STATE.json.\par
+\par
+Goal: final handoff docs that reflect ALL changes as of now.\par
+\par
+Current state: v1.7.0 is released at [github.com/Baegovda/BongGIF/releases/tag](https://github.com/Baegovda/BongGIF/releases/tag/v1.7.0) (asset BongGIF-v1.7.0-win64.zip). Merged PRs this session:\par
+\par
+- #15: handoff synced to v1.6.0\par
+- #16: docs audit fixing 18 discrepancies; the 14 stale cursor/* branches were deleted\par
+- #17: PR CI 'ci / smoke (ubuntu)' running 7 smoke suites\par
+- #18: text intro/outro animation fully removed from the docs and backlog because the owner says it's unneeded. Never re-add it.\par
+- #19: recording frame move/resize UI overhaul. Drag by the title bar, the toolbar, or the 16px border. 8 handles with 16px hit areas. Arrow keys move 1px, Shift+arrow 10px. Live WxH, typed size, and presets. Snaps to screen and window edges within 12px. Position and size are locked during countdown, recording and pause, with a 'locked' label.\par
+- #20: version bumped to 1.7.0, release notes added. The user smoke-launched v1.7.0 on Windows and the window opened responsive. Interactive UX is not yet user-confirmed.\par
+\par
+Other facts to record:\par
+\par
+- The owner has permission from the vendor to analyze the reference app. Reference analysis artifacts live ONLY on the owner's PC at Desktop\\honeycam-re (including analysis-2026-11-02\\feature-inventory.md and parity-gap.md). Never commit them, and keep following the clean-room rules (no reference app name in the repo, no copied assets or code).\par
+- Analysis limits: the main exe code is protected and was not unpacked. The license module, trial checks and signature checks are never analyzed.\par
+- Prioritized backlog from the gap analysis: (1) speech bubbles, (2) transitions, (3) zoom/pan camera, (4) collage, (5) richer frame catalog, (6) more effects (bloom, chroma key, color curves, tilt-shift, inpaint), (7) save watermark, (8) recording grid + window finder, (9) custom hotkeys, (10) advanced export options (WebM alpha/codec, APNG color modes, preserve colors).\par
+- Working rules: the owner communicates in Korean. Merge only after an explicit yes from the owner. Releases come from pushing a v* tag (release.yml).\par
+\par
+Update AGENTS.md, docs/HANDOFF.md, docs/STATE.json, README and CHANGELOG as needed, so everything agrees with the code and the repo state. Then VERIFY 5 TIMES: do five separate full passes. Each pass cross-checks every version number, PR number, file path, backlog item and claim against the actual code, git log and releases, and fixes whatever it finds. Log what each pass found in the PR description.\par
+\par
+Also create docs/NEXT_BOT_PROMPT.md: a self-contained English prompt that the owner pastes to the next bot to take over (repo, reading order, current state, rules, next task, how to test and release).\par
+\par
+Open a PR, wait for CI to go green, then squash-merge it yourself (the owner pre-approved this merge). Report the merge sha and the full text of NEXT_BOT_PROMPT.md.\par
+\par
+Final handoff docs v1.7.0Final handoff docs v1.7.0\par
+\par
+\'b9\'ae\'bc\'ad\'b4\'c2 v1.7.0 \'b8\'b1\'b8\'ae\'bd\'ba \'c1\'f7\'c8\'c4\'bf\'a1\'bc\'ad \'b8\'d8\'c3\'e7 \'c0\'d6\'bd\'c0\'b4\'cf\'b4\'d9. \'b9\'e9\'b7\'ce\'b1\'d7 \'bc\'f8\'bc\'ad, \'bf\'f8\'b0\'dd \'ba\'ea\'b7\'a3\'c4\'a1, \'c1\'d6\'c0\'ce \'c8\'ae\'c0\'ce, \'b4\'d9\'c0\'bd \'ba\'bf\'bf\'eb \'c7\'c1\'b7\'d2\'c7\'c1\'c6\'ae\'b8\'a6 \'c4\'da\'b5\'e5\'bf\'cd \'b8\'b1\'b8\'ae\'bd\'ba\'bf\'a1 \'b8\'c2\'c3\'e7 \'b0\'ed\'c4\'a8\'b4\'cf\'b4\'d9.\par
 }
