@@ -4,16 +4,17 @@ Windows 트레이 유틸리티입니다. 부제는 "석봉이의 유틸 창고"�
 
 ## 현재 버전 (2026-11-02 KST)
 
-- **`main` 소스:** 트레이 **3.4.8** (`app/version.txt`, `AppInfo.Version`) + BongHub.Next **0.3.0** (`net10.0-windows`, H.NotifyIcon.Wpf 2.4.1, WinForms 없음)
-- **PC 배포 exe:** `C:\Users\Revaptor_FX\BongHub\BongHub.exe` 버전은 **PC에서 확인할 것**. 이 저장소는 그 파일 버전을 단정하지 않아요
-- **병합된 PR:** #4 메모 저장 잠금과 Next 도입, #5 이식 계획, #6 Next 0.3.0 (.NET 10 기준선)
-- **열린 PR:** #7 Next 0.4.0 메모리 (미병합, `main`에 없음)
+- **PC에 배포됨:** 트레이 **3.4.9**. 파일 버전 **3.4.9.0** (`C:\Users\Revaptor_FX\BongHub\BongHub.exe`, PC에서 확인). 3.4.8은 `backup\3.4.8_20261102_123333`에 백업
+- **`main` 소스:** 트레이 **3.4.9** (`app/version.txt`, `AppInfo.Version`) + BongHub.Next **0.3.0** (`net10.0-windows`, H.NotifyIcon.Wpf 2.4.1, WinForms 없음)
+- **3.4.9:** UI 스레드 예외 뒤 트레이가 죽던 경로 수정 (PR #9). 3.4.8과 3.4.7은 그 종료 경로로 PC에서 죽은 적이 있음
+- **병합된 PR:** #4 메모 저장 잠금과 Next 도입, #5 이식 계획, #6 Next 0.3.0 (.NET 10 기준선), #9 트레이 3.4.9 크래시 수정
+- **곧 들어올 PR:** #7 Next 0.4.0 메모리 (아직 `main`에 없음)
 - 런타임 데이터: `%LOCALAPPDATA%\BongHub\` (`config.json`, `notes\`, …)
 - 검사: `.github/workflows/repo-check.yml` 이 버전 문자열이 어긋나거나, PR에서 `sync:` 가 아닌 커밋이 `data/`를 건드리면 실패해요. Windows 빌드·스모크는 아직 없어요
 
 ## 구성
 
-- `app/` — 트레이 앱 소스 (`BongHub.cs`, `build.ps1`, `CHANGELOG.md`, `res/`, `_dev/`). `main`은 **3.4.8**
+- `app/` — 트레이 앱 소스 (`BongHub.cs`, `build.ps1`, `CHANGELOG.md`, `res/`, `_dev/`). `main`은 **3.4.9**
 - `next/` — BongHub.Next **0.3.0** (WPF, .NET 10, H.NotifyIcon). 3.4.x 데이터와 `Local\BongHub_NotesWriter`를 그대로 써요. Notes 설정 한 키는 그 값만 고치고 나머지 바이트는 그대로 둬요
 - `legacy/BongAd/` — 카카오톡 광고 제거 도우미 원본
 - `docs/HANDOFF.md` — 인수인계 문서
