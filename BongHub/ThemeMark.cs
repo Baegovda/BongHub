@@ -53,8 +53,10 @@ public static class ThemeAudit
     static void Stamp(DependencyObject node)
     {
         if (node is not Control control || !Watched.Contains(control.GetType())) return;
-        if (!ThemeMark.GetOn(control) && control.Style == null && Application.Current?.TryFindResource(control.GetType()) is Style style)
+        if (!ThemeMark.GetOn(control) && Application.Current?.TryFindResource(control.GetType()) is Style style && !ReferenceEquals(control.Style, style))
             control.Style = style;
+        if (!ThemeMark.GetOn(control))
+            ThemeMark.SetOn(control, true);
         if (control.Background is SolidColorBrush brush && brush.Color.A > 240 && NoteColors.Lum(brush.Color) > 0.85)
             control.Background = Brushes.Transparent;
     }

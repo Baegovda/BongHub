@@ -419,15 +419,23 @@ public partial class StickyNoteWindow : Window
             if (paragraphs.Count == 0) return;
             para = paragraphs[Math.Clamp(spot.Paragraph, 0, paragraphs.Count - 1)];
         }
-        TextPointer raw = spot.Offset <= 0
-            ? para.ContentStart
-            : para.ContentStart.GetPositionAtOffset(spot.Offset, spot.Direction) ?? para.ContentEnd;
-        var inserted = raw.GetInsertionPosition(LogicalDirection.Forward) ?? raw;
-        if (inserted.Paragraph != null && !ReferenceEquals(inserted.Paragraph, para))
-            inserted = para.ContentEnd.GetInsertionPosition(LogicalDirection.Backward) ?? para.ContentStart;
-        if (inserted.Paragraph != null && !ReferenceEquals(inserted.Paragraph, para))
-            inserted = para.ContentStart;
-        box.CaretPosition = inserted;
+        int Len(TextPointer pointer) => new TextRange(para.ContentStart, pointer).Text.Length;
+        TextPointer At(int offset, LogicalDirection dir)
+        {
+            if (offset <= 0) return para.ContentStart;
+            return para.ContentStart.GetPositionAtOffset(offset, dir) ?? para.ContentEnd;
+        }
+        var forward = At(spot.Offset, LogicalDirection.Forward);
+        var backward = At(spot.Offset, LogicalDirection.Backward);
+        var chosen = Len(backward) == spot.Offset ? backward : Len(forward) == spot.Offset ? forward : para.ContentEnd;
+        box.CaretPosition = chosen;
+    }
+
+    static bool SpotIsEmpty(RichTextBox box, CaretSpot spot)
+    {
+        var blocks = box.Document.Blocks.ToList();
+        if (spot.Paragraph < 0 || spot.Paragraph >= blocks.Count) return false;
+        return blocks[spot.Paragraph] is Paragraph para && new TextRange(para.ContentStart, para.ContentEnd).Text.Length == 0;
     }
 
     public void ChromeActivateLikeTest()
@@ -458,7 +466,10 @@ public partial class StickyNoteWindow : Window
             if (sv != null && Math.Abs(sv.VerticalOffset - HeldScroll) > 0.5) sv.ScrollToVerticalOffset(HeldScroll);
             if (editor != null)
             {
+                bool emptyLine = SpotIsEmpty(editor, HeldSpot);
                 ApplySpot(editor, HeldSpot);
+                if (!emptyLine && ReadCaret() != HeldCaret)
+                    editor.CaretPosition = PointerAtChars(editor.Document, HeldCaret);
             }
         }
         catch { }
@@ -631,16 +642,16 @@ public partial class StickyNoteWindow : Window
         brush.Freeze();
         return brush;
     }
-    /// <summary>Title uses the note ink (a little stronger than the body). The caret matches that ink.</summary>
+    /// <summary>Title uses the same opaque brush as the note body.</summary>
     void ApplyInk()
     {
-        var body = InkBrush(NoteColors.Text);
-        var title = body;
+        var body = InkBrush(Color.FromArgb(255, NoteColors.Text.R, NoteColors.Text.G, NoteColors.Text.B));
         double size = Math.Round(PointsToDip(ClampPt(ConfigStore.Notes.FontSize)) * 1.6, 2);
-        TitleBox.Foreground = title;
-        TitleBox.CaretBrush = title;
+        TitleBox.Opacity = 1;
+        TitleBox.Foreground = body;
+        TitleBox.CaretBrush = body;
         TitleBox.FontSize = size;
-        TitleHint.Foreground = title;
+        TitleHint.Foreground = body;
         TitleHint.FontSize = size;
         if (editor != null)
         {
@@ -1319,11 +1330,8 @@ public partial class StickyNoteWindow : Window
                 TextDirty = true;
                 any = true;
             }
-            if (piece.Png is { Length: > 0 } png && png.Length <= NotePaste.MaxBytes)
-            {
-                InsertPng(png);
+            if (piece.Png is { Length: > 0 } png && png.Length <= NotePaste.MaxBytes && InsertPng(png))
                 any = true;
-            }
         }
         if (any) { textTimer.Stop(); textTimer.Start(); }
         return any;
@@ -1344,34 +1352,32 @@ public partial class StickyNoteWindow : Window
         }
         var pieces = NoteClip.Unpack(pack);
         if (pieces.Count == 0 || !pieces.Any(p => p.Png is { Length: > 0 } || p.Text.Length > 0)) return false;
-        if (!pieces.Any(p => p.Png is { Length: > 0 })) return false;
+        bool any = false;
         foreach (var p in pieces)
         {
             if (p.Text.Length > 0)
             {
                 Editor.CaretPosition.InsertTextInRun(p.Text);
                 TextDirty = true;
+                any = true;
             }
-            if (p.Png is { Length: > 0 }) InsertPng(p.Png);
+            if (p.Png is { Length: > 0 } && InsertPng(p.Png)) any = true;
         }
+        if (!any) return false;
         textTimer.Stop(); textTimer.Start();
         return true;
     }
 
-    void InsertPng(byte[] png)
+    bool InsertPng(byte[] png)
     {
         try
         {
-            using var ms = new System.IO.MemoryStream(png);
-            var bmp = new BitmapImage();
-            bmp.BeginInit();
-            bmp.StreamSource = ms;
-            bmp.CacheOption = BitmapCacheOption.OnLoad;
-            bmp.EndInit();
-            bmp.Freeze();
-            InsertBitmap(bmp);
+            int fit = Math.Max(80, (int)(EditorHost.ActualWidth > 1 ? EditorHost.ActualWidth - 24 : 260));
+            var built = NoteImages.FromEncoded(png, fit);
+            if (built != null && AddPicture(built)) return true;
         }
         catch (Exception e) { AppEnv.Log("paste png: " + e.Message); }
+        return false;
     }
 
     List<NoteClipPiece> ExportPieces(TextPointer selStart, TextPointer selEnd)

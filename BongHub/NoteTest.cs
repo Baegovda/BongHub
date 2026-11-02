@@ -21,6 +21,7 @@ public static class NoteTest
         }
         catch (Exception e) { t.Check("no exception", false, e.ToString()); }
         t.Save("notetest.txt");
+        if (t.Fails > 0) Environment.ExitCode = 1;
         app.RequestShutdown();
     }
 

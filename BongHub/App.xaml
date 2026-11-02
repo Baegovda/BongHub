@@ -494,13 +494,13 @@
             <ControlTemplate TargetType="Slider">
               <Track x:Name="PART_Track">
                 <Track.DecreaseRepeatButton>
-                  <RepeatButton Command="{x:Static Slider.DecreaseLarge}" Background="{DynamicResource Accent}"/>
+                  <RepeatButton Style="{StaticResource {x:Type RepeatButton}}" Command="{x:Static Slider.DecreaseLarge}" Background="{DynamicResource Accent}"/>
                 </Track.DecreaseRepeatButton>
                 <Track.Thumb>
-                  <Thumb/>
+                  <Thumb Style="{StaticResource {x:Type Thumb}}"/>
                 </Track.Thumb>
                 <Track.IncreaseRepeatButton>
-                  <RepeatButton Command="{x:Static Slider.IncreaseLarge}" Background="#3A3F4D"/>
+                  <RepeatButton Style="{StaticResource {x:Type RepeatButton}}" Command="{x:Static Slider.IncreaseLarge}" Background="#3A3F4D"/>
                 </Track.IncreaseRepeatButton>
               </Track>
             </ControlTemplate>

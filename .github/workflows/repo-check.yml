@@ -32,8 +32,7 @@ jobs:
       - name: Notes config patch
         run: dotnet run --project BongHub.PatchTests/BongHub.PatchTests.csproj -c Release --nologo
 
-  # Smoke and note tests open WPF windows, so they stay on the owner PC.
-  # The RTF step loads one fixture with WPF TextRange on an STA thread. It does not show a window.
+  # WPF windows are created off-screen (--off). The runner still needs a desktop session, which windows-latest has.
   windows:
     runs-on: windows-latest
     steps:
@@ -51,3 +50,27 @@ jobs:
 
       - name: WPF RTF round trip (no GUI)
         run: dotnet run --project BongHub.RichEditTests/BongHub.RichEditTests.csproj -c Release --nologo
+
+      - name: Smoke test
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP/bonghub-smoke" | Out-Null
+          & "BongHub/bin/Release/net10.0-windows/win-x64/publish/BongHub.exe" --smoketest --out "$env:RUNNER_TEMP/bonghub-smoke"
+          if ($LASTEXITCODE -ne 0) { Get-Content "$env:RUNNER_TEMP/bonghub-smoke/smoketest.txt" -ErrorAction SilentlyContinue; exit $LASTEXITCODE }
+
+      - name: Note test
+        run: |
+          $copy = Join-Path $env:RUNNER_TEMP "bonghub-notes"
+          Copy-Item -Recurse data $copy
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP/bonghub-notes-out" | Out-Null
+          & "BongHub/bin/Release/net10.0-windows/win-x64/publish/BongHub.exe" --notetest --data $copy --out "$env:RUNNER_TEMP/bonghub-notes-out"
+          if ($LASTEXITCODE -ne 0) { Get-Content "$env:RUNNER_TEMP/bonghub-notes-out/notetest.txt" -ErrorAction SilentlyContinue; exit $LASTEXITCODE }
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wpf-tests
+          path: |
+            ${{ runner.temp }}/bonghub-smoke/smoketest.txt
+            ${{ runner.temp }}/bonghub-notes-out/notetest.txt
+          if-no-files-found: ignore

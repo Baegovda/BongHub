@@ -251,6 +251,7 @@ public partial class MainWindow
             stage.Children.Add(badge);
         }
         int tileZ = 10;
+        var occupied = new List<Rect>();
         foreach (var app in profile.Apps)
         {
             var home = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors[0];
@@ -263,8 +264,16 @@ public partial class MainWindow
             double tileH = Math.Max(28, Math.Min(view.H, Math.Max(28, homeBox.Y + homeBox.H - 4 - top)));
             if (left + tileW > homeBox.X + homeBox.W - 4) left = Math.Max(homeBox.X + 4, homeBox.X + homeBox.W - 4 - tileW);
             if (top + tileH > homeBox.Y + homeBox.H - 4) top = Math.Max(homeBox.Y + 26, homeBox.Y + homeBox.H - 4 - tileH);
+            var spot = new Rect(left, top, tileW, tileH);
+            for (int n = 0; n < 6 && occupied.Any(r => r.IntersectsWith(spot)); n++)
+            {
+                left = Math.Min(left + 14, Math.Max(homeBox.X + 4, homeBox.X + homeBox.W - 4 - tileW));
+                top = Math.Min(top + 14, Math.Max(homeBox.Y + 26, homeBox.Y + homeBox.H - 4 - tileH));
+                spot = new Rect(left, top, tileW, tileH);
+            }
+            occupied.Add(spot);
             view = new ProfileBox((int)left, (int)top, (int)tileW, (int)tileH);
-            double font = Math.Clamp(tileW / 12.0, 12, 16);
+            double font = Math.Clamp(Math.Min(tileW, tileH) / 7.0, 10, 13);
             string shown = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
             var tile = new Border
             {
@@ -291,10 +300,10 @@ public partial class MainWindow
                 ? new Image { Source = icon, Width = 20, Height = 20, Margin = new Thickness(0, 0, 6, 0) }
                 : new TextBlock { Text = "\uE737", FontFamily = (FontFamily)FindResource("Icons"), FontSize = font, Foreground = Brushes.White, Margin = new Thickness(0, 0, 6, 0) };
             body.Children.Add(mark);
-            var nameBlock = new TextBlock { Text = shown.Length > 0 ? shown : "창", Foreground = Brushes.White, FontSize = font, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
+            var nameBlock = new TextBlock { Text = shown.Length > 0 ? shown : "창", Foreground = Brushes.White, FontSize = font, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis };
             Grid.SetColumn(nameBlock, 1);
             body.Children.Add(nameBlock);
-            var sizeBlock = new TextBlock { Text = app.W + "×" + app.H, Foreground = (Brush)FindResource("Secondary"), FontSize = Math.Max(11, font - 2), TextWrapping = TextWrapping.Wrap };
+            var sizeBlock = new TextBlock { Text = app.W + "×" + app.H, Foreground = (Brush)FindResource("Secondary"), FontSize = Math.Max(10, font - 1), TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis };
             Grid.SetRow(sizeBlock, 1);
             Grid.SetColumnSpan(sizeBlock, 2);
             body.Children.Add(sizeBlock);

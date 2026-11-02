@@ -22,6 +22,7 @@ public static class SmokeTest
         try { await Body(app, t); }
         catch (Exception e) { t.Check("no exception", false, e.ToString()); }
         t.Save("smoketest.txt");
+        if (t.Fails > 0) Environment.ExitCode = 1;
         if (tray != null) tray.OnExit();
         else app.RequestShutdown();
     }
