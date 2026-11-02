@@ -61,7 +61,9 @@ public partial class MainWindow : Window
             if (CurrentPage == "notes" && IsVisible) Render("notes", animate: false);
         });
         UpdateStatus();
+        AppEnv.Mark("presets_begin");
         Navigate("presets");
+        AppEnv.Mark("presets_end");
     }
 
     /// <summary>Decorative radial glows. Shown after the first frame is recorded so the software raster of the first paint skips them.</summary>

@@ -59,6 +59,7 @@ public partial class App : Application
         ConfigStore.Load();
         NoteStore.Load();
         AppEnv.Mark("data_loaded");
+        AppEnv.MarkMemory("data_loaded");
 
         if (AppEnv.Smoke) { Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => SmokeTest.Run(this)); return; }
         if (AppEnv.NoteTest) { Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => NoteTest.Run(this)); return; }
@@ -116,6 +117,7 @@ public partial class App : Application
                 try { tier = RenderCapability.Tier >> 16; } catch { }
                 try { hwndRender = HwndSource.FromHwnd(Win32.Handle(w))?.CompositionTarget?.RenderMode; } catch { }
                 AppEnv.NoteFirstFrame(NoteManager.Windows.Count, tier, GC.GetTotalMemory(false) / 1048576, hwndRender?.ToString() ?? "null");
+                AppEnv.MarkMemory("first_frame", NoteManager.EditingCount);
             };
             // After the timestamp, so the radial-glow raster is not inside first_frame_ms.
             WindowFx.Of(w).AfterFirstFrame += w.ShowDecorations;

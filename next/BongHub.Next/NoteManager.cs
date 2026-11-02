@@ -57,7 +57,7 @@ public static class NoteManager
         int opened = 0;
         void next()
         {
-            if (queue.Count == 0 || App.ShuttingDown) { AppEnv.NoteStartupNotes(opened); ScheduleIdleTrim(); return; }
+            if (queue.Count == 0 || App.ShuttingDown) { AppEnv.NoteStartupNotes(opened); AppEnv.MarkMemory("notes_opened", EditingCount); ScheduleIdleTrim(); return; }
             Open(queue.Dequeue().Id, activate: false);
             opened++;
             Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, next);
@@ -68,19 +68,29 @@ public static class NoteManager
         if (main != null && main.IsVisible && !WindowFx.Of(main).Revealed) WindowFx.Of(main).AfterFirstFrame += start; else start();
     }
 
-    static int trimScheduled;
+    public static int EditingCount => open.Values.Count(w => w.IsEditing);
+    static int trimScheduled, trimPasses;
     /// <summary>
     /// One compacting collection after startup, then a working-set trim of pages we no longer touch.
-    /// Armed only after the first frame is recorded (or immediately when there is no settings window), and delayed so the open animation has dropped its full-window surface.
-    /// The baseline waits 20s after the ready line, so this finishes before the sample. It does not change first_frame_ms.
+    /// Waits until every note has painted, because a trim before that leaves the new software surfaces resident.
+    /// A second pass runs once the open animation has dropped its intermediate surface.
+    /// The baseline waits 20s after the ready line, so both finish before the sample. Neither changes first_frame_ms.
     /// </summary>
     static void ScheduleIdleTrim()
     {
         if (Interlocked.Exchange(ref trimScheduled, 1) != 0) return;
         void arm()
         {
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
-            timer.Tick += (_, _) => { timer.Stop(); TrimOnce(); };
+            int spins = 0;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+            timer.Tick += (_, _) =>
+            {
+                spins++;
+                bool pending = open.Values.Any(w => !w.Ready);
+                if (pending && spins < 50) return;
+                timer.Stop();
+                TrimOnce();
+            };
             timer.Start();
         }
         var main = App.Instance.MainWin;
@@ -94,12 +104,21 @@ public static class NoteManager
     {
         try
         {
+            int pass = ++trimPasses;
+            AppEnv.MarkMemory("before_trim_" + pass, EditingCount);
             GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
             GC.WaitForPendingFinalizers();
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
             Win32.TrimWorkingSet();
+            AppEnv.MarkMemory("after_trim_" + pass, EditingCount);
             AppEnv.NoteIdleTrim();
+            if (pass == 1)
+            {
+                var again = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+                again.Tick += (_, _) => { again.Stop(); TrimOnce(); };
+                again.Start();
+            }
         }
         catch (Exception e) { AppEnv.Log("trim: " + e.Message); }
     }
