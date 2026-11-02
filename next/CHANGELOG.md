@@ -8,9 +8,9 @@
 - 삭제(빈 메모는 바로, 내용이 있으면 확인), 모두 보이기, 모두 숨기기, 모든 메모 텍스트 복사, 선택 메모 색. 트레이 메뉴에도 모두 보이기·숨기기가 있어요.
 - 글자 크기는 7–48pt예요. 메모 안에서는 텍스트 11, 제목1 24, 제목2 20, 제목3 16, 제목4 13과 Ctrl++/− 가 있어요. 색 팔레트는 호버로 미리 보고, 클릭해야 저장해요. 맞춤 색은 `c:RRGGBB:RRGGBB`예요.
 - 링크 클릭, 이미지 파일 드롭·붙여넣기·파일 선택. 새 그림은 `\pngblip` 또는 `\jpegblip`이고, 이미 1600px 이하인 PNG/JPEG 파일 바이트는 다시 인코딩하지 않아요. 크기 변경은 `\picwgoal`/`\pichgoal`만 바꿔요. 25/50/75/100, 폭 맞춤, 이동, 복사, 더블클릭 뷰어가 있어요.
-- WPF가 pict를 떨어뜨리면 그 메모만 msftedit(`RICHEDIT50W`)를 `HwndHost`로 붙여요. WinForms는 넣지 않아요. 디스크에 있던 그림 바이트를 스트림으로 다시 읽어요.
+- 메모 RTF는 WPF `RichTextBox`의 `TextRange`로 읽고 써요. msftedit는 쓰지 않아요.
 - 표시 직후 `WS_EX_NOACTIVATE`를 풀어요. 모달 중에는 메모 창을 다시 활성화해요. 화면 밖은 작업 영역으로 클램프해요. `--off`에서는 클램프하지 않고, WPF가 창을 실제 모니터로 끌어오면 `WM_WINDOWPOSCHANGING`에서 마지막 화면 밖 좌표로 되돌려요. 전역 후킹은 아니에요.
-- RichEdit에 RTF를 넣을 때는 `EM_SETTEXTEX`(CP_ACP, 그다음 65001)를 먼저 써요. 빼기는 `EM_STREAMOUT`뿐이라 콜백이 필요해요. 관리 코드의 함수 포인터는 msftedit의 CFG 검사에서 `FAST_FAIL_GUARD_ICALL_CHECK_FAILURE`(fast-fail 10, 종료 `0xC0000409`)로 죽어서, 콜백은 `VirtualAlloc` 스텁을 `SetProcessValidCallTargets`로 등록해 써요. 고치지 않은 메모는 스트림하지 않고 파일 바이트를 그대로 둬요. 창 없는 재현은 Windows CI의 `BongHub.Next.RichEditTests`예요.
+- 고치지 않은 메모는 파일 바이트를 그대로 둬요. 고친 메모를 저장할 때 화면에 있는 그림이 RTF에서 빠지면 파일을 덮어쓰지 않고 `next_error.log`에 남겨요. 창 없는 재현은 Windows CI가 STA에서 1×1 `\pngblip`을 `TextRange`로 읽고 쓰는 거예요.
 - 8MB를 넘으면 메모 안에 경고를 보여요. 대화상자로 테스트를 막지 않아요.
 - 스모크 **65**, 노트 **89**(`data/notes` 7개에 그림이 있을 때). 0.4.0의 58과 26은 그 안에 들어 있어요.
 

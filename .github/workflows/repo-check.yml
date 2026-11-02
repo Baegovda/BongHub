@@ -33,7 +33,7 @@ jobs:
         run: dotnet run --project next/BongHub.Next.PatchTests/BongHub.Next.PatchTests.csproj -c Release --nologo
 
   # Smoke and note tests open WPF windows, so they stay on the owner PC.
-  # The RichEdit step streams one fixture into a hidden msftedit window. It does not show UI.
+  # The RTF step loads one fixture with WPF TextRange on an STA thread. It does not show a window.
   windows:
     runs-on: windows-latest
     steps:
@@ -53,5 +53,5 @@ jobs:
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File app\build.ps1
 
-      - name: RichEdit RTF round trip (no GUI)
+      - name: WPF RTF round trip (no GUI)
         run: dotnet run --project next/BongHub.Next.RichEditTests/BongHub.Next.RichEditTests.csproj -c Release --nologo

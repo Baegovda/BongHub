@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>BongHub.Next.RichEditTests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="..\BongHub.Next\RichEditRtf.cs" Link="RichEditRtf.cs" />
+    <Compile Include="..\BongHub.Next\NoteRtf.cs" Link="NoteRtf.cs" />
     <None Include="Fixtures\1x1-pngblip.rtf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

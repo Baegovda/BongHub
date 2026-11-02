@@ -21,17 +21,15 @@ public partial class StickyNoteWindow : Window
     /// <summary>Longest edge of a picture bitmap actually shown. 0 when the note has no picture.</summary>
     public int DisplayImageMaxEdge { get; private set; }
     public long DisplayImagePixels { get; private set; }
-    public bool UsesRichEdit { get; private set; }
     public bool LargeWarningVisible => LargeWarn.Visibility == Visibility.Visible;
     public string ShownColorKey { get; private set; } = "";
     public string LastLink { get; private set; } = "";
     public bool LinkLaunched { get; private set; }
     public byte[]? LastCopiedPng { get; private set; }
-    public bool IsBlankLive => string.IsNullOrWhiteSpace(PlainText()) && DocImageCount() == 0 && originalPicts.Count == 0 && !UsesRichEdit;
+    public bool IsBlankLive => string.IsNullOrWhiteSpace(PlainText()) && DocImageCount() == 0 && originalPicts.Count == 0;
     readonly DispatcherTimer textTimer, metaTimer;
     readonly List<RtfPict.Pict> originalPicts = [];
     readonly List<Image> pictViews = [];
-    RichEditHost? rich;
     Image? selectedImage;
     bool loading, metaDirty, corruptBackedUp, closing, discarding, sizing;
     int sourcePictCount;
@@ -70,7 +68,7 @@ public partial class StickyNoteWindow : Window
         Loaded += (_, _) => PlacePhysical();
         WindowFx.Of(this).AfterFirstFrame = () => { Ready = true; Win32.AllowActivate(Win32.Handle(this)); };
 
-        Editor.TextChanged += (_, _) => { UpdateHint(); if (loading || UsesRichEdit) return; TextDirty = true; if (sizing) return; textTimer.Stop(); textTimer.Start(); };
+        Editor.TextChanged += (_, _) => { UpdateHint(); if (loading) return; TextDirty = true; if (sizing) return; textTimer.Stop(); textTimer.Start(); };
         Editor.PreviewMouseWheel += (_, e) => { if (Keyboard.Modifiers != ModifierKeys.Control) return; e.Handled = true; Meta.Zoom = (float)Math.Clamp(Math.Round(Meta.Zoom + (e.Delta > 0 ? 0.1 : -0.1), 1), 0.6, 3.0); ApplyZoom(); MarkMeta(); };
         MouseEnter += (_, _) => Fx.Fade(Bar, 1, 160);
         MouseLeave += (_, _) => { if (!Palette.IsOpen) Fx.Fade(Bar, 0, 260); };
@@ -283,11 +281,6 @@ public partial class StickyNoteWindow : Window
     }
     public string PlainText()
     {
-        if (UsesRichEdit && rich != null)
-        {
-            var hosted = rich.Plain();
-            if (hosted.Length > 0) return hosted.TrimEnd('\r', '\n');
-        }
         return new TextRange(Editor.Document.ContentStart, Editor.Document.ContentEnd).Text.TrimEnd('\r', '\n');
     }
     void UpdateHint() => Hint.Visibility = Editor.Document.Blocks.Count <= 1 && PlainText().Length == 0 && DocImageCount() == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -297,16 +290,6 @@ public partial class StickyNoteWindow : Window
     public void FlushText()
     {
         textTimer.Stop();
-        if (UsesRichEdit)
-        {
-            if (!TextDirty) return;
-            TextDirty = false;
-            var hosted = rich?.StreamOut();
-            Meta.Text = rich?.Plain() ?? Meta.Text;
-            if (hosted != null && hosted.Length > 0 && NoteStore.SaveRtf(Meta, hosted)) { RtfWrites++; WarnIfLarge(); }
-            metaDirty = true; FlushMeta();
-            return;
-        }
         if (!TextDirty) return;
         TextDirty = false;
         var range = new TextRange(Editor.Document.ContentStart, Editor.Document.ContentEnd);
@@ -328,17 +311,18 @@ public partial class StickyNoteWindow : Window
             var injected = InjectPicts(wpfRtf, originalPicts);
             if (injected != null) { rtf = injected; emitted = CountPict(rtf); }
         }
-        int wantImages = originalPicts.Count > 0 ? originalPicts.Count : sourcePictCount;
-        bool dropped = rtf == null || emitted < wantImages;
+        byte[] onDisk = [];
+        try { if (File.Exists(NoteStore.RtfPath(Meta.Id))) onDisk = File.ReadAllBytes(NoteStore.RtfPath(Meta.Id)); } catch { onDisk = []; }
+        var chosen = NoteRtf.Choose(onDisk.Length > 0 ? onDisk : (rtf ?? []), rtf ?? [], DocImageCount(), originalPicts.Count, out var dropWarn);
         Meta.Text = PlainText();
-        if (dropped)
+        if (dropWarn != null)
         {
-            // WPF could not keep every pict. Leave the file bytes, then host RichEdit so the next edit does not drop them again.
-            ImageGuardHits++; AppEnv.Log($"image guard: kept existing rtf for {Meta.Id} want={wantImages} emitted={emitted} doc={DocImageCount()}");
+            ImageGuardHits++;
+            AppEnv.Log($"image guard: kept existing rtf for {Meta.Id} {dropWarn}");
             metaDirty = true; FlushMeta();
-            TryHostRichEdit();
             return;
         }
+        rtf = chosen;
         if (LoadStatus == "corrupt" && !corruptBackedUp && !AppEnv.DenyWrite())
         {
             try { File.Copy(NoteStore.RtfPath(Meta.Id), NoteStore.RtfPath(Meta.Id) + ".corrupt-" + DateTime.Now.ToString("yyyyMMddHHmmss")); } catch { }
@@ -372,55 +356,6 @@ public partial class StickyNoteWindow : Window
         int mb = (int)(bytes / 1024 / 1024);
         LargeWarn.Text = "이 메모가 " + mb + "MB로 커졌어요. 이미지가 많으면 저장과 클라우드 동기화가 느려질 수 있어요.";
         LargeWarn.Visibility = Visibility.Visible;
-    }
-    bool TryHostRichEdit()
-    {
-        if (UsesRichEdit || rich != null) return UsesRichEdit;
-        byte[] file;
-        try { file = File.Exists(NoteStore.RtfPath(Meta.Id)) ? File.ReadAllBytes(NoteStore.RtfPath(Meta.Id)) : []; }
-        catch { return false; }
-        if (file.Length == 0) return false;
-        AppEnv.Log($"richedit host begin {Meta.Id} bytes={file.Length}");
-        try
-        {
-            var host = new RichEditHost(file);
-            host.Edited += () =>
-            {
-                if (loading) return;
-                TextDirty = true;
-                textTimer.Stop();
-                textTimer.Start();
-            };
-            EditorHost.Children.Add(host);
-            AppEnv.Log($"richedit host window {Meta.Id} loaded={host.LoadedRtf}");
-            if (!host.LoadedRtf)
-            {
-                EditorHost.Children.Remove(host);
-                AppEnv.Log($"richedit stream failed {Meta.Id}; kept WPF editor and the file");
-                return false;
-            }
-            rich = host;
-            UsesRichEdit = true;
-            host.Arm();
-            try { host.SetPaper(NoteColors.SurfA(Meta.Color)); } catch { }
-            host.SetReadOnly(AppEnv.ReadOnly);
-            Editor.Visibility = Visibility.Collapsed;
-            loading = true;
-            try { Editor.Document = new FlowDocument(); } finally { loading = false; }
-            originalPicts.Clear();
-            pictViews.Clear();
-            selectedImage = null;
-            return true;
-        }
-        catch (Exception e) { AppEnv.Log("richedit host: " + e.Message); UsesRichEdit = false; rich = null; return false; }
-    }
-    public void RichEditInsert(string text)
-    {
-        if (!UsesRichEdit || rich == null) return;
-        rich.InsertText(text);
-        TextDirty = true;
-        textTimer.Stop();
-        textTimer.Start();
     }
     /// <summary>Drops WPF pictures without updating the saved groups, so the next flush has to keep the file.</summary>
     public void ForcePictMismatchForTest()
@@ -483,13 +418,13 @@ public partial class StickyNoteWindow : Window
     public void ApplyFontSize() { loading = true; try { Editor.Document.FontSize = PointsToDip(ConfigStore.Notes.FontSize); } finally { loading = false; } }
     public void ApplyHeading(double pt)
     {
-        if (AppEnv.ReadOnly || UsesRichEdit) return;
+        if (AppEnv.ReadOnly) return;
         Editor.Selection.ApplyPropertyValue(TextElement.FontSizeProperty, PointsToDip(pt));
         TextDirty = true; textTimer.Stop(); textTimer.Start();
     }
     public void GrowFont(double delta)
     {
-        if (AppEnv.ReadOnly || UsesRichEdit) return;
+        if (AppEnv.ReadOnly) return;
         double cur = Editor.Selection.GetPropertyValue(TextElement.FontSizeProperty) is double d ? d * 72.0 / 96.0 : ConfigStore.Notes.FontSize;
         ApplyHeading(ClampPt(cur + delta));
     }
@@ -501,10 +436,10 @@ public partial class StickyNoteWindow : Window
         if (shift && key == Key.L) { if (!AppEnv.ReadOnly) EditingCommands.ToggleBullets.Execute(null, Editor); return true; }
         switch (key)
         {
-            case Key.B: if (UsesRichEdit) return false; if (!AppEnv.ReadOnly) EditingCommands.ToggleBold.Execute(null, Editor); return true;
-            case Key.I: if (UsesRichEdit) return false; if (!AppEnv.ReadOnly) EditingCommands.ToggleItalic.Execute(null, Editor); return true;
-            case Key.U: if (UsesRichEdit) return false; if (!AppEnv.ReadOnly) EditingCommands.ToggleUnderline.Execute(null, Editor); return true;
-            case Key.T: if (UsesRichEdit) return false; if (!AppEnv.ReadOnly) ToggleStrike(); return true;
+            case Key.B: if (!AppEnv.ReadOnly) EditingCommands.ToggleBold.Execute(null, Editor); return true;
+            case Key.I: if (!AppEnv.ReadOnly) EditingCommands.ToggleItalic.Execute(null, Editor); return true;
+            case Key.U: if (!AppEnv.ReadOnly) EditingCommands.ToggleUnderline.Execute(null, Editor); return true;
+            case Key.T: if (!AppEnv.ReadOnly) ToggleStrike(); return true;
             case Key.N: NoteManager.NewNote(); return true;
             case Key.D: AskDelete(); return true;
             case Key.W: CloseNote(); return true;
@@ -640,7 +575,7 @@ public partial class StickyNoteWindow : Window
     // ---------- images: bytes stay in the pict group; only goals change ----------
     public bool InsertImageFile(string path)
     {
-        if (AppEnv.ReadOnly || UsesRichEdit) return false;
+        if (AppEnv.ReadOnly) return false;
         int fit = Math.Max(80, (int)(Editor.ActualWidth > 1 ? Editor.ActualWidth - 24 : 260));
         var built = NoteImages.FromFile(path, fit);
         return built != null && AddPicture(built);
@@ -648,7 +583,7 @@ public partial class StickyNoteWindow : Window
 
     public bool InsertBitmap(BitmapSource source)
     {
-        if (AppEnv.ReadOnly || UsesRichEdit || source == null) return false;
+        if (AppEnv.ReadOnly || source == null) return false;
         int fit = Math.Max(80, (int)(Editor.ActualWidth > 1 ? Editor.ActualWidth - 24 : 260));
         var built = NoteImages.FromBitmap(source, fit);
         return built != null && AddPicture(built);
@@ -804,7 +739,7 @@ public partial class StickyNoteWindow : Window
 
     public bool AcceptDrop(IDataObject data)
     {
-        if (AppEnv.ReadOnly || UsesRichEdit || data == null) return false;
+        if (AppEnv.ReadOnly || data == null) return false;
         bool any = false;
         if (data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] files)
             foreach (var f in files) if (NoteImages.IsImagePath(f) && InsertImageFile(f)) any = true;
@@ -818,7 +753,7 @@ public partial class StickyNoteWindow : Window
 
     bool PasteImage()
     {
-        if (AppEnv.ReadOnly || UsesRichEdit) return false;
+        if (AppEnv.ReadOnly) return false;
         try
         {
             if (Clipboard.ContainsImage())
@@ -848,7 +783,6 @@ public partial class StickyNoteWindow : Window
 
     void OnEditorDown(object sender, MouseButtonEventArgs e)
     {
-        if (UsesRichEdit) return;
         dragStart = e.GetPosition(Editor);
         var img = HitImage(dragStart);
         if (img == null) { selectedImage = null; return; }
@@ -862,7 +796,6 @@ public partial class StickyNoteWindow : Window
 
     void OnEditorMove(object sender, MouseEventArgs e)
     {
-        if (UsesRichEdit) return;
         var pos = e.GetPosition(Editor);
         if (selectedImage != null && dragHandle >= 0 && e.LeftButton == MouseButtonState.Pressed)
         {

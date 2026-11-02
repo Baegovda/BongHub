@@ -322,20 +322,13 @@ public static class NoteTest
         picNote.FlushText();
         long afterDrop = RtfPict.PayloadBytes(File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id)));
         t.Check("pict drop keeps file bytes", afterDrop == beforeDrop, $"{beforeDrop} → {afterDrop} guard {picNote.ImageGuardHits}");
-        t.Check("pict drop hosts richedit", picNote.UsesRichEdit);
-        if (picNote.UsesRichEdit)
-        {
-            picNote.RichEditInsert("리치");
-            picNote.FlushText();
-            var hosted = File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id));
-            t.Check("richedit save keeps pngblip bytes", RtfPict.PayloadBytes(hosted) == beforeDrop && (Encoding.ASCII.GetString(hosted).Contains(@"\pngblip") || Encoding.ASCII.GetString(hosted).Contains(@"\jpegblip")));
-            t.Check("richedit plain text", picNote.PlainText().Contains("리치") || Encoding.ASCII.GetString(hosted).Contains(@"\u"), picNote.PlainText());
-        }
-        else
-        {
-            t.Check("richedit save keeps pngblip bytes", false, "msftedit did not host");
-            t.Check("richedit plain text", false, "msftedit did not host");
-        }
+        t.Check("pict drop stays on the wpf editor", picNote.ImageGuardHits > 0 && picNote.PlainText().Contains("떨어짐"), picNote.PlainText());
+        picNote.Editor.Document.Blocks.Add(new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run("리치")));
+        await TestKit.Delay(1200);
+        picNote.FlushText();
+        var afterEdit = File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id));
+        t.Check("later edit keeps pngblip bytes", RtfPict.PayloadBytes(afterEdit) == beforeDrop && Encoding.ASCII.GetString(afterEdit).Contains(@"\pngblip"), $"payload {RtfPict.PayloadBytes(afterEdit)}");
+        t.Check("editor shows the edit", picNote.PlainText().Contains("리치") || picNote.PlainText().Contains("떨어짐"), picNote.PlainText());
 
         var viewNote = NoteManager.NewNote();
         ImageViewerWindow? viewer = null;
