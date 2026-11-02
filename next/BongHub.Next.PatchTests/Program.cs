@@ -391,8 +391,153 @@ bool ptThrew = false;
 try { PtSystem.Touch(); } catch (InvalidOperationException) { ptThrew = true; }
 Check("powertoys backend refuses before any native call", ptThrew && PtSystem.NativeCalls == 0 && PtSystem.Attempts == 1);
 
+var workPlan = new MonitorPreset { Name = "작업", Primary = "SAM73D3", Layout = "work_layout.cfg" };
+workPlan.Enable.Add("SAM747A");
+workPlan.Enable.Add("SAM73D3");
+var awayPlan = new MonitorPreset { Name = "자리비움", Primary = "GSM76F5" };
+awayPlan.Disable.Add("SAM73D3");
+awayPlan.Disable.Add("DRS2555");
+var fakeDisplay = new FakeDisplay();
+fakeDisplay.Apply(PresetPlan.Commands(workPlan));
+fakeDisplay.Apply(PresetPlan.Commands(awayPlan));
+Check("fake display records commands only", string.Join("|", fakeDisplay.Log) == "enable SAM747A|enable SAM73D3|load work_layout.cfg|primary SAM73D3|primary GSM76F5|disable SAM73D3 DRS2555" && DisplaySystem.NativeCalls == 0 && DisplaySystem.MmtStarts == 0);
+bool displayThrew = false;
+try { new RealDisplay().Apply(PresetPlan.Commands(new MonitorPreset { Name = "작업" })); } catch (InvalidOperationException) { displayThrew = true; }
+bool brightThrew = false;
+try { new RealBright().Set("SAM73D3", 30, out _); } catch (InvalidOperationException) { brightThrew = true; }
+Check("display and brightness refuse before any api", displayThrew && brightThrew && !DisplayGate.RealAllowed && DisplaySystem.NativeCalls == 0 && DisplaySystem.MmtStarts == 0 && DisplaySystem.ChangeDisplaySettingsExCalls == 0 && DisplaySystem.SetDisplayConfigCalls == 0 && DisplaySystem.BrightnessCalls == 0 && DisplaySystem.DdcCalls == 0);
+byte[]? dataBefore = null;
+string? dataPath = null;
+if (repo != null)
+{
+    string logic = File.ReadAllText(Path.Combine(repo, "next", "BongHub.Next", "DisplayPresets.cs"));
+    dataPath = Path.Combine(repo, "data", "config.json");
+    dataBefore = File.ReadAllBytes(dataPath);
+    Check("preset logic file does not call display apis", !logic.Contains("DllImport") && !logic.Contains("Process.Start") && !logic.Contains("MultiMonitorTool") && !logic.Contains("dxva2.dll") && !logic.Contains("user32.dll") && !logic.Contains("SetMonitorBrightness(") && !logic.Contains("SetVCPFeature("));
+}
+RunExtras();
+if (dataBefore != null && dataPath != null)
+    Check("preset tests do not write data/", File.ReadAllBytes(dataPath).AsSpan().SequenceEqual(dataBefore));
+const string PresetCfg = "{\"Version\":2,\"Presets\":[{\"Name\":\"작업\",\"Hotkey\":\"Ctrl+Alt+1\",\"Enable\":[\"SAM747A\"],\"Primary\":\"SAM73D3\",\"Marker\":\"PRESET_KEEP\",\"Brightness\":[{\"Monitor\":\"SAM73D3\",\"Value\":30}]},{\"Name\":\"자리비움\",\"Hotkey\":\"Ctrl+Alt+0\",\"Marker\":\"AWAY_KEEP\"}],\"Pt\":{\"Marker\":\"PT_KEEP\"},\"Desk\":{\"Marker\":\"DESK_KEEP\"}}";
+const string PresetPretty = "{\r\n  \"Version\": 2,\r\n  \"Presets\": [\r\n    {\r\n      \"Name\": \"작업\",\r\n      \"Hotkey\": \"Ctrl+Alt+1\",\r\n      \"Marker\": \"PRESET_KEEP\"\r\n    },\r\n    {\r\n      \"Name\": \"자리비움\",\r\n      \"Hotkey\": \"Ctrl+Alt+0\",\r\n      \"Marker\": \"AWAY_KEEP\"\r\n    }\r\n  ],\r\n  \"Pt\": { \"Marker\": \"PT_KEEP\" },\r\n  \"Desk\": { \"Marker\": \"DESK_KEEP\" }\r\n}\r\n";
+Check("preset hotkey splices one value", NotesConfigPatch.TryApplyArrayField(PresetCfg, "Presets", 0, "Hotkey", JsonValue.Create("Ctrl+Alt+2"), out string preseted)
+    && preseted == PresetCfg.Replace("\"Hotkey\":\"Ctrl+Alt+1\"", "\"Hotkey\":\"Ctrl+Alt+2\"")
+    && preseted.Contains("PRESET_KEEP") && preseted.Contains("AWAY_KEEP") && preseted.Contains("\"Hotkey\":\"Ctrl+Alt+0\"") && preseted.Contains("PT_KEEP") && preseted.Contains("DESK_KEEP") && preseted.Contains("\"Value\":30"));
+Check("preset hotkey keeps pretty formatting", NotesConfigPatch.TryApplyArrayField(PresetPretty, "Presets", 0, "Hotkey", JsonValue.Create("Ctrl+Alt+2"), out string presetPretty)
+    && presetPretty == PresetPretty.Replace("\"Hotkey\": \"Ctrl+Alt+1\"", "\"Hotkey\": \"Ctrl+Alt+2\"") && presetPretty.Contains("\"Hotkey\": \"Ctrl+Alt+0\"") && presetPretty.Contains("AWAY_KEEP"));
+Check("preset hotkey byte span", OnlyToken(PresetCfg, preseted, out string presetOld, out string presetNew) && presetOld == "Ctrl+Alt+1" && presetNew == "Ctrl+Alt+2");
+
 Console.WriteLine(fail == 0 ? "RESULT PASS" : "RESULT FAIL " + fail);
 return fail == 0 ? 0 : 1;
+
+void RunExtras()
+{
+    var oldB = PresetExtras.Bright; var oldF = PresetExtras.FindDesk; var oldR = PresetExtras.RestoreDesk; var oldS = PresetExtras.Signature; var oldSl = PresetExtras.Sleep;
+    var oldSt = PresetExtras.StampFile; var oldWS = PresetExtras.WorkStampFile; var oldMx = PresetExtras.WorkMutexName;
+    var oldFW = PresetExtras.FindWork; var oldLW = PresetExtras.LaunchWork; var oldLM = PresetExtras.WorkLaunchMissing;
+    string dir = Path.Combine(Path.GetTempPath(), "bhnext_extras_" + Environment.ProcessId);
+    try
+    {
+        Directory.CreateDirectory(dir);
+        PresetExtras.StampFile = Path.Combine(dir, "desk.stamp");
+        PresetExtras.WorkStampFile = Path.Combine(dir, "work.stamp");
+        PresetExtras.WorkMutexName = "BongHubNextExtras" + Environment.ProcessId;
+        try { File.Delete(PresetExtras.StampFile); } catch { }
+        try { File.Delete(PresetExtras.WorkStampFile); } catch { }
+        int slept = 0; PresetExtras.Sleep = ms => slept += ms;
+        int sigCalls = 0; PresetExtras.Signature = () => { sigCalls++; return sigCalls < 5 ? "changing" + sigCalls : "stable"; };
+        var old = PresetCodec.ReadFirst("{\"Presets\":[{\"Name\":\"작업\",\"Hotkey\":\"Ctrl+Alt+1\"}]}");
+        Check("3.1 preset migrates (no brightness, no link)", old.Brightness != null && old.Brightness.Count == 0 && old.DeskLayout == "");
+        Check("3.3 preset migrates (no workspace link)", old.Workspace == "");
+        Check("no extras -> nothing runs", !PresetExtras.HasWork(old));
+        var bad = PresetCodec.ReadFirst("{\"Presets\":[{\"Name\":\"x\",\"Brightness\":[{\"Monitor\":null,\"Value\":250},null]}]}");
+        Check("bad brightness values clamped", bad.Brightness.Count == 1 && bad.Brightness[0].Value == 100 && bad.Brightness[0].Monitor == "");
+        var p = new MonitorPreset { Name = "작업" };
+        p.Brightness.Add(new BrightTarget { Monitor = "", Value = 60 });
+        p.Brightness.Add(new BrightTarget { Monitor = "SAM73D3", Value = 30 });
+        p.Brightness.Add(new BrightTarget { Monitor = "GSM76F5", Value = -1 });
+        var tg = PresetExtras.Targets(p, new[] { "SAM73D3", "SAM747A", "GSM76F5" });
+        Check("per-monitor value wins, '변경 안 함' skipped", tg["SAM73D3"] == 30 && tg["SAM747A"] == 60 && !tg.ContainsKey("GSM76F5"));
+        var mb = new FakeBright();
+        mb.Unsupported.Add("DRS2555");
+        mb.Wake = calls => calls < 2 ? new List<string> { "SAM73D3", "DRS2555" } : new List<string> { "SAM73D3", "DRS2555", "SAM747A" };
+        PresetExtras.Bright = mb;
+        var statuses = new List<string>();
+        var p2 = new MonitorPreset { Name = "작업" };
+        p2.Brightness.Add(new BrightTarget { Monitor = "", Value = 80 });
+        p2.Brightness.Add(new BrightTarget { Monitor = "SAM747A", Value = 40 });
+        PresetExtras.Run(p2, x => statuses.Add(x));
+        Check("brightness all -> 80%", mb.Set_.ContainsKey("SAM73D3") && mb.Set_["SAM73D3"] == 80);
+        Check("late monitor set on retry", mb.Set_.ContainsKey("SAM747A") && mb.Set_["SAM747A"] == 40);
+        Check("unsupported monitor reported", PresetExtras.LastBright.Contains("실패") && PresetExtras.LastBright.Contains("DRS2555"));
+        Check("waited for stable screen + retry delay", slept >= PresetExtras.RetryDelay && slept <= 30000);
+        Check("status shown on overlay", statuses.Any(x => x.Contains("밝기")));
+        PresetExtras.Bright = new ThrowBright();
+        bool threw = false;
+        try { PresetExtras.Run(p2, _ => { }); } catch { threw = true; }
+        Check("backend exception contained", !threw && PresetExtras.LastBright.Contains("실패"));
+        PresetExtras.Bright = new FakeBright();
+        var lay = new LinkedDesk { Id = "L1", Name = "작업 배치" };
+        int restores = 0;
+        PresetExtras.FindDesk = id => id == "L1" ? lay : null;
+        PresetExtras.RestoreDesk = l => { restores++; return new DeskLinkResult { Ok = true, Moved = 12 }; };
+        var p3 = new MonitorPreset { Name = "작업", DeskLayout = "L1" };
+        PresetExtras.LinkedAt = DateTime.MinValue;
+        Check("no suppression before", !PresetExtras.LinkedRecently);
+        PresetExtras.Run(p3, _ => { });
+        Check("linked layout restored exactly once", restores == 1 && PresetExtras.LastDesk.Contains("작업 배치"));
+        Check("auto-restore suppressed right after linked restore", PresetExtras.LinkedRecently);
+        Check("cross-process stamp written", File.Exists(PresetExtras.StampFile));
+        PresetExtras.LinkedAt = DateTime.MinValue;
+        File.SetLastWriteTime(PresetExtras.StampFile, DateTime.Now.AddMinutes(-5));
+        Check("suppression expires", !PresetExtras.LinkedRecently);
+        var p4 = new MonitorPreset { Name = "x", DeskLayout = "GONE" };
+        restores = 0;
+        PresetExtras.Run(p4, _ => { });
+        Check("deleted layout -> notice, no restore", restores == 0 && PresetExtras.LastDesk.Contains("삭제"));
+        PresetExtras.RestoreDesk = _ => new DeskLinkResult { Ok = false, Error = "바탕화면 자동 정렬이 켜져 있어요" };
+        PresetExtras.Run(p3, _ => { });
+        Check("restore failure reported", PresetExtras.LastDesk.Contains("실패"));
+        var ws = new LinkedWork { Id = "W1", Name = "코딩" };
+        var order = new List<string>();
+        bool launchArg = true;
+        PresetExtras.FindWork = id => id == "W1" ? ws : null;
+        PresetExtras.WorkLaunchMissing = () => false;
+        PresetExtras.RestoreDesk = _ => { order.Add("desk"); return new DeskLinkResult { Ok = true, Moved = 3 }; };
+        PresetExtras.LaunchWork = (w, launch) => { order.Add("work"); launchArg = launch; return "'" + w.Name + "' · 배치 2개"; };
+        var p5 = new MonitorPreset { Name = "코딩", DeskLayout = "L1", Workspace = "W1" };
+        var st5 = new List<string>();
+        PresetExtras.Run(p5, x => st5.Add(x));
+        Check("workspace runs once right after icon restore", string.Join(",", order) == "desk,work");
+        Check("launch-missing setting followed, status shown", !launchArg && PresetExtras.LastWork.Contains("배치 2개") && st5.Any(x => x.Contains("창 배치")));
+        order.Clear();
+        PresetExtras.Run(p5, _ => { });
+        Check("duplicate run within 10 s skipped", !order.Contains("work") && PresetExtras.LastWork.Contains("건너뛰"));
+        File.SetLastWriteTime(PresetExtras.WorkStampFile, DateTime.Now.AddMinutes(-1));
+        order.Clear();
+        PresetExtras.Run(p5, _ => { });
+        Check("runs again on a later switch", order.Contains("work"));
+        var p6 = new MonitorPreset { Name = "y", Workspace = "GONE" };
+        order.Clear();
+        PresetExtras.Run(p6, _ => { });
+        Check("deleted workspace -> notice", !order.Contains("work") && PresetExtras.LastWork.Contains("삭제"));
+        try { File.Delete(PresetExtras.WorkStampFile); } catch { }
+        PresetExtras.LaunchWork = (_, _) => throw new Exception("boom");
+        bool thr = false;
+        try { PresetExtras.Run(p5, _ => { }); } catch { thr = true; }
+        Check("workspace failure contained", !thr && PresetExtras.LastWork.Contains("실패"));
+        Check("workspace-only preset has work", PresetExtras.HasWork(new MonitorPreset { Workspace = "W1" }));
+        Check("summary text", PresetExtras.BrightSummary(p).Contains("SAM73D3 30%") && (PresetExtras.BrightSummary(p) == "적용: SAM73D3 30%, 전체 60%" || PresetExtras.BrightSummary(p).Contains("전체 60%")));
+    }
+    catch (Exception ex) { Check("extras exception", false, ex.ToString()); }
+    finally
+    {
+        PresetExtras.Bright = oldB; PresetExtras.FindDesk = oldF; PresetExtras.RestoreDesk = oldR; PresetExtras.Signature = oldS; PresetExtras.Sleep = oldSl;
+        PresetExtras.StampFile = oldSt; PresetExtras.WorkStampFile = oldWS; PresetExtras.WorkMutexName = oldMx;
+        PresetExtras.FindWork = oldFW; PresetExtras.LaunchWork = oldLW; PresetExtras.WorkLaunchMissing = oldLM;
+        try { Directory.Delete(dir, true); } catch { }
+    }
+}
 
 static string? FindRepo()
 {

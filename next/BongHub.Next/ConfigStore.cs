@@ -3,10 +3,9 @@ using System.Text.Json.Nodes;
 
 namespace BongHub.Next;
 
-public sealed class PresetSnapshot { public string Name { get; set; } = ""; public string Hotkey { get; set; } = ""; }
 public sealed class NotesSettings { public string DefaultColor = "g:blocks"; public bool Gradient = true; public float FontSize = 11; public int Opacity = 100; public bool OpenOnStartup = true; public string Hotkey = "Ctrl+Alt+N"; }
 public sealed class RuleSnapshot { public string Name = ""; public string Process = ""; public bool Enabled = true; }
-public sealed class WorkspaceSnapshot { public string Name = ""; public List<WorkspaceItem> Apps = new(); }
+public sealed class WorkspaceSnapshot { public string Id = ""; public string Name = ""; public List<WorkspaceItem> Apps = new(); }
 public sealed class ToySnapshot { public string Name = ""; public bool Enabled; public string Hotkey = ""; }
 
 /// <summary>
@@ -15,7 +14,7 @@ public sealed class ToySnapshot { public string Name = ""; public bool Enabled; 
 /// </summary>
 public static class ConfigStore
 {
-    public static List<PresetSnapshot> Presets { get; } = new();
+    public static List<MonitorPreset> Presets { get; } = new();
     public static NotesSettings Notes { get; private set; } = new();
     public static List<string> TabOrder { get; } = new();
     public static bool IdleEnabled { get; private set; } = true;
@@ -53,7 +52,7 @@ public static class ConfigStore
             if (!File.Exists(AppEnv.ConfigPath)) { Defaults(); return; }
             var root = JsonNode.Parse(File.ReadAllText(AppEnv.ConfigPath, Encoding.UTF8)) as JsonObject;
             if (root?["Presets"] is JsonArray arr)
-                foreach (var p in arr.OfType<JsonObject>()) Presets.Add(new PresetSnapshot { Name = Str(p["Name"]), Hotkey = Str(p["Hotkey"]) });
+                foreach (var p in arr.OfType<JsonObject>()) Presets.Add(PresetCodec.FromObject(p));
             if (root?["Notes"] is JsonObject n)
             {
                 Notes.DefaultColor = NoteColors.Valid(Str(n["DefaultColor"])) ? Str(n["DefaultColor"]) : "g:blocks";
@@ -105,7 +104,7 @@ public static class ConfigStore
                 if (pt["Work"] is JsonObject work && work["Items"] is JsonArray items)
                     foreach (var item in items.OfType<JsonObject>())
                     {
-                        var ws = new WorkspaceSnapshot { Name = Str(item["Name"]) };
+                        var ws = new WorkspaceSnapshot { Id = Str(item["Id"]), Name = Str(item["Name"]) };
                         if (item["Apps"] is JsonArray apps)
                             foreach (var a in apps.OfType<JsonObject>())
                                 ws.Apps.Add(new WorkspaceItem { Enabled = Bool(a["Enabled"], true), Process = Str(a["Process"]), Title = Str(a["Title"]), Path = Str(a["Path"]), X = (int)Num(a["X"], 0), Y = (int)Num(a["Y"], 0), W = (int)Num(a["W"], 0), H = (int)Num(a["H"], 0), State = Str(a["State"]).Length > 0 ? Str(a["State"]) : "normal" });
@@ -121,7 +120,7 @@ public static class ConfigStore
         if (node is not JsonObject o) { PowerToys.Add(new ToySnapshot { Name = name }); return; }
         PowerToys.Add(new ToySnapshot { Name = name, Enabled = Bool(o["Enabled"], false), Hotkey = Str(o["Hotkey"]) });
     }
-    static void Defaults() { if (Presets.Count == 0) { Presets.Add(new() { Name = "작업", Hotkey = "Ctrl+Alt+1" }); Presets.Add(new() { Name = "자리비움", Hotkey = "Ctrl+Alt+0" }); } }
+    static void Defaults() { if (Presets.Count == 0) { Presets.Add(new MonitorPreset { Name = "작업", Hotkey = "Ctrl+Alt+1" }); Presets.Add(new MonitorPreset { Name = "자리비움", Hotkey = "Ctrl+Alt+0" }); } }
     static string Str(JsonNode? n) { try { return n?.GetValue<string>() ?? ""; } catch { return n?.ToString() ?? ""; } }
     static bool Bool(JsonNode? n, bool d) { try { return n?.GetValue<bool>() ?? d; } catch { return d; } }
     static double Num(JsonNode? n, double d) { try { return n?.GetValue<double>() ?? d; } catch { return d; } }

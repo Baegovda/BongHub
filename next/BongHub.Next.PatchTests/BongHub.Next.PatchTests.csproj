@@ -11,5 +11,6 @@
     <Compile Include="..\BongHub.Next\DesktopIcons.cs" Link="DesktopIcons.cs" />
     <Compile Include="..\BongHub.Next\WindowControl.cs" Link="WindowControl.cs" />
     <Compile Include="..\BongHub.Next\PowerToysLogic.cs" Link="PowerToysLogic.cs" />
+    <Compile Include="..\BongHub.Next\DisplayPresets.cs" Link="DisplayPresets.cs" />
   </ItemGroup>
 </Project>

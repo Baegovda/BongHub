@@ -190,6 +190,30 @@ public static class SmokeTest
         try { PtSystem.Touch(); } catch (InvalidOperationException) { ptThrew = true; }
         t.Check("powertoys effects stay off hooks and hardware", ptThrew && PtSystem.NativeCalls == 0 && !PtDefaults.Zones && !PtDefaults.Grab && !PtDefaults.Paste && PtDefaults.Resizer && !GrabMath.CanGrab(false, false, true, false, false));
 
+        var workPlan = new MonitorPreset { Name = "작업", Primary = "SAM73D3", Layout = "work_layout.cfg" };
+        workPlan.Enable.Add("SAM747A");
+        workPlan.Enable.Add("SAM73D3");
+        var awayPlan = new MonitorPreset { Name = "자리비움", Primary = "GSM76F5" };
+        awayPlan.Disable.Add("SAM73D3");
+        var fakeDisplay = new FakeDisplay();
+        fakeDisplay.Apply(PresetPlan.Commands(workPlan));
+        fakeDisplay.Apply(PresetPlan.Commands(awayPlan));
+        t.Check("fake display records the preset plan", string.Join("|", fakeDisplay.Log) == "enable SAM747A|enable SAM73D3|load work_layout.cfg|primary SAM73D3|primary GSM76F5|disable SAM73D3" && DisplaySystem.NativeCalls == 0 && DisplaySystem.MmtStarts == 0);
+        var brightPlan = new MonitorPreset { Name = "작업" };
+        brightPlan.Brightness.Add(new BrightTarget { Monitor = "", Value = 60 });
+        brightPlan.Brightness.Add(new BrightTarget { Monitor = "SAM73D3", Value = 30 });
+        brightPlan.Brightness.Add(new BrightTarget { Monitor = "GSM76F5", Value = -1 });
+        var targets = PresetExtras.Targets(brightPlan, new[] { "SAM73D3", "SAM747A", "GSM76F5" });
+        t.Check("brightness target prefers one monitor", targets["SAM73D3"] == 30 && targets["SAM747A"] == 60 && !targets.ContainsKey("GSM76F5") && PresetExtras.BrightSummary(brightPlan).Contains("SAM73D3 30%"));
+        int displayBlocks = w.DisplayBlocks;
+        int workRuns = PresetExtras.WorkRuns, deskRestores = PresetExtras.DeskRestores;
+        w.RequestApplyPreset("작업");
+        w.RequestApplyPreset("자리비움");
+        bool displayThrew = false, brightThrew = false;
+        try { new RealDisplay().Apply(new[] { "enable SAM73D3" }); } catch (InvalidOperationException) { displayThrew = true; }
+        try { new RealBright().Set("SAM73D3", 30, out _); } catch (InvalidOperationException) { brightThrew = true; }
+        t.Check("display apis stay off for 작업 and 자리비움", displayThrew && brightThrew && w.DisplayBlocks == displayBlocks + 2 && w.DisplayAction == "blocked" && DisplaySystem.NativeCalls == 0 && DisplaySystem.MmtStarts == 0 && DisplaySystem.ChangeDisplaySettingsExCalls == 0 && DisplaySystem.SetDisplayConfigCalls == 0 && DisplaySystem.BrightnessCalls == 0 && DisplaySystem.DdcCalls == 0 && PresetExtras.WorkRuns == workRuns && PresetExtras.DeskRestores == deskRestores);
+
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);
         meta.Color = "g:lemon";   // one of the lightest gradients: hardest case for white text
