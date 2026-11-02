@@ -29,6 +29,11 @@ public static class ConfigStore
     public static string DeskHotkeySave { get; private set; } = "";
     public static string DeskHotkeyRestore { get; private set; } = "";
     public static bool DeskAutoSave { get; private set; } = true;
+    public static int DeskAutoSaveMinutes { get; private set; } = 10;
+    public static bool DeskSaveOnExit { get; private set; } = true;
+    public static bool DeskSaveBeforeSwitch { get; private set; } = true;
+    public static bool DeskRestoreOnChange { get; private set; } = true;
+    public static bool DeskRestoreOnStartup { get; private set; }
     public static List<ToySnapshot> PowerToys { get; } = new();
     public static string LoadError = "";
     public static int Writes;
@@ -37,7 +42,8 @@ public static class ConfigStore
     {
         Presets.Clear(); Notes = new NotesSettings(); TabOrder.Clear(); Rules.Clear(); PowerToys.Clear();
         IdleEnabled = true; IdleMinutes = 30; IdlePreset = ""; SkipIfAudio = true; OverlayEnabled = true; OverlayOpacity = 82;
-        KakaoAdBlock = false; KakaoDark = false; DeskHotkeySave = ""; DeskHotkeyRestore = ""; DeskAutoSave = true;
+        KakaoAdBlock = false; KakaoDark = false; DeskHotkeySave = ""; DeskHotkeyRestore = "";
+        DeskAutoSave = true; DeskAutoSaveMinutes = 10; DeskSaveOnExit = true; DeskSaveBeforeSwitch = true; DeskRestoreOnChange = true; DeskRestoreOnStartup = false;
         LoadError = "";
         try
         {
@@ -69,6 +75,11 @@ public static class ConfigStore
             if (root?["Desk"] is JsonObject d)
             {
                 DeskAutoSave = Bool(d["AutoSave"], true);
+                DeskAutoSaveMinutes = Math.Clamp((int)Num(d["AutoSaveMinutes"], 10), 1, 240);
+                DeskSaveOnExit = Bool(d["SaveOnExit"], true);
+                DeskSaveBeforeSwitch = Bool(d["SaveBeforeSwitch"], true);
+                DeskRestoreOnChange = Bool(d["RestoreOnChange"], true);
+                DeskRestoreOnStartup = Bool(d["RestoreOnStartup"], false);
                 DeskHotkeySave = Str(d["HotkeySave"]);
                 DeskHotkeyRestore = Str(d["HotkeyRestore"]);
             }
@@ -132,6 +143,18 @@ public static class ConfigStore
     {
         OverlayEnabled = enabled; OverlayOpacity = opacity;
     }
+    public static void SetDeskFlag(string key, bool value)
+    {
+        switch (key)
+        {
+            case "AutoSave": DeskAutoSave = value; break;
+            case "SaveOnExit": DeskSaveOnExit = value; break;
+            case "SaveBeforeSwitch": DeskSaveBeforeSwitch = value; break;
+            case "RestoreOnChange": DeskRestoreOnChange = value; break;
+            case "RestoreOnStartup": DeskRestoreOnStartup = value; break;
+        }
+    }
+    public static void SetDeskMinutes(int minutes) { DeskAutoSaveMinutes = Math.Clamp(minutes, 1, 240); }
     public static int CountNotes() => NoteStore.All.Count;
 }
 

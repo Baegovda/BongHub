@@ -25,6 +25,9 @@ public partial class App : Application
         AppEnv.RenderModeLabel = "software";
         base.OnStartup(e);
         AppEnv.Init(e.Args);
+        LayoutStore.DataFolder = () => AppEnv.DataDir;
+        DesktopGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden;
+        ScreenMap.Live = () => Win32.Monitors().Select(m => new MonitorSpec(m.W, m.H, m.X, m.Y, m.Primary)).ToList();
         AppEnv.Mark("onstartup");
         DispatcherUnhandledException += (_, ex) => { AppEnv.Log("unhandled: " + ex.Exception); ex.Handled = true; };
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => AppEnv.Log("fatal: " + ex.ExceptionObject);
@@ -68,7 +71,8 @@ public partial class App : Application
         // --tray --off is the tray-only baseline and does register the icon.
         if (!AppEnv.Off || AppEnv.Has("--tray")) tray = new TrayService(this, registerShell: true);
         // --off (tests and the memory baseline) must not register a global hotkey or create the message window.
-        if (!AppEnv.Off) NoteHotkey.Start(tray);
+        // Arming only allows a later save/restore click to open the desktop list view. It does not open it now.
+        if (!AppEnv.Off) { NoteHotkey.Start(tray); DesktopGate.Arm(); }
         SessionEnding += (_, _) => RequestShutdown();
         // settings window first; notes then open one per idle tick so the first frame is not held up by big RTFs
         if (AppEnv.IdleHidden) ShowThenHide();
