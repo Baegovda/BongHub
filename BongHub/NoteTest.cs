@@ -347,6 +347,57 @@ public static class NoteTest
         }
         else t.Check("viewer zoom", false, "no viewer");
 
+        if (host != null)
+        {
+            t.Check("toolbar stays visible", host.Bar.Opacity >= 0.99 && host.NewBtn.IsVisible && host.FontBtn.IsVisible && host.ColorBtn.IsVisible && host.ListBtn.IsVisible && host.PinBtn.IsVisible && host.CloseBtn.IsVisible);
+            host.SetTitle("회의록");
+            string titleRaw = File.ReadAllText(NoteStore.MetaPath(host.Meta.Id), Encoding.UTF8);
+            var titleBack = NoteStore.Parse(titleRaw);
+            var titleOld = NoteStore.Parse("{\"Id\":\"legacy\",\"Color\":\"yellow\",\"X\":0,\"Y\":0,\"W\":10,\"H\":10,\"TopMost\":false,\"Open\":true,\"Zoom\":1,\"Text\":\"본문\",\"Modified\":\"\\/Date(0)\\/\"}");
+            var titleOrder = new[] { "Id", "Color", "X", "Y", "W", "H", "TopMost", "Open", "Zoom", "Text", "Modified" };
+            var titleIdx = titleOrder.Select(k => titleRaw.IndexOf("\"" + k + "\":", StringComparison.Ordinal)).ToArray();
+            t.Check("title persists and old meta ignores it", host.TitleHint.Text == "제목" && titleBack != null && titleBack.Title == "회의록" && titleRaw.Contains("\"Title\":\"회의록\"") && titleRaw.IndexOf("\"Modified\":", StringComparison.Ordinal) < titleRaw.IndexOf("\"Title\":", StringComparison.Ordinal) && titleIdx.All(i => i >= 0) && titleIdx.Zip(titleIdx.Skip(1)).All(p => p.First < p.Second) && titleOld != null && titleOld.Title.Length == 0);
+            host.Editor.Document.Blocks.Clear();
+            for (int line = 0; line < 40; line++)
+                host.Editor.Document.Blocks.Add(new Paragraph(new Run("줄 " + line + " 스크롤 유지")) { FontSize = 28 });
+            host.UpdateLayout();
+            host.Editor.UpdateLayout();
+            var hostScroll = host.EditorScroll;
+            if (hostScroll != null) hostScroll.ScrollToVerticalOffset(Math.Max(hostScroll.ScrollableHeight, 0));
+            host.Editor.CaretPosition = host.Editor.Document.ContentEnd;
+            double scrollY = host.ReadScroll();
+            int caret = host.ReadCaret();
+            host.ParkEditor();
+            host.UpdateLayout();
+            await host.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+            double parked = host.ReadScroll();
+            host.ResumeEditor();
+            host.UpdateLayout();
+            await host.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+            t.Check("scroll and caret survive focus loss", scrollY > 8 && Math.Abs(parked - scrollY) < 3 && Math.Abs(host.ReadScroll() - scrollY) < 3 && host.ReadCaret() == caret, $"y={scrollY:0} parked={parked:0} back={host.ReadScroll():0} caret {caret}/{host.ReadCaret()}");
+            string clipPng = Path.Combine(Path.GetTempPath(), "bonghub_note_clip_" + Environment.ProcessId + ".png");
+            File.WriteAllBytes(clipPng, RtfPict.TinyPngBytes);
+            host.Editor.Document.Blocks.Clear();
+            var clipPara = new Paragraph(new Run("앞 "));
+            host.Editor.Document.Blocks.Add(clipPara);
+            host.Editor.CaretPosition = clipPara.ContentEnd;
+            host.InsertImageFile(clipPng);
+            host.Editor.CaretPosition = host.Editor.Document.ContentEnd;
+            host.Editor.CaretPosition.InsertTextInRun(" 뒤");
+            host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+            int clipCalls = NoteClipSession.SystemCalls;
+            bool mixedCopied = host.CopyMixed();
+            var copiedPieces = NoteClip.Unpack(NoteClipSession.LastPack);
+            try { File.Delete(clipPng); } catch { }
+            t.Check("selection copy keeps text and image", mixedCopied && copiedPieces.Any(p => p.Text.Contains("앞")) && copiedPieces.Any(p => p.Png is { Length: > 0 }) && !NoteClip.Plain(copiedPieces).Contains("Image") && NoteClipSession.SystemCalls == clipCalls && (NoteClipSession.LastRtf ?? "").Contains("pngblip") && (NoteClipSession.LastHtml ?? "").Contains("앞") && NoteClipSession.LastHadBitmap);
+        }
+        else
+        {
+            t.Check("toolbar stays visible", false, "no note");
+            t.Check("title persists and old meta ignores it", false, "no note");
+            t.Check("scroll and caret survive focus loss", false, "no note");
+            t.Check("selection copy keeps text and image", false, "no note");
+        }
         t.Check("link open does not launch during notetest", host != null && host.TryOpenLink("go https://example.com/x", 3, launch: true) && host.LastLink.StartsWith("https://") && !host.LinkLaunched);
         t.Check("shortcut ctrl+t is handled", host != null && host.HandleShortcut(System.Windows.Input.Key.T, System.Windows.Input.ModifierKeys.Control));
     }

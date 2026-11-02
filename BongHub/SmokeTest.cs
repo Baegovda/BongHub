@@ -331,9 +331,50 @@ public static class SmokeTest
             t.Check($"note text contrast [{key}] ≥ 7", c.ratio >= 7, $"{c.ratio:0.0}:1 ({c.fg} on {c.bg})");
         }
         note.SetColor("g:aurora"); await TestKit.Delay(260);
-        note.Bar.BeginAnimation(UIElement.OpacityProperty, null); note.Bar.Opacity = 1;   // show the hover bar for the screenshot
+        t.Check("note toolbar stays visible", note.Bar.Opacity >= 0.99 && note.NewBtn.IsVisible && note.FontBtn.IsVisible && note.ColorBtn.IsVisible && note.ListBtn.IsVisible && note.PinBtn.IsVisible && note.CloseBtn.IsVisible);
+        note.Bar.BeginAnimation(UIElement.OpacityProperty, null); note.Bar.Opacity = 1;
         TestKit.SavePng(note, DarkUnder, "note_aurora.png");
         note.SetColor("g:peach"); await TestKit.Delay(260); TestKit.SavePng(note, DarkUnder, "note_peach.png");
+        note.SetTitle("회의");
+        string titleRaw = File.ReadAllText(NoteStore.MetaPath(note.Meta.Id));
+        var titleBack = NoteStore.Parse(titleRaw);
+        var titleOld = NoteStore.Parse("{\"Id\":\"legacy\",\"Color\":\"g:aurora\",\"X\":0,\"Y\":0,\"W\":10,\"H\":10,\"TopMost\":false,\"Open\":true,\"Zoom\":1,\"Text\":\"\",\"Modified\":\"\\/Date(0)\\/\"}");
+        int titleAt = titleRaw.IndexOf("\"Title\":", StringComparison.Ordinal);
+        int modifiedAt = titleRaw.IndexOf("\"Modified\":", StringComparison.Ordinal);
+        t.Check("note title persists without a color name", note.TitleHint.Text == "제목" && titleBack != null && titleBack.Title == "회의" && titleAt > modifiedAt && titleOld != null && titleOld.Title.Length == 0 && !titleRaw.Contains("오로라"));
+        note.Editor.Document.Blocks.Clear();
+        for (int line = 0; line < 40; line++)
+            note.Editor.Document.Blocks.Add(new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run("줄 " + line + " 스크롤 유지")) { FontSize = 28 });
+        note.UpdateLayout();
+        note.Editor.UpdateLayout();
+        var noteScroll = note.EditorScroll;
+        if (noteScroll != null) noteScroll.ScrollToVerticalOffset(Math.Max(noteScroll.ScrollableHeight, 0));
+        note.Editor.CaretPosition = note.Editor.Document.ContentEnd;
+        double scrollY = note.ReadScroll();
+        int caret = note.ReadCaret();
+        note.ParkEditor();
+        note.UpdateLayout();
+        await note.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+        double parked = note.ReadScroll();
+        note.ResumeEditor();
+        note.UpdateLayout();
+        await note.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+        t.Check("note scroll and caret survive focus loss", scrollY > 8 && Math.Abs(parked - scrollY) < 3 && Math.Abs(note.ReadScroll() - scrollY) < 3 && note.ReadCaret() == caret, $"y={scrollY:0} parked={parked:0} back={note.ReadScroll():0} caret {caret}/{note.ReadCaret()}");
+        string clipPng = Path.Combine(Path.GetTempPath(), "bonghub_smoke_clip_" + Environment.ProcessId + ".png");
+        File.WriteAllBytes(clipPng, RtfPict.TinyPngBytes);
+        note.Editor.Document.Blocks.Clear();
+        var clipPara = new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run("앞 "));
+        note.Editor.Document.Blocks.Add(clipPara);
+        note.Editor.CaretPosition = clipPara.ContentEnd;
+        note.InsertImageFile(clipPng);
+        note.Editor.CaretPosition = note.Editor.Document.ContentEnd;
+        note.Editor.CaretPosition.InsertTextInRun(" 뒤");
+        note.Editor.Selection.Select(note.Editor.Document.ContentStart, note.Editor.Document.ContentEnd);
+        int clipCalls = NoteClipSession.SystemCalls;
+        bool copied = note.CopyMixed();
+        var copiedPieces = NoteClip.Unpack(NoteClipSession.LastPack);
+        try { File.Delete(clipPng); } catch { }
+        t.Check("selection copy keeps text and image off the clipboard", copied && copiedPieces.Any(p => p.Text.Contains("앞")) && copiedPieces.Any(p => p.Png is { Length: > 0 }) && !NoteClip.Plain(copiedPieces).Contains("Image") && NoteClipSession.SystemCalls == clipCalls && (NoteClipSession.LastRtf ?? "").Contains("pngblip") && (NoteClipSession.LastHtml ?? "").Contains("앞") && NoteClipSession.LastHadBitmap);
 
         await TrayChecks(app, t, w);
 
