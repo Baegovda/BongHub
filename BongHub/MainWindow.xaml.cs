@@ -258,11 +258,21 @@ public partial class MainWindow : Window
 
     public string DisplayAction { get; private set; } = "";
     public int DisplayBlocks { get; private set; }
+    public string ActivePreset { get; private set; } = "";
+    public string LastPresetToast { get; private set; } = "";
     int displayBusy;
+
+    /// <summary>Test hook: the layout the user is already in, without touching a monitor.</summary>
+    public void RememberPreset(string name) => ActivePreset = name ?? "";
 
     /// <summary>Explicit click. Tests, <c>--off</c>, and CI return here before any display command runs.</summary>
     public void RequestApplyPreset(string name)
     {
+        if (PresetApplyPolicy.IsCurrent(ActivePreset, name))
+        {
+            LastPresetToast = PresetApplyPolicy.Toast(name);
+            return;
+        }
         if (!DisplayGate.RealAllowed)
         {
             DisplayBlocks++;
@@ -276,7 +286,7 @@ public partial class MainWindow : Window
         DisplayAction = "applying";
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            try { ApplyPresetNow(plan); DisplayAction = "applied " + plan.Name; }
+            try { ApplyPresetNow(plan); ActivePreset = plan.Name; DisplayAction = "applied " + plan.Name; }
             catch (Exception ex) { DisplayAction = ex.Message; }
             finally { Interlocked.Exchange(ref displayBusy, 0); }
         });

@@ -205,6 +205,8 @@ public partial class StickyNoteWindow : Window
         box.TextChanged += (_, _) => { UpdateHint(); if (loading) return; TextDirty = true; if (sizing) return; textTimer.Stop(); textTimer.Start(); };
         box.PreviewDragOver += (_, e) => { if (CanDrop(e.Data)) { e.Effects = DragDropEffects.Copy; e.Handled = true; } };
         box.Drop += (_, e) => { if (AcceptDrop(e.Data)) e.Handled = true; };
+        box.CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, (_, e) => { if (CopyMixed()) e.Handled = true; }));
+        box.CommandBindings.Add(new CommandBinding(ApplicationCommands.Paste, (_, e) => { if (PasteMixed()) e.Handled = true; }));
         box.PreviewMouseLeftButtonDown += OnEditorDown;
         box.PreviewMouseMove += OnEditorMove;
         box.PreviewMouseLeftButtonUp += OnEditorUp;
@@ -520,8 +522,8 @@ public partial class StickyNoteWindow : Window
             case Key.Add: GrowFont(1); return true;
             case Key.OemMinus:
             case Key.Subtract: GrowFont(-1); return true;
-            case Key.V: return PasteImage();
-            case Key.C: return CopySelectedImage();
+            case Key.V: return PasteMixed() || PasteImage();
+            case Key.C: return CopyMixed() || CopySelectedImage();
             default: return false;
         }
     }
@@ -786,6 +788,99 @@ public partial class StickyNoteWindow : Window
         return bytes;
     }
 
+    public bool CopyMixed()
+    {
+        var pieces = ExportPieces();
+        if (!pieces.Any(p => p.Png is { Length: > 0 })) return false;
+        string pack = NoteClip.Pack(pieces);
+        string plain = NoteClip.Plain(pieces);
+        NoteClipSession.Publish(pack, plain, NoteClip.ToRtf(pieces), pieces.FirstOrDefault(p => p.Png is { Length: > 0 })?.Png);
+        return true;
+    }
+
+    public bool PasteMixed()
+    {
+        if (AppEnv.ReadOnly) return false;
+        string? pack = NoteClipSession.LastPack;
+        if (NoteClipSession.AllowsSystem)
+        {
+            try
+            {
+                if (Clipboard.ContainsData(NoteClip.Format))
+                    pack = Clipboard.GetData(NoteClip.Format) as string ?? pack;
+            }
+            catch (Exception e) { AppEnv.Log("paste note: " + e.Message); }
+        }
+        var pieces = NoteClip.Unpack(pack);
+        if (pieces.Count == 0 || !pieces.Any(p => p.Png is { Length: > 0 } || p.Text.Length > 0)) return false;
+        if (!pieces.Any(p => p.Png is { Length: > 0 })) return false;
+        foreach (var p in pieces)
+        {
+            if (p.Text.Length > 0)
+            {
+                Editor.CaretPosition.InsertTextInRun(p.Text);
+                TextDirty = true;
+            }
+            if (p.Png is { Length: > 0 }) InsertPng(p.Png);
+        }
+        textTimer.Stop(); textTimer.Start();
+        return true;
+    }
+
+    void InsertPng(byte[] png)
+    {
+        try
+        {
+            using var ms = new System.IO.MemoryStream(png);
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.StreamSource = ms;
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.EndInit();
+            bmp.Freeze();
+            InsertBitmap(bmp);
+        }
+        catch (Exception e) { AppEnv.Log("paste png: " + e.Message); }
+    }
+
+    List<NoteClipPiece> ExportPieces()
+    {
+        var pieces = new List<NoteClipPiece>();
+        var sb = new StringBuilder();
+        int image = 0;
+        void Flush()
+        {
+            if (sb.Length == 0) return;
+            pieces.Add(new NoteClipPiece { Text = sb.ToString() });
+            sb.Clear();
+        }
+        void Walk(IEnumerable<Inline> inlines)
+        {
+            foreach (var i in inlines)
+            {
+                if (i is Run r) sb.Append(r.Text);
+                else if (i is LineBreak) sb.Append('\n');
+                else if (i is Span s) Walk(s.Inlines);
+                else if (i is InlineUIContainer { Child: Image })
+                {
+                    Flush();
+                    var png = PngAt(image++);
+                    if (png != null) pieces.Add(new NoteClipPiece { Png = png });
+                }
+            }
+        }
+        foreach (var b in Document.Blocks)
+            if (b is Paragraph p) { Walk(p.Inlines); sb.Append('\n'); }
+        Flush();
+        return pieces;
+    }
+
+    byte[]? PngAt(int index)
+    {
+        if (index < 0 || index >= originalPicts.Count) return null;
+        return RtfPict.Parse(Encoding.ASCII.GetBytes(originalPicts[index].Group)).FirstOrDefault()?.Bytes;
+    }
+
     bool CopySelectedImage()
     {
         int i = selectedImage == null ? -1 : pictViews.IndexOf(selectedImage);
@@ -993,4 +1088,39 @@ public partial class StickyNoteWindow : Window
         Fx.Disappear(Root, () => Close());
     }
     protected override void OnClosed(EventArgs e) { textTimer.Stop(); metaTimer.Stop(); Win32.ForgetOffScreen(Win32.Handle(this)); NoteManager.Forget(this); base.OnClosed(e); }
+}
+
+/// <summary>Last note package. The system clipboard runs only outside test modes.</summary>
+public static class NoteClipSession
+{
+    public static string? LastPack { get; private set; }
+    public static int SystemCalls { get; private set; }
+    public static bool AllowsSystem => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest;
+
+    public static void Publish(string pack, string plain, string rtf, byte[]? png)
+    {
+        LastPack = pack;
+        if (!AllowsSystem) return;
+        SystemCalls++;
+        var data = new DataObject();
+        data.SetData(NoteClip.Format, pack);
+        data.SetData(DataFormats.UnicodeText, plain ?? "");
+        data.SetData(DataFormats.Rtf, rtf ?? "");
+        if (png is { Length: > 0 })
+        {
+            try
+            {
+                using var ms = new System.IO.MemoryStream(png);
+                var bmp = new BitmapImage();
+                bmp.BeginInit();
+                bmp.StreamSource = ms;
+                bmp.CacheOption = BitmapCacheOption.OnLoad;
+                bmp.EndInit();
+                bmp.Freeze();
+                data.SetImage(bmp);
+            }
+            catch { }
+        }
+        Clipboard.SetDataObject(data, copy: true);
+    }
 }

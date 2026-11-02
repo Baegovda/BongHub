@@ -701,6 +701,11 @@ void RunCloud()
         Check("cloud enabled keeps pretty formatting", NotesConfigPatch.TryApply(CloudPretty, "Cloud", "Enabled", JsonValue.Create(false), out string cloudPretty)
             && cloudPretty == CloudPretty.Replace("\"Enabled\": true", "\"Enabled\": false") && cloudPretty.Contains("\"PullMinutes\": 2") && cloudPretty.Contains("CLOUD_KEEP"));
         Check("cloud enabled byte span", OnlyToken(CloudJson, cloudPatched, out string cloudOld, out string cloudNew) && cloudOld == "true" && cloudNew == "false");
+var clip = NoteClip.Unpack(NoteClip.Pack(new[] { new NoteClipPiece { Text = "안녕 " }, new NoteClipPiece { Png = new byte[] { 0x89, 0x50, 0x4E, 0x47 } }, new NoteClipPiece { Text = "끝" } }));
+string clipPlain = NoteClip.Plain(clip);
+string clipRtf = NoteClip.ToRtf(clip);
+Check("note clip keeps text and png", clip.Count == 3 && clipPlain == "안녕 끝" && !clipPlain.Contains("Image") && clip[1].Png is { Length: 4 } && clipRtf.Contains("\\pngblip") && clipRtf.Contains("89504e47"));
+Check("active preset is not applied again", !PresetApplyPolicy.IsCurrent("", "작업") && PresetApplyPolicy.IsCurrent("작업", "작업") && PresetApplyPolicy.Toast("작업") == "이미 작업 상태입니다!" && !PresetApplyPolicy.IsCurrent("작업", "자리비움"));
     }
     catch (Exception ex) { Check("cloud exception", false, ex.ToString()); }
     finally { try { if (Directory.Exists(root)) Directory.Delete(root, true); } catch { } }

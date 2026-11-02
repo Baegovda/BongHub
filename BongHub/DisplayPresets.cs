@@ -119,6 +119,14 @@ public static class BrightSink
     public static BrightSet? Set;
 }
 
+public static class PresetApplyPolicy
+{
+    public static bool IsCurrent(string? active, string? requested)
+        => !string.IsNullOrEmpty(active) && string.Equals(active, requested, StringComparison.Ordinal);
+
+    public static string Toast(string name) => "이미 " + name + " 상태입니다!";
+}
+
 public static class PresetPlan
 {
     /// <summary>Same order as 3.4.x: enable, load layout, primary, disable. Nothing is executed.</summary>
