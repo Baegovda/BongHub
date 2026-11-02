@@ -290,6 +290,15 @@ public static class SmokeTest
         try { _ = new GitCloudTransport("https://github.com/Baegovda/BongHub.git", "main", "test"); } catch (InvalidOperationException) { cloudThrew = true; }
         t.Check("cloud stays off GitHub", cloudThrew && w.CloudBlocks == cloudBlocks + 1 && w.CloudAction == "blocked" && CloudSystem.NativeCalls == 0 && CloudSystem.GitStarts == 0 && CloudSystem.GhStarts == 0 && CloudSystem.NetworkCalls == 0);
 
+        var clip = NoteClip.Unpack(NoteClip.Pack(new[] { new NoteClipPiece { Text = "안녕" }, new NoteClipPiece { Png = new byte[] { 1, 2, 3, 4 } } }));
+        NoteClipSession.Publish(NoteClip.Pack(clip), NoteClip.Plain(clip), NoteClip.ToRtf(clip), clip[1].Png);
+        t.Check("note copy keeps text and the picture off the system clipboard", clip.Count == 2 && NoteClip.Plain(clip) == "안녕" && !NoteClip.Plain(clip).Contains("Image") && NoteClipSession.SystemCalls == 0 && NoteClip.ToRtf(clip).Contains("\\pngblip"));
+        int presetBlocks = w.DisplayBlocks;
+        int presetNatives = DisplaySystem.NativeCalls;
+        w.RememberPreset("작업");
+        w.RequestApplyPreset("작업");
+        t.Check("preset hotkey does not reapply the active layout", w.LastPresetToast == "이미 작업 상태입니다!" && w.DisplayBlocks == presetBlocks && DisplaySystem.NativeCalls == presetNatives);
+
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);
         meta.Color = "g:lemon";   // one of the lightest gradients: hardest case for white text
