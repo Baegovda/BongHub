@@ -369,9 +369,11 @@ public static class NoteTest
             int caret = host.ReadCaret();
             host.ParkEditor();
             host.UpdateLayout();
+            await host.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
             double parked = host.ReadScroll();
             host.ResumeEditor();
             host.UpdateLayout();
+            await host.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
             t.Check("scroll and caret survive focus loss", scrollY > 8 && Math.Abs(parked - scrollY) < 3 && Math.Abs(host.ReadScroll() - scrollY) < 3 && host.ReadCaret() == caret, $"y={scrollY:0} parked={parked:0} back={host.ReadScroll():0} caret {caret}/{host.ReadCaret()}");
             string clipPng = Path.Combine(Path.GetTempPath(), "bonghub_note_clip_" + Environment.ProcessId + ".png");
             File.WriteAllBytes(clipPng, RtfPict.TinyPngBytes);

@@ -91,8 +91,8 @@ public partial class StickyNoteWindow : Window
         ApplyTitle();
         TitleBox.TextChanged += (_, _) => OnTitleEdited();
         Viewer.Loaded += (_, _) => WatchScroll(Viewer);
-        Deactivated += (_, _) => RestoreView();
-        Activated += (_, _) => RestoreView();
+        Deactivated += (_, _) => HoldView();
+        Activated += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, RestoreView);
 
         NewBtn.Click += (_, _) => NoteManager.NewNote();
         FontBtn.Click += (_, _) => ToggleFormatBar();
@@ -215,9 +215,10 @@ public partial class StickyNoteWindow : Window
         box.PreviewMouseLeftButtonUp += OnEditorUp;
         box.PreviewMouseRightButtonUp += OnEditorRight;
         box.PreviewMouseDoubleClick += OnEditorDouble;
-        box.SelectionChanged += (_, _) => { if (!restoringView && box.IsKeyboardFocusWithin) HeldCaret = ReadCaret(); };
+        box.SelectionChanged += (_, _) => { if (!restoringView && !freezeCaret && box.IsKeyboardFocusWithin) HeldCaret = ReadCaret(); };
+        box.PreviewLostKeyboardFocus += (_, _) => HoldView();
+        box.LayoutUpdated += (_, _) => { if (freezeCaret) ApplyHeld(); };
         box.Loaded += (_, _) => WatchScroll(box);
-        box.LostKeyboardFocus += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(ReleaseEditorIfIdle));
         editor = box;
         EditorHost.Children.Insert(0, box);
         Viewer.Visibility = Visibility.Collapsed;
@@ -226,17 +227,17 @@ public partial class StickyNoteWindow : Window
         return box;
     }
 
-    void ReleaseEditorIfIdle()
+    void HoldView()
     {
-        if (editor == null || dragHandle >= 0 || Palette.IsOpen) return;
-        if (editor.IsKeyboardFocusWithin || FormatBar.IsKeyboardFocusWithin || EditorHost.IsKeyboardFocusWithin || TitleBox.IsKeyboardFocusWithin) return;
-        RememberView();
-        ParkEditor();
+        if (!freezeCaret) RememberView();
+        freezeCaret = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, RestoreView);
     }
 
     public double HeldScroll { get; private set; }
+    /// <summary>Caret as a character count from the start of the text, not a symbol offset.</summary>
     public int HeldCaret { get; private set; }
-    bool restoringView;
+    bool restoringView, freezeCaret, idleQueued;
 
     void WatchScroll(FrameworkElement host)
     {
@@ -270,70 +271,129 @@ public partial class StickyNoteWindow : Window
     public int ReadCaret()
     {
         if (editor == null) return HeldCaret;
-        try { return Math.Max(0, editor.Document.ContentStart.GetOffsetToPosition(editor.CaretPosition)); }
+        try { return CharsUntil(editor.Document, editor.CaretPosition); }
         catch { return HeldCaret; }
+    }
+
+    /// <summary>Characters in text runs before <paramref name="caret"/>. Element edges are not counted, so the number survives a focus change.</summary>
+    static int CharsUntil(FlowDocument doc, TextPointer caret)
+    {
+        int n = 0;
+        var pos = doc.ContentStart;
+        while (pos != null && pos.CompareTo(caret) < 0 && pos.CompareTo(doc.ContentEnd) < 0)
+        {
+            if (pos.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
+            {
+                int len = pos.GetTextRunLength(LogicalDirection.Forward);
+                var next = pos.GetPositionAtOffset(len, LogicalDirection.Forward);
+                if (next == null || next.CompareTo(caret) > 0)
+                {
+                    n += new TextRange(pos, caret).Text.Length;
+                    break;
+                }
+                n += len;
+                pos = next;
+            }
+            else
+            {
+                var next = pos.GetNextContextPosition(LogicalDirection.Forward);
+                if (next == null || next.CompareTo(pos) == 0) break;
+                pos = next;
+            }
+        }
+        return n;
+    }
+
+    static TextPointer PointerAtChars(FlowDocument doc, int chars)
+    {
+        if (chars <= 0) return doc.ContentStart.GetInsertionPosition(LogicalDirection.Forward) ?? doc.ContentStart;
+        int left = chars;
+        var pos = doc.ContentStart;
+        while (pos != null && pos.CompareTo(doc.ContentEnd) < 0)
+        {
+            if (pos.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
+            {
+                int len = pos.GetTextRunLength(LogicalDirection.Forward);
+                if (left <= len) return pos.GetPositionAtOffset(left, LogicalDirection.Forward) ?? doc.ContentEnd;
+                left -= len;
+                var next = pos.GetPositionAtOffset(len, LogicalDirection.Forward);
+                if (next == null || next.CompareTo(pos) == 0) break;
+                pos = next;
+            }
+            else
+            {
+                var next = pos.GetNextContextPosition(LogicalDirection.Forward);
+                if (next == null || next.CompareTo(pos) == 0) break;
+                pos = next;
+            }
+        }
+        return doc.ContentEnd;
     }
 
     public void RememberView()
     {
         var sv = EditorScroll;
-        if (sv != null && (sv.VerticalOffset > 1 || HeldScroll < 1)) HeldScroll = sv.VerticalOffset;
-        if (editor != null && editor.IsKeyboardFocusWithin) HeldCaret = ReadCaret();
+        if (sv != null && !(freezeCaret && sv.VerticalOffset + 1 < HeldScroll)) HeldScroll = sv.VerticalOffset;
+        if (editor != null && !freezeCaret) HeldCaret = ReadCaret();
+    }
+
+    void ApplyHeld()
+    {
+        if (restoringView) return;
+        restoringView = true;
+        try
+        {
+            var host = editor != null ? (FrameworkElement)editor : Viewer;
+            host.ApplyTemplate();
+            var sv = FindScroll(host);
+            if (sv != null && Math.Abs(sv.VerticalOffset - HeldScroll) > 0.5) sv.ScrollToVerticalOffset(HeldScroll);
+            if (editor != null)
+            {
+                var caret = PointerAtChars(editor.Document, HeldCaret);
+                if (editor.CaretPosition.CompareTo(caret) != 0) editor.CaretPosition = caret;
+            }
+        }
+        catch { }
+        finally { restoringView = false; }
     }
 
     public void RestoreView()
     {
-        void Apply()
+        ApplyHeld();
+        if (idleQueued) return;
+        idleQueued = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, () =>
+        {
+            idleQueued = false;
+            ApplyHeld();
+            var host = editor != null ? (FrameworkElement)editor : Viewer;
+            host.UpdateLayout();
+            ApplyHeld();
+            Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, () => freezeCaret = false);
+        });
+    }
+
+    /// <summary>Focus left the note. The document stays put; only the scroll and caret are put back.</summary>
+    public void ParkEditor()
+    {
+        RememberView();
+        freezeCaret = true;
+        if (editor != null)
         {
             restoringView = true;
             try
             {
-                UpdateLayout();
-                var host = editor != null ? (FrameworkElement)editor : Viewer;
-                host.ApplyTemplate();
-                host.UpdateLayout();
-                var sv = FindScroll(host);
-                if (sv != null)
-                {
-                    sv.UpdateLayout();
-                    sv.ScrollToVerticalOffset(HeldScroll);
-                }
-                if (editor != null)
-                {
-                    try
-                    {
-                        var caret = editor.Document.ContentStart.GetPositionAtOffset(HeldCaret, LogicalDirection.Forward);
-                        if (caret != null) editor.CaretPosition = caret;
-                    }
-                    catch { }
-                }
+                var start = editor.Document.ContentStart.GetInsertionPosition(LogicalDirection.Forward) ?? editor.Document.ContentStart;
+                if (editor.CaretPosition.CompareTo(start) != 0) editor.CaretPosition = start;
             }
+            catch { }
             finally { restoringView = false; }
-        }
-        Apply();
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, Apply);
-    }
-
-    /// <summary>Leaves the editor the way a focus loss does, then puts the scroll back.</summary>
-    public void ParkEditor()
-    {
-        RememberView();
-        if (editor != null)
-        {
-            var doc = editor.Document;
-            editor.Document = new FlowDocument();
-            EditorHost.Children.Remove(editor);
-            editor = null;
-            Viewer.Document = doc;
-            Viewer.Visibility = Visibility.Visible;
-            ApplyZoom();
         }
         RestoreView();
     }
 
     public void ResumeEditor()
     {
-        RememberView();
         EnsureEditor();
         RestoreView();
     }

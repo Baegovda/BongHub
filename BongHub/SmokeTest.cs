@@ -354,9 +354,11 @@ public static class SmokeTest
         int caret = note.ReadCaret();
         note.ParkEditor();
         note.UpdateLayout();
+        await note.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
         double parked = note.ReadScroll();
         note.ResumeEditor();
         note.UpdateLayout();
+        await note.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
         t.Check("note scroll and caret survive focus loss", scrollY > 8 && Math.Abs(parked - scrollY) < 3 && Math.Abs(note.ReadScroll() - scrollY) < 3 && note.ReadCaret() == caret, $"y={scrollY:0} parked={parked:0} back={note.ReadScroll():0} caret {caret}/{note.ReadCaret()}");
         string clipPng = Path.Combine(Path.GetTempPath(), "bonghub_smoke_clip_" + Environment.ProcessId + ".png");
         File.WriteAllBytes(clipPng, RtfPict.TinyPngBytes);
