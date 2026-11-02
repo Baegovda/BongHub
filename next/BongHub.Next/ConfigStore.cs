@@ -27,7 +27,9 @@ public static class ConfigStore
     public static List<WindowRule> WindowRules { get; } = new();
     public static List<WorkspaceSnapshot> Workspaces { get; } = new();
     public static bool KakaoAdBlock { get; private set; }
+    public static bool KakaoCompact { get; private set; } = true;
     public static bool KakaoDark { get; private set; }
+    public static bool KakaoAutoApply { get; private set; } = true;
     public static string DeskHotkeySave { get; private set; } = "";
     public static string DeskHotkeyRestore { get; private set; } = "";
     public static bool DeskAutoSave { get; private set; } = true;
@@ -44,7 +46,7 @@ public static class ConfigStore
     {
         Presets.Clear(); Notes = new NotesSettings(); TabOrder.Clear(); Rules.Clear(); WindowRules.Clear(); Workspaces.Clear(); PowerToys.Clear();
         IdleEnabled = true; IdleMinutes = 30; IdlePreset = ""; SkipIfAudio = true; OverlayEnabled = true; OverlayOpacity = 82;
-        KakaoAdBlock = false; KakaoDark = false; DeskHotkeySave = ""; DeskHotkeyRestore = "";
+        KakaoAdBlock = false; KakaoCompact = true; KakaoDark = false; KakaoAutoApply = true; DeskHotkeySave = ""; DeskHotkeyRestore = "";
         DeskAutoSave = true; DeskAutoSaveMinutes = 10; DeskSaveOnExit = true; DeskSaveBeforeSwitch = true; DeskRestoreOnChange = true; DeskRestoreOnStartup = false;
         LoadError = "";
         try
@@ -85,7 +87,13 @@ public static class ConfigStore
                     WindowRules.Add(rule);
                     Rules.Add(new RuleSnapshot { Name = rule.Name, Process = rule.Process, Enabled = rule.Enabled });
                 }
-            if (root?["Kakao"] is JsonObject k) { KakaoAdBlock = Bool(k["AdBlock"], false); KakaoDark = Bool(k["Dark"], false); }
+            if (root?["Kakao"] is JsonObject k)
+            {
+                KakaoAdBlock = Bool(k["AdBlock"], false);
+                KakaoCompact = Bool(k["Compact"], true);
+                KakaoDark = Bool(k["Dark"], false);
+                KakaoAutoApply = Bool(k["AutoApply"], true);
+            }
             if (root?["Desk"] is JsonObject d)
             {
                 DeskAutoSave = Bool(d["AutoSave"], true);
@@ -188,6 +196,27 @@ public static class ConfigStore
                 return false;
             var toy = PowerToys.FirstOrDefault(t => t.Name == child);
             if (toy != null) toy.Enabled = enabled;
+            if (changed) Writes++;
+            return true;
+        }
+        catch (Exception e) { AppEnv.Log("config patch failed: " + e.Message); return false; }
+    }
+    public static KakaoSettings Kakao() => new() { AdBlock = KakaoAdBlock, Compact = KakaoCompact, Dark = KakaoDark, AutoApply = KakaoAutoApply };
+    public static bool SetKakaoFlag(string key, bool value)
+    {
+        if (AppEnv.DenyWrite()) return false;
+        if (key is not ("AdBlock" or "Compact" or "Dark" or "AutoApply")) return false;
+        try
+        {
+            if (!NotesConfigPatch.TryWriteFile(AppEnv.ConfigPath, "Kakao", key, JsonValue.Create(value), out bool changed))
+                return false;
+            switch (key)
+            {
+                case "AdBlock": KakaoAdBlock = value; break;
+                case "Compact": KakaoCompact = value; break;
+                case "Dark": KakaoDark = value; break;
+                case "AutoApply": KakaoAutoApply = value; break;
+            }
             if (changed) Writes++;
             return true;
         }

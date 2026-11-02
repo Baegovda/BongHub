@@ -12,5 +12,6 @@
     <Compile Include="..\BongHub.Next\WindowControl.cs" Link="WindowControl.cs" />
     <Compile Include="..\BongHub.Next\PowerToysLogic.cs" Link="PowerToysLogic.cs" />
     <Compile Include="..\BongHub.Next\DisplayPresets.cs" Link="DisplayPresets.cs" />
+    <Compile Include="..\BongHub.Next\KakaoLogic.cs" Link="KakaoLogic.cs" />
   </ItemGroup>
 </Project>

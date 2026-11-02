@@ -9,8 +9,8 @@
     <RootNamespace>BongHub.Next</RootNamespace>
     <ApplicationIcon>..\..\app\res\icon_blocks.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.10.0</Version>
-    <FileVersion>0.10.0.0</FileVersion>
+    <Version>0.11.0</Version>
+    <FileVersion>0.11.0.0</FileVersion>
     <Product>BongHub Next</Product>
     <SatelliteResourceLanguages>ko</SatelliteResourceLanguages>
     <TieredPGO>true</TieredPGO>
@@ -31,5 +31,6 @@
 
   <ItemGroup>
     <PackageReference Include="H.NotifyIcon.Wpf" Version="2.4.1" />
+    <EmbeddedResource Include="..\..\app\res\BongAd.exe" LogicalName="BongAd.exe" />
   </ItemGroup>
 </Project>
