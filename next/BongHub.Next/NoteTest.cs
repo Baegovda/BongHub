@@ -69,6 +69,10 @@ public static class NoteTest
         int pictBefore = Pict(NoteStore.RtfPath(img.m.Id));
         if (pictBefore > 0)
         {
+            t.Check("display images are screen-sized", img.w.DisplayImageMaxEdge > 0 && img.w.DisplayImageMaxEdge <= RtfPict.MaxEdge,
+                $"max edge {img.w.DisplayImageMaxEdge}, pixels {img.w.DisplayImagePixels}");
+            t.Check("display images scale linearly", img.w.DisplayImagesUseLinearScaling());
+            long payloadBefore = RtfPict.PayloadBytes(File.ReadAllBytes(NoteStore.RtfPath(img.m.Id)));
             var rtfHashBefore = after[img.m.Id + ".rtf"];
             img.w.Editor.Document.Blocks.Add(new Paragraph(new Run("이미지 보존 테스트")));
             await TestKit.Delay(1400);
@@ -76,6 +80,8 @@ public static class NoteTest
             var rtfHashAfter = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(NoteStore.RtfPath(img.m.Id))));
             bool kept = pictAfter >= pictBefore;
             t.Check("images survive an edit", kept, $"\\pict {pictBefore} → {pictAfter}; " + (img.w.ImageGuardHits > 0 ? "WPF could not re-encode images → image guard kept original .rtf, text saved to meta only" : rtfHashAfter != rtfHashBefore ? "rtf rewritten with images" : "rtf unchanged"));
+            long payloadAfter = RtfPict.PayloadBytes(File.ReadAllBytes(NoteStore.RtfPath(img.m.Id)));
+            t.Check("original pict bytes kept", payloadAfter == payloadBefore, $"{payloadBefore} → {payloadAfter}");
             t.Info($"image note: guard hits {img.w.ImageGuardHits}, rtf writes {img.w.RtfWrites}, meta writes {img.w.MetaWrites}");
             img.w.CloseNote(); await TestKit.Delay(300);
             NoteStore.Load();

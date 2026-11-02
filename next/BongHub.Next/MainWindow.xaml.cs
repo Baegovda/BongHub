@@ -62,7 +62,15 @@ public partial class MainWindow : Window
         Navigate("presets");
     }
 
-    public void Reappear() { Root.Opacity = 0; Fx.Appear(Root); }
+    /// <summary>Decorative radial glows. Shown after the first frame is recorded so the software raster of the first paint skips them.</summary>
+    public void ShowDecorations()
+    {
+        if (GlowA.Visibility == Visibility.Visible) return;
+        GlowA.Visibility = Visibility.Visible;
+        GlowB.Visibility = Visibility.Visible;
+    }
+
+    public void Reappear() => Fx.Appear(Root);
 
     // ---------- navigation ----------
     Border NavRow((string Key, string Label, string Glyph, string Hex) p, int index)
@@ -95,7 +103,8 @@ public partial class MainWindow : Window
         var sw = Stopwatch.StartNew();
         int idx = Array.FindIndex(Pages, p => p.Key == key); if (idx < 0) return;
         bool animate = CurrentPage != "" && CurrentPage != key;
-        Fx.MoveY(NavSelT, idx * 42, animate ? 320 : 1);
+        if (animate) Fx.MoveY(NavSelT, idx * 42, 320);
+        else { NavSelT.BeginAnimation(TranslateTransform.YProperty, null); NavSelT.Y = idx * 42; }
         foreach (var r in navRows.Values) r.Background = Brushes.Transparent;
         Render(key, animate);
         LastNavigateMs = sw.Elapsed.TotalMilliseconds;
@@ -163,7 +172,10 @@ public partial class MainWindow : Window
     }
     TextBlock Value(string text) => new() { Text = text, FontSize = 14, Foreground = (Brush)FindResource("Secondary") };
     TextBlock Chevron() => new() { Text = "\uE76C", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 11, Foreground = (Brush)FindResource("Tertiary") };
-    Border Keycap(string text) => new() { CornerRadius = new CornerRadius(7), Background = new SolidColorBrush(Color.FromArgb(0x26, 255, 255, 255)), Padding = new Thickness(9, 3, 9, 4), Child = new TextBlock { Text = text, FontSize = 12.5, FontFamily = new FontFamily("Cascadia Mono, Consolas, Segoe UI") } };
+    static readonly SolidColorBrush KeycapBrush = CreateKeycapBrush();
+    static SolidColorBrush CreateKeycapBrush() { var b = new SolidColorBrush(Color.FromArgb(0x26, 255, 255, 255)); b.Freeze(); return b; }
+    // Inherit UiFont. A new FontFamily("Cascadia Mono, ...") probes the font collection on the first frame.
+    Border Keycap(string text) => new() { CornerRadius = new CornerRadius(7), Background = KeycapBrush, Padding = new Thickness(9, 3, 9, 4), Child = new TextBlock { Text = text, FontSize = 12.5 } };
 
     // ---------- pages ----------
     void PagePresets()

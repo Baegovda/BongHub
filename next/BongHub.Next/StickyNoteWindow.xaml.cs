@@ -17,7 +17,11 @@ public partial class StickyNoteWindow : Window
     public bool TextDirty { get; private set; }
     public int RtfWrites, MetaWrites, ImageGuardHits;
     public string LoadStatus = "ok";          // ok | empty | corrupt | missing
+    /// <summary>Longest edge of a picture bitmap actually shown. 0 when the note has no picture.</summary>
+    public int DisplayImageMaxEdge { get; private set; }
+    public long DisplayImagePixels { get; private set; }
     readonly DispatcherTimer textTimer, metaTimer;
+    readonly List<RtfPict.Pict> originalPicts = [];
     bool loading, metaDirty, corruptBackedUp, closing;
     int sourcePictCount;
 
@@ -92,6 +96,7 @@ public partial class StickyNoteWindow : Window
     void LoadDocument()
     {
         loading = true;
+        Editor.IsUndoEnabled = false;
         try
         {
             var path = NoteStore.RtfPath(Meta.Id);
@@ -101,24 +106,82 @@ public partial class StickyNoteWindow : Window
             if (bytes is { Length: > 0 })
             {
                 sourcePictCount = CountPict(bytes);
+                var picts = sourcePictCount > 0 ? RtfPict.Parse(bytes) : [];
+                bool proxy = picts.Count > 0 && picts.Count == sourcePictCount;
                 try
                 {
-                    var doc = new FlowDocument();
-                    var range = new TextRange(doc.ContentStart, doc.ContentEnd);
-                    using var ms = new MemoryStream(bytes);
-                    range.Load(ms, DataFormats.Rtf);
+                    var doc = LoadFlow(proxy ? RtfPict.Placeholder(bytes) : bytes);
+                    if (proxy && CollectImages(doc).Count != picts.Count)
+                        doc = LoadFlow(bytes);   // placeholder did not round-trip; decode the file, then shrink
                     Editor.Document = doc;
+                    if (proxy) ApplyProxies(CollectImages(doc), picts);
                 }
                 catch (Exception e) { LoadStatus = "corrupt"; AppEnv.Log($"rtf load failed {Meta.Id}: {e.Message}"); SetPlain(Meta.Text); }
                 // parser "succeeded" but salvaged nothing while meta still has text → treat as damaged, show meta text
-                if (LoadStatus == "ok" && DocImageCount() == 0 && PlainText().Trim().Length == 0 && !string.IsNullOrWhiteSpace(Meta.Text)) { LoadStatus = "corrupt"; SetPlain(Meta.Text); }
-                else if (LoadStatus == "ok" && !(bytes.Length > 5 && bytes[0] == (byte)'{' && bytes[1] == (byte)'\\' && bytes[2] == (byte)'r')) { LoadStatus = "corrupt"; SetPlain(Meta.Text); }
+                if (LoadStatus == "ok" && DocImageCount() == 0 && PlainText().Trim().Length == 0 && !string.IsNullOrWhiteSpace(Meta.Text)) { LoadStatus = "corrupt"; SetPlain(Meta.Text); originalPicts.Clear(); }
+                else if (LoadStatus == "ok" && !(bytes.Length > 5 && bytes[0] == (byte)'{' && bytes[1] == (byte)'\\' && bytes[2] == (byte)'r')) { LoadStatus = "corrupt"; SetPlain(Meta.Text); originalPicts.Clear(); }
             }
             else SetPlain(Meta.Text);
             StyleDocument();
         }
-        finally { loading = false; }
+        finally { loading = false; Editor.IsUndoEnabled = true; }
         UpdateHint();
+    }
+    static FlowDocument LoadFlow(byte[] data)
+    {
+        var doc = new FlowDocument();
+        using var ms = new MemoryStream(data);
+        new TextRange(doc.ContentStart, doc.ContentEnd).Load(ms, DataFormats.Rtf);
+        return doc;
+    }
+    void ApplyProxies(List<Image> images, List<RtfPict.Pict> picts)
+    {
+        originalPicts.Clear();
+        originalPicts.AddRange(picts);
+        double dpi = Win32.SystemScale;
+        int maxEdge = 0;
+        long pixels = 0;
+        int n = Math.Min(images.Count, picts.Count);
+        for (int i = 0; i < n; i++)
+        {
+            var p = picts[i];
+            // Already decoded near the display size. HighQuality keeps a second scaled copy and is slow in the software rasterizer.
+            RenderOptions.SetBitmapScalingMode(images[i], BitmapScalingMode.Linear);
+            int edge = RtfPict.TargetEdge(p.GoalW, p.GoalH, dpi, Meta.Zoom, p.SourceW, p.SourceH);
+            try
+            {
+                var bmp = RtfPict.DecodeScaled(p.Bytes, p.SourceW, p.SourceH, edge);
+                if (bmp != null)
+                {
+                    images[i].Source = bmp;
+                    maxEdge = Math.Max(maxEdge, Math.Max(bmp.PixelWidth, bmp.PixelHeight));
+                    pixels += (long)bmp.PixelWidth * bmp.PixelHeight;
+                    p.Bytes = [];
+                }
+            }
+            catch (Exception e) { AppEnv.Log($"image decode {Meta.Id}: {e.Message}"); }
+            if (p.GoalW > 0) images[i].Width = p.GoalW / 15.0;
+            if (p.GoalH > 0) images[i].Height = p.GoalH / 15.0;
+        }
+        DisplayImageMaxEdge = maxEdge;
+        DisplayImagePixels = pixels;
+    }
+    /// <summary>True when every picture in the document is scaled linearly (no cached high-quality copy).</summary>
+    public bool DisplayImagesUseLinearScaling()
+    {
+        var images = CollectImages(Editor.Document);
+        return images.Count > 0 && images.All(im => RenderOptions.GetBitmapScalingMode(im) == BitmapScalingMode.Linear);
+    }
+    static List<Image> CollectImages(FlowDocument doc)
+    {
+        var list = new List<Image>();
+        void Walk(DependencyObject node)
+        {
+            if (node is Image img) list.Add(img);
+            foreach (var child in LogicalTreeHelper.GetChildren(node).OfType<DependencyObject>()) Walk(child);
+        }
+        Walk(doc);
+        return list;
     }
     void SetPlain(string text)
     {
@@ -162,10 +225,16 @@ public partial class StickyNoteWindow : Window
         var range = new TextRange(Editor.Document.ContentStart, Editor.Document.ContentEnd);
         using var ms = new MemoryStream();
         range.Save(ms, DataFormats.Rtf);
-        var rtf = ms.ToArray();
+        byte[]? rtf = ms.ToArray();
+        if (originalPicts.Count > 0)
+        {
+            // The in-memory bitmaps are display-sized. Put the original pict groups back so the file stays full resolution.
+            var merged = RtfPict.Splice(RtfPict.Latin1.GetString(rtf), originalPicts);
+            rtf = merged == null ? null : RtfPict.Latin1.GetBytes(merged);
+        }
         int wantImages = Math.Max(sourcePictCount, DocImageCount());
         Meta.Text = PlainText();
-        if (CountPict(rtf) < wantImages)
+        if (rtf == null || CountPict(rtf) < wantImages)
         {
             // WPF could not re-encode an embedded image: keep the existing .rtf (images stay safe), save text in meta only
             ImageGuardHits++; AppEnv.Log($"image guard: kept existing rtf for {Meta.Id}");
