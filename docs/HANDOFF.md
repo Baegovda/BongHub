@@ -1,6 +1,6 @@
 # BongHub 인수인계 문서 (HANDOFF)
 
-> **결론 (2026-11-02 KST):** PC 배포본은 트레이 **3.4.9**(파일 버전 **3.4.9.0**, PC에서 확인)이고, `main` 소스는 그 트레이 + BongHub.Next **0.5.0**이에요. 3.4.8은 `backup\3.4.8_20261102_123333`에 백업돼 있어요. PR **#4·#5·#6·#7·#9는 병합**됐어요(#7은 `d82cdd2` 스쿼시). Next 0.4.0은 Windows에서 스모크 58, 노트 26, 설정 첫 프레임 593ms, 메모리 트레이 8/18MB·설정 20/64MB·메모 7개 22/94MB(작업 집합/private)로 확인됐어요. 클라우드 `data/` 동기화는 **켜져 있고** 저장소에 커밋됩니다. 이 문서가 현재 기준본이에요. 예전에 붙어 있던 3.3.1 시대 “아직/TODO”는 아래 **완료·폐기**로 정리했어요.
+> **결론 (2026-11-02 KST):** 소스는 **BongHub 1.0.0** 하나예요. WinForms 3.4.x 소스(`app/`, `BongHub.cs`, `build.ps1`)는 저장소에서 뺐어요. 실행 파일은 `BongHub.exe`예요. `%LOCALAPPDATA%\BongHub`, 메모·설정 형식, `Local\BongHub_NotesWriter`는 그대로예요. 기대 시험은 스모크 **107**, 노트 **89**예요. 0.4.0 유휴는 트레이 8/18MB, 설정 20/64MB, 메모 7개 22/94MB예요. 클라우드 `data/`는 계속 커밋됩니다.
 
 - 언어: 한국어 해요체. 비밀값(토큰·암호)은 넣지 않아요.
 - 실제 모니터 전환·밝기·아이콘 복원·후킹·프리셋 CLI는 봇이 실행하지 않아요.
@@ -11,12 +11,12 @@
 
 | 항목 | 값 |
 |---|---|
-| 앱 | **BongHub** (“석봉이의 유틸 창고”). C# WinForms, .NET Framework 4.x |
+| 앱 | **BongHub 1.0.0** (“석봉이의 유틸 창고”). WPF, `net10.0-windows`. WinForms 없음 |
 | 예전 이름 | MonitorMode → BongMonitor → (BongUtil 검토) → BongHub |
 | **배포 exe** | **3.4.9** @ `C:\Users\Revaptor_FX\BongHub\BongHub.exe`. 파일 버전 **3.4.9.0** (PC에서 확인). 3.4.8 백업 `backup\3.4.8_20261102_123333` |
-| **`main` 소스** | 트레이 **3.4.9** (`app/BongHub.cs`, `app/version.txt`) + Next **0.12.0** (`next/BongHub.Next/`) |
+| **`main` 소스** | **BongHub 1.0.0** (`BongHub/`). 3.4.x WinForms 소스는 없음 |
 | **PR** | **#4·#5·#6·#7·#9 병합.** 열린 PR은 이 문서의 설정 패치(#8) |
-| Next 시험 | 0.4.0을 Windows에서 확인: 스모크 **58**, 노트 **26**, 설정 첫 프레임 **593ms**. 0.12.0 기대값은 스모크 **107**, 노트 **89**(7개 복사본, 그림 포함). 저장소 `next/test-logs/`의 옛 파일은 0.2.0 스모크 43 / 노트 23 |
+| 시험 | 0.4.0을 Windows에서 확인: 스모크 **58**, 노트 **26**, 설정 첫 프레임 **593ms**. 1.0.0 기대값은 스모크 **107**, 노트 **89**. 옛 기록은 `test-logs/` |
 | Next 메모리 | Windows 유휴, 작업 집합/private: 트레이 **8/18MB**, 설정 **20/64MB**, 메모 7개 **22/94MB** |
 | 런타임 | `%LOCALAPPDATA%\BongHub\` |
 | 클라우드 | **Enabled=true**. `data/`가 `main`에 커밋됨. 커밋 대부분은 `sync: REVAPTOR-FX …` (수는 `git log --grep='^sync:'`로 확인) |
@@ -50,8 +50,8 @@
 
 | 경로 | 내용 |
 |---|---|
-| `app/` | 트레이 소스·`build.ps1`·CHANGELOG·`res/`·`_dev/` |
-| `next/` | Next **0.5.0** + `test-logs/` + `next/.gitignore`. 패치 단위 검사는 `next/BongHub.Next.PatchTests/` |
+| `BongHub/` | WPF 앱 1.0.0. 출력은 `BongHub.exe` |
+| `BongHub.PatchTests/` | 설정 바이트와 목 동작. `BongHub.RichEditTests/`는 창 없는 RTF |
 | `legacy/BongAd/` | 옛 BongAd 원본 |
 | `docs/HANDOFF.md` | 이 문서 |
 | `data/` | 클라우드 동기화 페이로드(**커밋됨**. 사람 편집 금지) |
@@ -95,15 +95,15 @@ machineId 참고: 작업 PC `d3fb99ad-25ca-45c1-81af-41e5ca09104a`(Revaptor-FX).
 
 프리셋 CLI(`BongHub.exe 작업` 등), `resize`, `workspace`는 이 잠금을 보지 않아요. **실행하지 마세요.**
 
-### 3.3 BongHub.Next 0.5.0 (1단계). 0.4.0 측정은 PR #7 `d82cdd2`
+### 3.3 BongHub 0.5.0 (1단계). 0.4.0 측정은 PR #7 `d82cdd2`
 
-- `next/BongHub.Next/`, `net10.0-windows`, WPF, H.NotifyIcon.Wpf 2.4.1. WinForms 없음. 동시 GC는 켜져 있어요. SDK 기준은 루트 `global.json`의 **10.0.403**이에요. 0.3.0(PR #6) 위에 메모리와 설정 첫 프레임만 줄인 버전이에요.
+- `next/BongHub/`, `net10.0-windows`, WPF, H.NotifyIcon.Wpf 2.4.1. WinForms 없음. 동시 GC는 켜져 있어요. SDK 기준은 루트 `global.json`의 **10.0.403**이에요. 0.3.0(PR #6) 위에 메모리와 설정 첫 프레임만 줄인 버전이에요.
 - 사이드바 첫 항목: **모니터 프리셋**(표시만, 전환은 3.4.x).
 - `Notes.Opacity` 40~100% → 메모 창 전체 불투명도.
 - `ConfigStore.SetNotesValue`는 0.4.0에서도 Notes 한 키의 JSON 값만 갈아끼워요. 다른 키와 들여쓰기는 바이트 그대로고, 값이 같으면 파일을 다시 쓰지 않아요. 안전하게 패치하지 못하면 파일을 통째로 덮어쓰지 않아요.
 - Windows 확인 (2026-11-02, 0.4.0): 스모크 **58**, 노트 **26**, 설정 첫 프레임 **593ms**. 유휴 작업 집합/private는 트레이 **8/18MB**, 설정 **20/64MB**, 메모 7개 **22/94MB**. 0.5.0은 이 숫자를 넘기면 안 되고, 기대 스모크는 **65**, 노트는 **89**예요. Windows 재측정은 아직이에요.
-- 빌드: `dotnet publish next\BongHub.Next\BongHub.Next.csproj -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=true`
-- 패치 검사(Windows 불필요): `dotnet run --project next\BongHub.Next.PatchTests\BongHub.Next.PatchTests.csproj -c Release`
+- 빌드: `dotnet publish next\BongHub\BongHub.csproj -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=true`
+- 패치 검사(Windows 불필요): `dotnet run --project next\BongHub.PatchTests\BongHub.PatchTests.csproj -c Release`
 - 자세한 것: `next/README.md`. 이식 순서는 `next/PORTING_PLAN.md` (PR #5).
 
 ### 3.4 Windows 시험 (2026-11-02, 주인 PC, 격리 임시 폴더 + 데이터 복사본)
@@ -187,8 +187,8 @@ machineId 참고: 작업 PC `d3fb99ad-25ca-45c1-81af-41e5ca09104a`(Revaptor-FX).
 
 ```powershell
 # 저장소 루트
-powershell app\build.ps1
-# 출력: app\BongHub.exe
+dotnet publish BongHub\BongHub.csproj -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=true
+# 출력: BongHub\bin\Release\net10.0-windows\win-x64\publish\BongHub.exe
 ```
 
 - `csc.exe` (.NET FX 4.x), `/codepage:65001 /optimize+`
@@ -296,7 +296,7 @@ Test-Path $env:LOCALAPPDATA\BongHub\cloud
 | MMT | NirSoft MultiMonitorTool |
 | 작업 영역 | 여러 창 배치 저장/실행(PowerToys Workspaces) |
 | NotesWriter | `Local\BongHub_NotesWriter` 메모 단일 저장자 |
-| Next | BongHub.Next 0.5.0 WPF (`net10.0-windows`). 0.4.0 메모리 기준은 PR #7 `d82cdd2` |
+| Next | BongHub 0.5.0 WPF (`net10.0-windows`). 0.4.0 메모리 기준은 PR #7 `d82cdd2` |
 | 숨은 데스크톱 | `_dev\testdesk.ps1`, CreateDesktop `BongHubTest` |
 
 ---

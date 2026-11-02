@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>BongHub</AssemblyName>
+    <RootNamespace>BongHub</RootNamespace>
+    <ApplicationIcon>res\icon_blocks.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Product>BongHub</Product>
+    <SatelliteResourceLanguages>ko</SatelliteResourceLanguages>
+    <TieredPGO>true</TieredPGO>
+    <!-- 0.4.0. Phase 0 on the owner PC: concurrent GC cut settings first_frame 1648ms (outlier 3795) to 684ms and did not grow the tray. -->
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <DefaultItemExcludes>$(DefaultItemExcludes);publish\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <!-- Framework-dependent ReadyToRun. Single-file, trim, and Native AOT stay off (WPF cannot AOT). -->
+  <PropertyGroup Label="Publish">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.4.1" />
+    <EmbeddedResource Include="res\BongAd.exe" LogicalName="BongAd.exe" />
+  </ItemGroup>
+</Project>
