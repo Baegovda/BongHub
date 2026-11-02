@@ -391,7 +391,6 @@ public partial class StickyNoteWindow : Window
         TitleText.Text = NoteColors.Name(Meta.Color);
         var h = Win32.Handle(this);
         if (h != IntPtr.Zero) { Dwm.BorderColor(h, NoteColors.Mix(NoteColors.SurfA(Meta.Color), Colors.White, 0.12)); var src = HwndSource.FromHwnd(h); if (src?.CompositionTarget != null) src.CompositionTarget.BackgroundColor = NoteColors.SurfA(Meta.Color); }
-        try { rich?.SetPaper(NoteColors.SurfA(ShownColorKey.Length > 0 ? ShownColorKey : Meta.Color)); } catch { }
     }
     public void SetColor(string key)
     {
@@ -460,7 +459,7 @@ public partial class StickyNoteWindow : Window
         double o = Math.Max(0.3, Math.Min(1.0, v / 100.0));
         if (Math.Abs(Opacity - o) > 0.001) Opacity = o;
     }
-    public void ApplyReadOnly() { Editor.IsReadOnly = AppEnv.ReadOnly; rich?.SetReadOnly(AppEnv.ReadOnly); }
+    public void ApplyReadOnly() { Editor.IsReadOnly = AppEnv.ReadOnly; }
     void ApplyZoom() => Editor.LayoutTransform = Math.Abs(Meta.Zoom - 1) < 0.01 ? Transform.Identity : new ScaleTransform(Meta.Zoom, Meta.Zoom);
     public void SetTopMost(bool on) { Meta.TopMost = on; Topmost = on; UpdatePin(); metaDirty = true; FlushMeta(); }
     void UpdatePin() { PinBtn.Content = Meta.TopMost ? "\uE840" : "\uE718"; PinBtn.Foreground = Meta.TopMost ? (Brush)FindResource("Accent") : Brushes.White; }
