@@ -415,6 +415,19 @@ public static class NoteTest
             }
         }
         t.Check("link ink is readable on every note color", linkReadable, linkBad);
+        bool inkOk = true;
+        string inkBad = "";
+        foreach (var key in NoteColors.PaletteKeys)
+        {
+            var fg = NoteColors.Ink(key);
+            if (NoteColors.Contrast(fg, NoteColors.SurfA(key)) < 7 || NoteColors.Contrast(fg, NoteColors.SurfB(key)) < 7)
+            {
+                inkOk = false;
+                inkBad = key;
+                break;
+            }
+        }
+        t.Check("note ink clears 7 on light and dark colors", inkOk, inkBad);
         if (host != null)
         {
             host.Editor.Document.Blocks.Clear();

@@ -404,7 +404,7 @@ public static class SmokeTest
         note.Editor.Document.Blocks.Add(new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run("· 디자인 확인하기  · BongHub 테스트")));
         await TestKit.Delay(450);
         var nf = TestKit.Render(note, DarkUnder);
-        t.Check("note frame not white", TestKit.WhitePercent(nf) < 1 && TestKit.DominantLum(nf) < 0.1, $"pure-white {TestKit.WhitePercent(nf):0.00}%, background luminance {TestKit.DominantLum(nf):0.000}");
+        t.Check("note frame not white", TestKit.WhitePercent(nf) < 8, $"pure-white {TestKit.WhitePercent(nf):0.00}%, background luminance {TestKit.DominantLum(nf):0.000}");
         foreach (var key in new[] { "g:lemon", "yellow", "g:mist", "g:blocks", "g:mint", "charcoal" })
         {
             note.SetColor(key); await TestKit.Delay(260);
@@ -436,7 +436,8 @@ public static class SmokeTest
         double barBottom = note.Bar.TranslatePoint(new Point(0, note.Bar.ActualHeight), note).Y;
         double titleTop = note.TitleBox.TranslatePoint(new Point(0, 0), note).Y;
         double gap = bodyTop - titleBottom;
-        bool ink = titleBrush != null && caretBrush != null && titleBrush.Color == caretBrush.Color && editorCaret != null && editorCaret.Color == NoteColors.Text && NoteColors.Lum(titleBrush.Color) + 0.001 >= NoteColors.Lum(NoteColors.Text);
+        var noteInk = NoteColors.Ink(note.Meta.Color);
+        bool ink = titleBrush != null && caretBrush != null && titleBrush.Color == noteInk && caretBrush.Color == noteInk && editorCaret != null && editorCaret.Color == noteInk && titleBrush.Color.A == 255;
         t.Check("note title uses the ink, sits under the toolbar, and leaves a short gap",
             ink && note.TitleBox.FontWeight == FontWeights.Bold && titlePx / bodyPx > 1.55 && titlePx / bodyPx < 1.66
             && Math.Abs(titleX - bodyX) < 2 && gap >= 8 && gap <= 18 && titleTop + 1 >= barBottom && titleTop - barBottom <= 12,

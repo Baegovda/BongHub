@@ -57,26 +57,28 @@ jobs:
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $exe = Join-Path (Get-Location) "artifacts/publish/BongHub.exe"
           if (-not (Test-Path $exe)) { Write-Error "missing $exe"; exit 1 }
-          & $exe --smoketest --out $out
-          $code = $LASTEXITCODE
+          $p = Start-Process -FilePath $exe -ArgumentList @('--smoketest', '--out', $out) -Wait -PassThru
           $log = Join-Path $out "smoketest.txt"
-          if (-not (Test-Path $log)) { Write-Error "smoketest.txt was not written to $out"; exit 1 }
+          $beside = Join-Path (Split-Path $exe) "smoketest.txt"
+          if (-not (Test-Path $log) -and (Test-Path $beside)) { Copy-Item $beside $log }
+          if (-not (Test-Path $log)) { Write-Error "smoketest.txt missing (exit $($p.ExitCode))"; exit 1 }
           Get-Content $log
-          if ($code -ne 0) { exit $code }
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
 
       - name: Note test
         run: |
           $copy = Join-Path (Get-Location) "artifacts/notes-data"
           $out = Join-Path (Get-Location) "artifacts/notes"
+          $exe = Join-Path (Get-Location) "artifacts/publish/BongHub.exe"
           Copy-Item -Recurse data $copy
           New-Item -ItemType Directory -Force -Path $out | Out-Null
-          $exe = Join-Path (Get-Location) "artifacts/publish/BongHub.exe"
-          & $exe --notetest --data $copy --out $out
-          $code = $LASTEXITCODE
+          $p = Start-Process -FilePath $exe -ArgumentList @('--notetest', '--data', $copy, '--out', $out) -Wait -PassThru
           $log = Join-Path $out "notetest.txt"
-          if (-not (Test-Path $log)) { Write-Error "notetest.txt was not written to $out"; exit 1 }
+          $beside = Join-Path (Split-Path $exe) "notetest.txt"
+          if (-not (Test-Path $log) -and (Test-Path $beside)) { Copy-Item $beside $log }
+          if (-not (Test-Path $log)) { Write-Error "notetest.txt missing (exit $($p.ExitCode))"; exit 1 }
           Get-Content $log
-          if ($code -ne 0) { exit $code }
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
 
       - name: Upload test logs
         if: always()

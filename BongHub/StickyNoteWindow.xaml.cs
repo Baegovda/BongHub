@@ -645,7 +645,7 @@ public partial class StickyNoteWindow : Window
     /// <summary>Title uses the same opaque brush as the note body.</summary>
     void ApplyInk()
     {
-        var body = InkBrush(Color.FromArgb(255, NoteColors.Text.R, NoteColors.Text.G, NoteColors.Text.B));
+        var body = InkBrush(NoteColors.Ink(Meta.Color));
         double size = Math.Round(PointsToDip(ClampPt(ConfigStore.Notes.FontSize)) * 1.6, 2);
         TitleBox.Opacity = 1;
         TitleBox.Foreground = body;
@@ -653,14 +653,17 @@ public partial class StickyNoteWindow : Window
         TitleBox.FontSize = size;
         TitleHint.Foreground = body;
         TitleHint.FontSize = size;
+        foreach (var button in new[] { NewBtn, FontBtn, ColorBtn, ListBtn, CloseBtn }) button.Foreground = body;
         if (editor != null)
         {
             editor.Foreground = body;
             editor.CaretBrush = body;
         }
         linkBrush = InkBrush(NoteColors.LinkInk(Meta.Color));
+        UpdatePin();
         var doc = editor != null ? editor.Document : Viewer.Document;
-        if (doc != null && (doc.Foreground as SolidColorBrush)?.Color != NoteColors.Text)
+        var ink = NoteColors.Ink(Meta.Color);
+        if (doc != null && (doc.Foreground as SolidColorBrush)?.Color != ink)
         {
             bool prev = loading;
             loading = true;
@@ -901,7 +904,7 @@ public partial class StickyNoteWindow : Window
         if (editor != null) editor.LayoutTransform = t;
     }
     public void SetTopMost(bool on) { Meta.TopMost = on; Topmost = on; UpdatePin(); metaDirty = true; FlushMeta(); }
-    void UpdatePin() { PinBtn.Content = Meta.TopMost ? "\uE840" : "\uE718"; PinBtn.Foreground = Meta.TopMost ? (Brush)FindResource("Accent") : Brushes.White; }
+    void UpdatePin() { PinBtn.Content = Meta.TopMost ? "\uE840" : "\uE718"; PinBtn.Foreground = Meta.TopMost ? (Brush)FindResource("Accent") : InkBrush(NoteColors.Ink(Meta.Color)); }
     void ToggleFormatBar()
     {
         if (FormatBar.Visibility != Visibility.Visible)

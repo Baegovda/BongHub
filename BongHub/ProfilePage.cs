@@ -274,12 +274,15 @@ public partial class MainWindow
             double top = Math.Max(homeBox.Y + 28, Math.Min(view.Y, homeBox.Y + homeBox.H - tileH - 4));
             var spot = new Rect(left, top, tileW, tileH);
             bool heavy = occupied.Any(r => r.Width > 0 && r.IntersectsWith(spot) && Intersection(r, spot) > 0.35 * Math.Min(r.Width * r.Height, spot.Width * spot.Height));
-            if (heavy)
+            if (heavy || onMonitor > 1)
             {
-                double span = Math.Max(24, homeBox.W - tileW - 8);
-                left = homeBox.X + 6 + (indexOnMonitor * 24) % span;
-                top = homeBox.Y + 30 + (indexOnMonitor * 24 / Math.Max(24, span)) * 24;
-                top = Math.Min(top, Math.Max(homeBox.Y + 28, homeBox.Y + homeBox.H - tileH - 4));
+                const double header = 28;
+                int rows = Math.Max(1, (int)Math.Floor((homeBox.H - 8) / header));
+                int row = indexOnMonitor % rows;
+                int col = indexOnMonitor / rows;
+                left = homeBox.X + 6 + col * 18;
+                top = homeBox.Y + 6 + row * header;
+                if (left + tileW > homeBox.X + homeBox.W - 4) left = Math.Max(homeBox.X + 4, homeBox.X + homeBox.W - tileW - 4);
                 spot = new Rect(left, top, tileW, tileH);
             }
             occupied.Add(spot);
@@ -301,23 +304,27 @@ public partial class MainWindow
             Canvas.SetLeft(tile, view.X);
             Canvas.SetTop(tile, view.Y);
             Canvas.SetZIndex(tile, app.Id == selectedAppId ? 400 : 20 + indexOnMonitor);
-            var body = new Grid { Margin = new Thickness(8, 6, 8, 6), IsHitTestVisible = false };
-            body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            body.ColumnDefinitions.Add(new ColumnDefinition());
-            body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var body = new Grid { IsHitTestVisible = false };
+            body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(28) });
+            body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            var headerBar = new Grid { Margin = new Thickness(6, 0, 6, 0) };
+            headerBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            headerBar.ColumnDefinitions.Add(new ColumnDefinition());
             var icon = AppIcon.Lookup(app.Process, app.Path);
             UIElement mark = icon != null
-                ? new Image { Source = icon, Width = 20, Height = 20, Margin = new Thickness(0, 0, 6, 0) }
-                : new TextBlock { Text = "\uE737", FontFamily = (FontFamily)FindResource("Icons"), FontSize = font, Foreground = Brushes.White, Margin = new Thickness(0, 0, 6, 0) };
-            body.Children.Add(mark);
-            var nameBlock = new TextBlock { Text = shown.Length > 0 ? shown : "창", Foreground = Brushes.White, FontSize = font, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis };
+                ? new Image { Source = icon, Width = 16, Height = 16, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center }
+                : new TextBlock { Text = "\uE737", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 14, Foreground = Brushes.White, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
+            headerBar.Children.Add(mark);
+            var nameBlock = new TextBlock { Text = shown.Length > 0 ? shown : "창", Foreground = Brushes.White, FontSize = font, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(nameBlock, 1);
-            body.Children.Add(nameBlock);
-            var sizeBlock = new TextBlock { Text = app.W + "×" + app.H, Foreground = (Brush)FindResource("Secondary"), FontSize = Math.Max(10, font - 1), TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis };
-            Grid.SetRow(sizeBlock, 1);
-            Grid.SetColumnSpan(sizeBlock, 2);
-            body.Children.Add(sizeBlock);
+            headerBar.Children.Add(nameBlock);
+            body.Children.Add(headerBar);
+            if (tileH >= 46)
+            {
+                var sizeBlock = new TextBlock { Text = app.W + "×" + app.H, Foreground = (Brush)FindResource("Secondary"), FontSize = Math.Max(10, font - 1), Margin = new Thickness(6, 0, 6, 2), TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                Grid.SetRow(sizeBlock, 1);
+                body.Children.Add(sizeBlock);
+            }
             tile.Child = body;
             void Raise() { Canvas.SetZIndex(tile, ++tileZ); }
             tile.MouseEnter += (_, _) => Raise();
