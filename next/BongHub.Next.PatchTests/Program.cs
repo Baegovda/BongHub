@@ -188,6 +188,94 @@ Check("pretty tab order byte span", prettyOut == expectedPretty && NotesConfigPa
 Check("notes patch still leaves Presets", NotesConfigPatch.TryApply(Shell, "Opacity", JsonValue.Create(9), out string notesOnly)
     && notesOnly.Contains("\"Opacity\": 9") && notesOnly.Contains("PRESET_KEEP") && notesOnly.Contains("PT_KEEP") && notesOnly.Contains("DESK_KEEP"));
 
+const string DeskCfg = "{\"Version\":2,\"Presets\":[{\"Marker\":\"PRESET_KEEP\"}],\"Pt\":{\"Marker\":\"PT_KEEP\"},\"Desk\":{\"AutoSave\":true,\"Marker\":\"DESK_KEEP\",\"HotkeySave\":\"Ctrl+Alt+S\"},\"General\":{\"OverlayOpacity\":70}}";
+Check("desk autosave splices one token", NotesConfigPatch.TryApply(DeskCfg, "Desk", "AutoSave", JsonValue.Create(false), out string desked)
+    && desked.Contains("\"AutoSave\":false") && desked.Contains("PRESET_KEEP") && desked.Contains("PT_KEEP") && desked.Contains("DESK_KEEP")
+    && desked.Contains("\"HotkeySave\":\"Ctrl+Alt+S\"") && desked.Contains("\"OverlayOpacity\":70"));
+NotesConfigPatch.ChangedSpan(DeskCfg, desked, out string deskRemoved, out string deskInserted);
+Check("desk autosave byte span", deskRemoved == "true" && deskInserted == "false");
+
+Check("screen description puts the primary first", ScreenMap.Describe("1920x1080@0,0;2560x1440@1920,0*") == "모니터 2대 · 2560×1440(주) + 1920×1080");
+string screen = ScreenMap.Key(new[] { new MonitorSpec(1920, 1080, 0, 0, false), new MonitorSpec(2560, 1440, 1920, 0, true) });
+Check("screen key sorts and marks the primary", screen == "1920x1080@0,0;2560x1440@1920,0*");
+
+var mem = new MemoryIconSurface();
+mem.Icons.Add(new DeskIcon { Name = "Readme", X = 10, Y = 10 });
+mem.Icons.Add(new DeskIcon { Name = "readme", X = 20, Y = 20 });
+mem.Icons.Add(new DeskIcon { Name = "Other", X = 30, Y = 30 });
+var iconTarget = new List<DeskIcon>
+{
+    new() { Name = "README", X = 11, Y = 12 },
+    new() { Name = "ReadMe", X = 21, Y = 22 },
+    new() { Name = "없는 아이콘", X = 1, Y = 1 }
+};
+var applied = IconMatch.Apply(mem, iconTarget);
+Check("duplicate icon names match in order", applied.Ok && applied.Moved == 2 && applied.Missing == 1 && applied.Extra == 1
+    && mem.Icons[0].X == 11 && mem.Icons[0].Y == 12 && mem.Icons[1].X == 21 && mem.Icons[2].X == 30 && mem.Refreshes == 1);
+mem.AutoArrange = true;
+int movesBefore = mem.Moves;
+var refused = IconMatch.Apply(mem, iconTarget);
+Check("auto-arrange refuses without moving", !refused.Ok && refused.Error.Contains("자동 정렬") && mem.Moves == movesBefore && mem.Icons[0].X == 11 && mem.Refreshes == 1);
+
+string iconDir = Path.Combine(Path.GetTempPath(), "bhnext_icons_" + Environment.ProcessId);
+try
+{
+    var store = new LayoutStore(iconDir);
+    var icons = new List<DeskIcon> { new() { Name = "휴지통", X = 14, Y = 2 } };
+    Check("auto save writes one layout", IconLibrary.SaveAuto(store, icons, "1920x1080@0,0*"));
+    Check("auto save skips when unchanged", !IconLibrary.SaveAuto(store, icons, "1920x1080@0,0*"));
+    Check("one auto layout per screen", store.Load().Count(x => x.Auto && x.Key == "1920x1080@0,0*") == 1);
+    icons[0].Y = 9;
+    Check("auto save replaces the same screen", IconLibrary.SaveAuto(store, icons, "1920x1080@0,0*"));
+    Check("still one auto layout", store.Load().Count(x => x.Auto) == 1 && store.Load().First(x => x.Auto).Items[0].Y == 9);
+    Check("second screen keeps its own auto layout", IconLibrary.SaveAuto(store, new List<DeskIcon> { new() { Name = "휴지통", X = 1, Y = 1 } }, "2560x1440@1920,0*"));
+    Check("two screens two autos", store.Load().Count(x => x.Auto) == 2);
+    var named = store.Load().First(x => x.Key == "1920x1080@0,0*");
+    IconLibrary.Rename(store, named.Id, "이름 바꿈");
+    var renamed = store.Load().First(x => x.Id == named.Id);
+    Check("rename clears the auto flag", renamed.Name == "이름 바꿈" && !renamed.Auto);
+    IconLibrary.Delete(store, named.Id);
+    Check("delete drops the layout", store.Load().All(x => x.Id != named.Id));
+}
+finally { try { Directory.Delete(iconDir, true); } catch { } }
+
+var when = DateTimeOffset.FromUnixTimeMilliseconds(1793585924140).UtcDateTime;
+string layoutJson = LayoutStore.Serialize(new List<DeskLayoutFile>
+{
+    new()
+    {
+        Id = "abc", Name = "배치", Key = "1920x1080@0,0*", Desc = "모니터 1대 · 1920×1080(주)", Auto = true, Saved = when,
+        Items = new List<DeskIcon> { new() { Name = "휴지통", X = 14, Y = 2 } }
+    }
+});
+int idAt = layoutJson.IndexOf("\"Id\"", StringComparison.Ordinal), nameAt = layoutJson.IndexOf("\"Name\"", StringComparison.Ordinal), keyAt = layoutJson.IndexOf("\"Key\"", StringComparison.Ordinal);
+int descAt = layoutJson.IndexOf("\"Desc\"", StringComparison.Ordinal), autoAt = layoutJson.IndexOf("\"Auto\"", StringComparison.Ordinal), savedAt = layoutJson.IndexOf("\"Saved\"", StringComparison.Ordinal), itemsAt = layoutJson.IndexOf("\"Items\"", StringComparison.Ordinal);
+Check("layout field order and ajax date", idAt >= 0 && idAt < nameAt && nameAt < keyAt && keyAt < descAt && descAt < autoAt && autoAt < savedAt && savedAt < itemsAt
+    && layoutJson.Contains("\\/Date(1793585924140)\\/") && layoutJson.Contains("배치") && layoutJson.Contains("휴지통") && !layoutJson.Contains("\\u"));
+var layoutBack = LayoutStore.Parse(layoutJson);
+Check("layout date round trip", layoutBack.Count == 1 && layoutBack[0].Items[0].Name == "휴지통" && layoutBack[0].Items[0].X == 14
+    && new DateTimeOffset(layoutBack[0].Saved).ToUnixTimeMilliseconds() == 1793585924140);
+
+DeskLayoutFile Stamp(string id, long ms) => new() { Id = id, Name = id, Key = "1920x1080@0,0*", Saved = DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime, Items = new() };
+var merged = LayoutMerge.Merge(new[] { Stamp("A", 100), Stamp("C", 50) }, new[] { Stamp("A", 200), Stamp("B", 10) }, new[] { "A", "B" });
+Check("layout merge keeps the newer snapshot", merged.Count == 2 && merged[0].Id == "A" && merged[0].Saved == DateTimeOffset.FromUnixTimeMilliseconds(200).UtcDateTime && merged[1].Id == "C");
+var mergedLocal = LayoutMerge.Merge(new[] { Stamp("A", 300) }, new[] { Stamp("A", 200) }, new[] { "A" });
+Check("layout merge prefers a newer local snapshot", mergedLocal.Count == 1 && mergedLocal[0].Saved == DateTimeOffset.FromUnixTimeMilliseconds(300).UtcDateTime);
+
+if (repo != null)
+{
+    string layoutsPath = Path.Combine(repo, "data", "desktop", "layouts.json");
+    byte[] rawLayouts = File.ReadAllBytes(layoutsPath);
+    var parsedLayouts = LayoutStore.Parse(Encoding.UTF8.GetString(rawLayouts));
+    Check("synced layouts parse", parsedLayouts.Count >= 1 && parsedLayouts[0].Items.Count > 0 && parsedLayouts[0].Id.Length == 32);
+    Check("synced layouts.json bytes stay", File.ReadAllBytes(layoutsPath).AsSpan().SequenceEqual(rawLayouts));
+}
+
+Check("desktop gate stays shut", !DesktopGate.RealAllowed && ExplorerIconSurface.NativeCalls == 0);
+bool desktopThrew = false;
+try { using var blocked = new ExplorerIconSurface(); } catch (InvalidOperationException) { desktopThrew = true; }
+Check("desktop backend refuses before any native call", desktopThrew && ExplorerIconSurface.NativeCalls == 0 && ExplorerIconSurface.Attempts == 1);
+
 Console.WriteLine(fail == 0 ? "RESULT PASS" : "RESULT FAIL " + fail);
 return fail == 0 ? 0 : 1;
 

@@ -126,6 +126,33 @@ public static class SmokeTest
         File.WriteAllText(AppEnv.ConfigPath, fixture);
         ConfigStore.Load();
 
+        t.Check("screen description puts the primary first", ScreenMap.Describe("1920x1080@0,0;2560x1440@1920,0*") == "모니터 2대 · 2560×1440(주) + 1920×1080");
+        var icons = new MemoryIconSurface();
+        icons.Icons.Add(new DeskIcon { Name = "Readme", X = 10, Y = 10 });
+        icons.Icons.Add(new DeskIcon { Name = "readme", X = 20, Y = 20 });
+        icons.Icons.Add(new DeskIcon { Name = "Other", X = 30, Y = 30 });
+        var iconTarget = new List<DeskIcon> { new() { Name = "README", X = 11, Y = 12 }, new() { Name = "ReadMe", X = 21, Y = 22 }, new() { Name = "없는 아이콘", X = 1, Y = 1 } };
+        var applied = IconMatch.Apply(icons, iconTarget);
+        t.Check("duplicate icon names match in order", applied.Ok && applied.Moved == 2 && applied.Missing == 1 && applied.Extra == 1 && icons.Icons[0].X == 11 && icons.Icons[1].X == 21 && icons.Icons[2].X == 30);
+        icons.AutoArrange = true;
+        int movesBefore = icons.Moves;
+        var refused = IconMatch.Apply(icons, iconTarget);
+        t.Check("auto-arrange refuses without moving", !refused.Ok && refused.Error.Contains("자동 정렬") && icons.Moves == movesBefore);
+        var when = DateTimeOffset.FromUnixTimeMilliseconds(1793585924140).UtcDateTime;
+        string layoutJson = LayoutStore.Serialize(new List<DeskLayoutFile> { new() { Id = "abc", Name = "배치", Key = "1920x1080@0,0*", Desc = "모니터 1대 · 1920×1080(주)", Auto = true, Saved = when, Items = new() { new DeskIcon { Name = "휴지통", X = 14, Y = 2 } } } });
+        var layoutBack = LayoutStore.Parse(layoutJson);
+        t.Check("layout round trip keeps the ajax date", layoutJson.Contains("\\/Date(1793585924140)\\/") && layoutJson.Contains("휴지통") && layoutBack.Count == 1 && new DateTimeOffset(layoutBack[0].Saved).ToUnixTimeMilliseconds() == 1793585924140);
+        var merged = LayoutMerge.Merge(
+            new[] { new DeskLayoutFile { Id = "A", Saved = DateTimeOffset.FromUnixTimeMilliseconds(100).UtcDateTime, Items = new() }, new DeskLayoutFile { Id = "C", Saved = DateTimeOffset.FromUnixTimeMilliseconds(50).UtcDateTime, Items = new() } },
+            new[] { new DeskLayoutFile { Id = "A", Saved = DateTimeOffset.FromUnixTimeMilliseconds(200).UtcDateTime, Items = new() }, new DeskLayoutFile { Id = "B", Saved = DateTimeOffset.FromUnixTimeMilliseconds(10).UtcDateTime, Items = new() } },
+            new[] { "A", "B" });
+        t.Check("layout merge keeps the newer snapshot", merged.Count == 2 && merged[0].Id == "A" && merged[1].Id == "C");
+        w.RequestSaveDesktop();
+        w.RequestRestoreDesktop();
+        bool desktopThrew = false;
+        try { using var blocked = new ExplorerIconSurface(); } catch (InvalidOperationException) { desktopThrew = true; }
+        t.Check("desktop actions stay off the real list view", desktopThrew && w.DesktopBlocks == 2 && w.DesktopAction == "blocked" && ExplorerIconSurface.NativeCalls == 0);
+
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);
         meta.Color = "g:lemon";   // one of the lightest gradients: hardest case for white text

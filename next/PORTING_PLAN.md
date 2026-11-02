@@ -603,9 +603,11 @@ Stop-Process -Id $p.Id
 
 ### 3단계 — 바탕화면 아이콘
 
-- `layouts.json` 라운드트립, 화면 키, 자동 저장 정책.
-- 실제 탐색기 메모리 쓰기는 사용자 확인 항목으로 남기고, 자동 테스트는 가짜 목록으로 `Apply`의 이름 매칭·중복 이름·자동 정렬 거부만 해요.
-- 합격: `icontest`와 같은 픽스처. 사용자 바탕화면 좌표는 불변.
+**상태: 코드 반영됨 (0.7.0).** 실제 `SysListView32`는 일반 실행에서 저장·복원을 눌렀을 때만 열어요. 테스트·`--off`·CI는 그 창을 찾지도 않아요.
+
+- `layouts.json` 라운드트립, 화면 키, 자동 저장 정책. 정책 값은 `Desk`의 해당 키만 바꾸고, 타이머는 돌리지 않아요.
+- 자동 테스트는 메모리 속 가짜 목록으로 이름 매칭·중복 이름·자동 정렬 거부·병합을 해요.
+- 합격: 스모크 **89**, 노트 **89**. 사용자 바탕화면 좌표는 불변.
 
 ### 4단계 — 창 위치
 
@@ -685,7 +687,7 @@ Stop-Process -Id $p.Id
 | 0 | 3.4.9 `extrastest`, `settingstest`. Next `--smoketest`(0.5.0은 65, 0.4.0은 58), `--notetest`(0.5.0은 89, 0.4.0은 26, 그 전은 23) | `next/measure-baseline.ps1` → `baseline_memory.txt`. `version`으로 3.4.9 문자열 확인 | 프리셋 CLI, 실모니터 |
 | 1 | 위 + 3.4.9 `notestest`, `imagetest` | Next 노트 테스트에 이미지 라운드트립, 삭제, 단축키 등록은 테스트 창의 메시지 흉내(전역 후킹 설치 없음), 읽기 전용. 0.5.0 기대값은 스모크 65, 노트 89 | 실제 메모 폴더, 전역 핫키가 사용자 키를 가로채는 실행 |
 | 2 | 위 + `configtest` | 화면 밖 탭 순회, 패치 후 Pt/Presets/Desk 키 보존. 0.6.0 스모크 **83**, 노트 **89** | 시작프로그램 lnk 생성 |
-| 3 | 위 + `icontest`(탐색기에 쓰지 않는 범위) | layouts.json 병합 픽스처 | 실제 바탕화면, `Desk.Apply`의 실리스트뷰 |
+| 3 | 위 + `icontest`(탐색기에 쓰지 않는 범위) | layouts.json 병합 픽스처. 0.7.0 스모크 **89**, 노트 **89**. 가짜 목록만 | 실제 바탕화면, `Desk.Apply`의 실리스트뷰 |
 | 4 | 위 + `windowtest`, `watchbench` | 테스트 창만 이동 | 사용자 창 |
 | 5 | 위 + `pttest` | 계산·단위·리사이즈 기하·WebP 샘플 파일. Zones 사각형 단위 | 저수준 후킹, HKCU 우클릭 키, `resize` GUI, `workspace` CLI |
 | 6 | 위 + `extrastest` 시나리오를 Next 목으로 | `overlaytest`는 숨은 데스크톱 세션에서만 | MMT, 밝기 API, DisplayFusion/탐색기 종료, “지금 적용” |

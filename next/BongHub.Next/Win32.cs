@@ -171,6 +171,27 @@ internal static class Win32
         GC.KeepAlive(cb);
         return list.ToArray();
     }
+
+    public readonly struct MonitorBox { public int W, H, X, Y; public bool Primary; }
+    /// <summary>Monitor rectangles for the screen-configuration key. This is not the desktop icon list view.</summary>
+    public static MonitorBox[] Monitors()
+    {
+        var list = new List<MonitorBox>();
+        MonitorEnumProc cb = (m, _, ref rc, _) =>
+        {
+            var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (GetMonitorInfo(m, ref mi))
+            {
+                var b = mi.rcMonitor;
+                list.Add(new MonitorBox { W = b.Width, H = b.Height, X = b.Left, Y = b.Top, Primary = (mi.dwFlags & 1) != 0 });
+            }
+            return true;
+        };
+        try { EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, cb, IntPtr.Zero); }
+        catch { }
+        GC.KeepAlive(cb);
+        return list.ToArray();
+    }
 }
 
 internal static class Dwm

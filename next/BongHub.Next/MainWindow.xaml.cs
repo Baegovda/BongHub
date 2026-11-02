@@ -598,13 +598,80 @@ public partial class MainWindow : Window
         Row(g, "\uE790", "8E8E93", "다크 오버레이", ConfigStore.KakaoDark ? "설정은 켜짐" : "설정은 꺼짐", null);
     }
 
+    public string DesktopAction { get; private set; } = "";
+    public int DesktopBlocks { get; private set; }
+    bool BlockDesktop()
+    {
+        if (DesktopGate.RealAllowed) return false;
+        DesktopBlocks++;
+        DesktopAction = "blocked";
+        return true;
+    }
+    public void RequestSaveDesktop()
+    {
+        if (BlockDesktop()) return;
+        try
+        {
+            using var icons = new ExplorerIconSurface();
+            string key = ScreenMap.Key(ScreenMap.Current());
+            var layout = IconLibrary.SaveNew(LayoutStore.Default, icons, "빠른 저장 " + DateTime.Now.ToString("M/d HH:mm"), key, out string err);
+            DesktopAction = layout == null ? err : "saved " + layout.Items.Count;
+        }
+        catch (Exception ex) { DesktopAction = ex.Message; }
+    }
+    public void RequestRestoreDesktop()
+    {
+        if (BlockDesktop()) return;
+        try
+        {
+            using var icons = new ExplorerIconSurface();
+            string key = ScreenMap.Key(ScreenMap.Current());
+            var result = IconLibrary.Restore(LayoutStore.Default, icons, key);
+            DesktopAction = result.Ok ? result.Summary() : result.Error;
+        }
+        catch (Exception ex) { DesktopAction = ex.Message; }
+    }
+    void DeskSwitch(StackPanel group, string glyph, string hex, string title, string sub, string key, bool on)
+    {
+        Row(group, glyph, hex, title, sub, Switch(on, v =>
+        {
+            if (!ConfigStore.SetSectionValue("Desk", key, JsonValue.Create(v))) return;
+            ConfigStore.SetDeskFlag(key, v);
+        }, !AppEnv.ReadOnly));
+    }
     void PageDesktop()
     {
-        Footer("바탕화면 아이콘은 옮기지 않아요. 저장된 단축키만 보여요.");
-        var g = Group();
-        Row(g, "\uE8A9", "34C759", "자동 저장", ConfigStore.DeskAutoSave ? "켜짐" : "꺼짐", null);
-        Row(g, "\uE70F", "4C8AFE", "저장 단축키", ConfigStore.DeskHotkeySave.Length > 0 ? ConfigStore.DeskHotkeySave : "없음", null);
-        Row(g, "\uE8A5", "5AC8FA", "복원 단축키", ConfigStore.DeskHotkeyRestore.Length > 0 ? ConfigStore.DeskHotkeyRestore : "없음", null);
+        string key = ScreenMap.Key(ScreenMap.Current());
+        Footer("저장·복원 단추만 바탕화면 아이콘을 읽어요. 자동 저장 타이머와 전역 단축키는 켜지 않아요. 테스트에서는 단추도 탐색기를 열지 않아요.");
+        var act = Group();
+        Row(act, "\uE8A9", "34C759", "현재 화면", ScreenMap.Describe(key), null);
+        var layouts = LayoutStore.Default.Load();
+        Row(act, "\uE8A5", "5AC8FA", "저장된 배치", layouts.Count == 0 ? "없음" : layouts.Count + "개", null);
+        Row(act, "\uE74E", "34C759", "지금 배치 저장", "눌러야 아이콘 이름과 좌표를 읽어요.", null, RequestSaveDesktop);
+        Row(act, "\uE777", "4C8AFE", "현재 화면 배치 복원", "저장된 배치가 있을 때만 아이콘을 옮겨요.", null, RequestRestoreDesktop);
+        Header("자동 저장 정책");
+        var pol = Group();
+        DeskSwitch(pol, "\uE823", "34C759", "주기적 자동 저장", "값은 저장만 하고, 타이머는 돌리지 않아요.", "AutoSave", ConfigStore.DeskAutoSave);
+        var minutes = new Slider { Minimum = 1, Maximum = 240, Width = 140, IsEnabled = !AppEnv.ReadOnly, IsSnapToTickEnabled = true, TickFrequency = 1, Value = ConfigStore.DeskAutoSaveMinutes };
+        var minuteLabel = Value(((int)minutes.Value) + "분");
+        minutes.ValueChanged += (_, _) =>
+        {
+            int v = (int)Math.Round(minutes.Value);
+            minuteLabel.Text = v + "분";
+            if (v == ConfigStore.DeskAutoSaveMinutes) return;
+            if (!ConfigStore.SetSectionValue("Desk", "AutoSaveMinutes", JsonValue.Create(v))) return;
+            ConfigStore.SetDeskMinutes(v);
+        };
+        var minuteTrail = new StackPanel { Orientation = Orientation.Horizontal };
+        minuteTrail.Children.Add(minutes);
+        minuteTrail.Children.Add(minuteLabel);
+        Row(pol, "\uE823", "8E8E93", "자동 저장 간격", "1–240분. 지금 당장은 세지 않아요.", minuteTrail);
+        DeskSwitch(pol, "\uE7E8", "5AC8FA", "종료 시 저장", "값은 저장만 해요.", "SaveOnExit", ConfigStore.DeskSaveOnExit);
+        DeskSwitch(pol, "\uE7F4", "FF9500", "프리셋 전환 직전 저장", "값은 저장만 해요.", "SaveBeforeSwitch", ConfigStore.DeskSaveBeforeSwitch);
+        DeskSwitch(pol, "\uE7F8", "AF52DE", "화면 구성이 바뀌면 복원", "값은 저장만 해요.", "RestoreOnChange", ConfigStore.DeskRestoreOnChange);
+        DeskSwitch(pol, "\uE7F4", "8E8E93", "시작 시 복원", "값은 저장만 해요.", "RestoreOnStartup", ConfigStore.DeskRestoreOnStartup);
+        Row(pol, "\uE70F", "4C8AFE", "저장 단축키", ConfigStore.DeskHotkeySave.Length > 0 ? ConfigStore.DeskHotkeySave : "없음. 등록하지 않아요.", null);
+        Row(pol, "\uE8A5", "5AC8FA", "복원 단축키", ConfigStore.DeskHotkeyRestore.Length > 0 ? ConfigStore.DeskHotkeyRestore : "없음. 등록하지 않아요.", null);
     }
 
     void PagePowerToys()
@@ -695,7 +762,7 @@ public partial class MainWindow : Window
             if (p.Hotkey.Length > 0) hotkeys += " · " + p.Name + " " + p.Hotkey;
         AboutMentionsHotkey = hotkeys.Contains("메모");
         Row(g, null, null, "단축키", hotkeys, null);
-        Row(g, null, null, "변경", "0.6.0 설정 셸. 메모는 0.5.0.", null);
+        Row(g, null, null, "변경", "0.7.0 바탕화면 아이콘. 설정 셸은 0.6.0.", null);
     }
 
     sealed class UniformGrid4 : Grid
