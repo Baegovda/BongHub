@@ -1,7 +1,0 @@
-INFO 3.1.0 icon centroid max shift 1.235 px · mean frame diff 0.45 · max 4.36 (0-255 lum)
-INFO 3.3.1 icon centroid max shift 0.000 px · mean frame diff 0.06 · max 0.24 (0-255 lum)
-PASS icon centroid stable (<0.35 px)
-PASS no relayout while bounds flap quickly (0)
-PASS one relayout after bounds settle (1)
-PASS icon centered on new primary (800)
-PASS icon stays put after settle

@@ -1,8 +1,4 @@
 # 빌드·IDE 산출물만 제외합니다. data/ 는 클라우드 동기화용이라 무시하지 않습니다.
-app/BongHub.exe
-app/*.pdb
-app/_dev/BongHub.exe
-app/_dev/*.pdb
 **/bin/
 **/obj/
 **/publish/

@@ -1,0 +1,35 @@
+﻿RESULT PASS
+BongHub 0.2.0  2026-11-02 00:33:48  data=C:\Users\REVAPT~1\AppData\Local\Temp\bhnext_ft\data_notetest
+
+PASS  loads every note  — 7/7, corrupt meta 0
+PASS  fields match the 3.4.7 files  — 7/7
+PASS  sorted by Modified desc
+PASS  every note window rendered  — 7/7
+PASS  exact position/size restore (physical px)  — 7/7
+INFO  note 5652dbbb0999: load=ok, pict=2, color=g:aurora, text=418 chars
+INFO  note 34ff7b4c3ad4: load=ok, pict=0, color=g:petrol, text=1045 chars
+INFO  note 57902941968b: load=empty, pict=0, color=gray, text=0 chars
+INFO  note aab9372a9b89: load=empty, pict=0, color=g:mint, text=0 chars
+INFO  note 1a6d750d0b69: load=ok, pict=0, color=g:aurora, text=98 chars
+INFO  note 4106ca8a2dd9: load=ok, pict=0, color=g:aurora, text=451 chars
+INFO  note 11fb464aae97: load=ok, pict=6, color=g:night, text=556 chars
+PASS  0-byte RTF opens without crash (meta text used)  — 2 empty file(s)
+PASS  untouched notes are not rewritten  — writes=0, changed=0 (closed→opened meta: 0)
+PASS  images survive an edit  — \pict 6 → 6; rtf rewritten with images
+INFO  image note: guard hits 0, rtf writes 1, meta writes 1
+PASS  image note meta text updated
+PASS  damaged RTF (garbage RTF header) opens with meta text  — status=corrupt, text='손상된 메모 백업 텍스트'
+PASS  damaged RTF (garbage RTF header) backed up before overwrite
+PASS  damaged RTF (not RTF at all) opens with meta text  — status=corrupt, text='손상된 메모 백업 텍스트'
+PASS  damaged RTF (not RTF at all) backed up before overwrite
+PASS  new note created  — d4658aefe6a4
+PASS  typing burst → one RTF write  — rtf writes 1, meta writes 1
+PASS  drag end saves position at once  — meta writes +1, 449,281 360x300
+PASS  no extra write after drag  — +1
+PASS  round trip: meta  — g:ocean top=True open=False 449,281 360x300 '안녕 BongHub 한글 저장 테스트 굵게'
+PASS  JSON uses JavaScriptSerializer date  — {"Id":"d4658aefe6a4","Color":"g:ocean","X":449,"Y":281,"W":360,"H":300,"TopMost":true,"Open":false,"Zoom":1,"Text":"안녕 BongHub 한글 저장 테스트 굵게","Modified":"\/Date(1793547228406)\/"}
+PASS  JSON field order matches 3.4.7
+PASS  JSON is UTF-8 without BOM
+PASS  round trip: RTF text + bold  — '안녕 BongHub 한글 저장 테스트 굵게'
+INFO  total writes in edit phase: 8
+PASS  read-only blocks every write
