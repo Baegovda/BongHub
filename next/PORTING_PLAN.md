@@ -152,7 +152,7 @@
 | 텍스트·제목1(24)·제목2(20)·제목3(16)·제목4(13), 작게/보통/크게 | `ShowFontSizes` `:3612` | **없음** |
 | 색 팔레트, 호버 미리보기(벗어나면 복귀, 클릭해야 저장) | `PalettePopup` `:2767`, `:3673` | **일부.** 클릭하면 저장 (`BuildSwatches`). 호버 미리보기 없음 |
 | Ctrl+휠 확대, 메타에 Zoom | `:3527` | **있음.** 0.6–3.0 (`StickyNoteWindow.xaml.cs:49`). 3.4.8은 RichEdit ZoomFactor(약 0.5–5) |
-| 이미지 붙여넣기·드롭·파일 선택, PNG/JPEG로 줄여 RTF `\pict` | `InsertImage` `:3636`, `ImgExt` `:3624` (webp 포함) | **없음.** 저장 가드만 있음: pict가 줄면 기존 RTF를 유지 (`StickyNoteWindow.xaml.cs` `FlushText`, `ImageGuardHits`) |
+| 이미지 붙여넣기·드롭·파일 선택, PNG/JPEG로 줄여 RTF `\pict` | `InsertImage` `:3636`, `ImgExt` `:3624` (webp 포함) | **없음.** 이미 있는 그림은 화면 크기로만 디코딩하고, 저장 때 원래 pict 바이트를 다시 넣어요. 개수가 줄면 기존 RTF를 유지 (`FlushText`, `ImageGuardHits`) |
 | 이미지 클릭 선택, 핸들 크기(비율 고정, Shift 자유), 이동, 삽입선 | `RichBox` `:2954`, `MoveImage` `:3110` | **없음** |
 | 우클릭: 복사, 25/50/75/100%, 폭 맞춤, 원본, 삭제 | `:3097` | **없음** |
 | Ctrl+C가 선택 이미지를 비트맵으로 | `CopySelectedImage` `:3080`, `:3705` | **없음** |
@@ -418,7 +418,7 @@ Next 전용(공유 파일이 아님): `ReduceMotion` (`ConfigStore.cs` `NextSett
 | `blankcheck` | 현재 계정이 로컬인지 종료 코드만 | 허용(상태를 바꾸지 않음) |
 | `paritytest` | `TestEnv.Off`만 켜고 case 없음 → 9 | 그대로 두기(실수 전환 방지) |
 
-Next 테스트: `--smoketest`, `--notetest`. 0.2.0 기록은 스모크 43, 노트 23이에요. 0.3.0 스모크는 그 43개에 트레이 단언 13개(다크 메뉴, 메뉴로 열기, 왼쪽 클릭, 종료, 풍선, 셸 아이콘을 만들지 않음)를 더해 **56**이에요. `--data`, `BONGHUB_NEXT_DATA`, `--out`, `--off`, `--tray`, `--quit`, `--idle-hidden`(화면 밖 설정 창을 만든 뒤 숨김. 메모리 기준선용). 테스트와 `--off` 측정은 임시 폴더라 `Local\BongHub_NotesWriter`를 잡지 않아요. `--off`는 Next 단일 실행 뮤텍스를 잡지 않아, 이미 켜진 Next 창을 끌어올리지 않아요.
+Next 테스트: `--smoketest`, `--notetest`. 0.2.0 기록은 스모크 43, 노트 23이에요. 0.3.0 스모크는 그 43개에 트레이 단언 13개(다크 메뉴, 메뉴로 열기, 왼쪽 클릭, 종료, 풍선, 셸 아이콘을 만들지 않음)를 더해 **56**이에요. 0.4.0 스모크는 거기에 소프트웨어 렌더 2개(설정 창, 메모 창)를 더해 **58**이에요. 0.4.0 노트는 그 23개에 표시 비트맵 크기·원본 pict 바이트 유지 2개와 선형 확대 1개를 더해 **26**이에요. `--data`, `BONGHUB_NEXT_DATA`, `--out`, `--off`, `--tray`, `--quit`, `--idle-hidden`(화면 밖 설정 창을 만든 뒤 숨김. 메모리 기준선용). 테스트와 `--off` 측정은 임시 폴더라 `Local\BongHub_NotesWriter`를 잡지 않아요. `--off`는 Next 단일 실행 뮤텍스를 잡지 않아, 이미 켜진 Next 창을 끌어올리지 않아요.
 
 ---
 
@@ -452,7 +452,7 @@ Next 테스트: `--smoketest`, `--notetest`. 0.2.0 기록은 스모크 43, 노�
 - `PublishTrimmed`와 `PublishAot`는 끄기.
 - `TieredPGO`는 이미 true. 유지.
 - `SatelliteResourceLanguages=ko` 유지.
-- `ConcurrentGarbageCollection=false`는 0.2.0의 선택이에요. 0단계에서 켠 경우와 끈 경우를 각 3회 재고, 유휴 작업 집합과 창 끄는 동안의 멈춤을 본 뒤에 정해요.
+- `ConcurrentGarbageCollection`은 0.4.0부터 **true**예요. 0.3.0 기준선(3.3)에서 켜는 쪽이 설정 첫 프레임을 700ms 아래로 내렸고, 트레이 작업 집합은 늘지 않았어요.
 - 디스크의 .NET 10 Desktop Runtime이 없으면 프레임워크 종속 exe는 시작하지 않아요. 설치가 어려운 PC용 자체 포함은 나중 선택이고, 메모리 목표의 기본 경로는 아니에요.
 
 어셈블리는 켜진 기능만 로드해요. 3.4.8은 한 파일이지만 꺼진 기능은 후킹을 만들지 않아요. .NET은 같은 어셈블리를 참조하면 그 코드가 같이 올라와요.
@@ -501,13 +501,41 @@ Stop-Process -Id $p.Id
 
 같은 방법으로 설정 창(`--off`만, `--tray` 없음)과, 메모 7개 복사본을 연 경우를 각 3회 재고 중앙값을 `next/test-logs/`에 남겨요. 로그 파일은 결과 txt만 커밋하고 `bin/`은 커밋하지 않아요.
 
-이 절차는 `next/measure-baseline.ps1`에 있어요. 시나리오는 네 가지예요. 계획의 3종(트레이만, 설정 창, 메모 7개)에, 설정 창을 만든 뒤 숨긴 상태(`--tray --off --idle-hidden`)를 더해요. 목표 표의 “트레이만”은 MainWindow를 아직 만들지 않은 상태이고, 숨긴 창 행은 그 트리를 그대로 들고 있는 상태예요. 스크립트는 준비 줄(`next_startup.txt`)이 생긴 뒤 20초를 쉬고 재요. `data/`와 `%LOCALAPPDATA%\BongHub`는 쓰지 않아요. `ConcurrentGarbageCollection`은 끈 경우와 켠 경우를 각 3회 재고, csproj 기본값(false)은 그 표를 보기 전에는 바꾸지 않아요. 창을 끄는 동안의 멈춤은 이 스크립트가 재지 않아요. 실모니터에서 드래그하지 않아요.
+이 절차는 `next/measure-baseline.ps1`에 있어요. 시나리오는 네 가지예요. 계획의 3종(트레이만, 설정 창, 메모 7개)에, 설정 창을 만든 뒤 숨긴 상태(`--tray --off --idle-hidden`)를 더해요. 목표 표의 “트레이만”은 MainWindow를 아직 만들지 않은 상태이고, 숨긴 창 행은 그 트리를 그대로 들고 있는 상태예요. 스크립트는 준비 줄(`next_startup.txt`)이 생긴 뒤 20초를 쉬고 재요. `data/`와 `%LOCALAPPDATA%\BongHub`는 쓰지 않아요. 스크립트는 동시 GC를 끈 경우와 켠 경우를 각 3회 재요. csproj 기본값은 0.4.0부터 true이고, 스크립트는 끝나면 runtimeconfig도 true로 돌려놔요. 판정은 `gc_concurrent=true` 중앙값이에요. 창을 끄는 동안의 멈춤은 이 스크립트가 재지 않아요. 실모니터에서 드래그하지 않아요.
 
 시작은 기존 `next_startup.txt`와 같이 프로세스 시작 시각부터 첫 `ContentRendered`까지예요 (`first_frame_ms`). 트레이 시점은 아이콘이 보인 직후 `tray_visible_ms`로 같은 파일에 남겨요. `--out`이 있을 때만 써요. 트레이만이면 `main_window_created=0`이고 `first_frame_ms`는 없어요.
 
 부가로 `dotnet-counters monitor --process-id <pid> System.Runtime`을 쓸 수 있어요. 없어도 목표 판정은 WorkingSet64와 PrivateMemorySize64로 해요.
 
 목표를 넘기면 그 단계의 기능 이식은 계속하고, 숫자는 기록해요. 기능을 빼서 숫자를 맞추지는 않아요. 은퇴 조건은 “목표 달성 또는, 초과분을 원인과 함께 기록하고 사용자가 그 상태로 매일 쓰기로 함”이에요.
+
+### 3.3 0.4.0 — 기준선을 보고 줄인 것
+
+**상태: `38e6b9b`는 주인 PC에서 쟀고 설정·메모가 목표를 넘었어요. 그 뒤를 소프트웨어 렌더로 줄였어요. 소프트웨어 렌더의 중앙값은 아직 비어 있음.** 그라데이션, 글꼴, 메모 색, 3.4.x 파일 형식, `Local\BongHub_NotesWriter` 순서는 그대로예요. 바탕화면이 설정 틴트 뒤로 비치는 효과만 소프트웨어 경로에서 빠져요. 이유는 아래 측정 다음 문단이에요.
+
+0.3.0을 주인 PC에서 잰 뒤의 판단:
+
+| 항목 | false (기본이었음) | true | 목표 |
+|---|---|---|---|
+| 트레이만 작업 집합 / 아이콘 | 57MB / 341ms | 56MB / 293ms | ≤ 120MB, ≤ 500ms. 이미 통과 |
+| 설정 첫 프레임 중앙값 | 1648ms (1648, 1522, 3795) | 684ms | ≤ 700ms. true만 통과 |
+| 설정 작업 집합 | 192MB (private 162) | (첫 프레임만 기록) | ≤ 150MB. 초과 |
+| 메모 7개 작업 집합 | 276MB (private 250) | 264MB | ≤ 180MB. 초과 |
+
+그래서 0.4.0은 동시 GC를 기본으로 켜요. 남은 작업 집합은 아래에서 줄여요.
+
+`38e6b9b`를 같은 스크립트(`gc_concurrent=true`, 3회 중앙값)로 잰 값: 트레이 60MB·아이콘 약 290ms, 설정 첫 프레임 662ms, 설정 작업 집합 195MB(private 162MB), 메모 7개 240MB(private 212MB). 스모크 56, 노트 25, 원본 pict 바이트는 유지됐어요. 관리 힙은 5–6MB예요. 트레이(60MB)와 설정 창(195MB)의 차이는 페이지 내용이 아니에요. 기준선 설정은 프리셋 두 줄짜리 빈 창이고, 그 창 하나만으로 private가 162MB예요. 메모 7개의 추가분은 약 45MB(private 약 50MB)라, 화면 크기로 줄인 그림과 창 버퍼 정도예요. 목표를 넘는 큰 덩어리는 첫 하드웨어 창이 프로세스에 올리는 D3D9On12 장치(디스크립터 힙, Intel 드라이버가 프로세스 private로 잡는 할당. [dotnet/wpf#7704](https://github.com/dotnet/wpf/issues/7704))예요.
+
+그 장치를 만들지 않으려고 프로세스를 소프트웨어 렌더로 고정해요. 시계를 떼고 그림 확대를 Linear로 바꾸는 것은 창 크기 중간 표면과 HighQuality 캐시를 지우기 위한 것이고, 장치 자체를 없애지는 않아요. 유휴 전에 작업 집합을 한 번 내리는 호출은 이미 해제한 페이지만 정리해요. private가 162·212에 머물면 그 호출만으로는 통과가 아니에요. 판정은 작업 집합과 private를 같은 천장으로 봐요.
+
+`fb8d5f2` Windows 결과: 게시 성공, 스모크 58, 노트 26. `gc_concurrent=true` 중앙값은 트레이 작업 집합/private 8/18MB·아이콘 294ms, 설정 23/65MB, 메모 7개 22/95MB. 메모리 목표는 통과. 설정 첫 프레임만 706ms(652, 706, 2386)로 700ms를 넘김. GPU일 때는 651–678ms. 소프트웨어에서 `main_ctor_done`→`main_hwnd`가 190–250ms. 이어서 설정 창의 첫 페인트에서 루트 불투명도 애니메이션(중간 표면 한 장)과 방사 빛 번짐을 빼요. 빛 번짐은 시각을 기록한 뒤에 켭니다. 다시 열 때의 페이드와 메모 창 페이드는 유지해요. 목표는 첫 프레임 중앙값 600ms 안, 메모리는 위 숫자에서 늘지 않는 것.
+
+- **설정 창.** 트레이만(57MB)과 설정 창(192MB)의 차이는 페이지 내용이 아니에요. 기준선 설정은 프리셋 두 줄짜리 빈 창이에요. 창을 띄운 뒤 `Opacity` 애니메이션이 `FillBehavior=HoldEnd`로 남으면 WPF가 창 크기 중간 표면을 유휴 때까지 잡고, 큰 타원에 `Opacity`를 주면 그 타원도 따로 표면이 돼요. 0.4.0은 애니메이션이 끝나면 시계를 떼고, 빛 번짐의 알파는 브러시 색에 넣어요. 색은 0.22·0.14를 곱한 것과 같게요. Mica와 반투명 틴트(`#D0`)는 유지해요.
+- **메모 7개.** `data/notes`의 그림은 두 파일이에요. `11fb464aae97.rtf`에 JPEG 6장(디코딩하면 약 26MB, 가장 큰 장 1472×1537), `5652dbbb0999.rtf`에 PNG 2장(약 2.4MB). 화면에서는 twip 목표 크기라 가로 약 260~550 DIP예요. WPF RTF 로더는 파일 픽셀 그대로 디코딩해서 FlowDocument가 그 비트맵을 잡고 있어요. 0.4.0은 로드용 RTF의 pict만 1×1 PNG로 바꾼 뒤, WIC `DecodePixelWidth`로 시스템 DPI·확대·목표 크기만큼만 디코딩해요. 긴 변은 1280px을 넘지 않고, 원본보다 키우지는 않아요. 창이 그려지기 전에 `Image.Source`를 바꿔서 큰 비트맵이 렌더 스레드에 올라가지 않게 해요.
+- **저장.** 0.2.0 노트 테스트는 이미지 메모를 고치면 WPF가 RTF를 다시 쓰고 pict 개수는 유지했어요(guard 0). 축소 비트맵을 그대로 저장하면 3.4.x 파일이 작아져요. 그래서 저장 문자열의 pict 묶음을 파일에 있던 묶음으로 바꿔 넣어요. 개수가 안 맞으면 예전 guard처럼 `.rtf`는 두고 본문만 메타에 적어요.
+- **유휴 전에 한 번 압축.** 시작 메모를 다 연 뒤(없으면 첫 프레임을 기록한 뒤) LOH를 한 번 압축해요. 우선순위는 `ApplicationIdle`이라 `first_frame_ms` / `tray_visible_ms` 안에는 들어가지 않아요. 측정 스크립트는 그 다음에 20초를 쉬어요.
+
+합격(Windows, 화면 밖, 임시 폴더): 스모크 58, 노트 26, `measure-baseline.ps1`의 `gc_concurrent=true` 중앙값이 트레이 작업 집합·private ≤ 120MB, 설정 둘 다 ≤ 150MB, 메모 7개 둘 다 ≤ 180MB, 트레이 아이콘 ≤ 500ms, 설정 첫 프레임 중앙값 ≤ 700ms. 스타트업에 `render_mode=software`가 있고, 창이 있는 시나리오는 `hwnd_render_mode=SoftwareOnly`예요. 프리셋 CLI와 실제 모니터는 쓰지 않아요. 설정 창을 실제 바탕화면에서 한 번 봐서, 어두운 그라데이션이고 거의 검정이나 하양이 아닌지도 봐 주세요.
 
 ---
 
@@ -529,17 +557,17 @@ Stop-Process -Id $p.Id
 
 ### 0단계 — 기준선과 .NET 10
 
-**상태: 코드 반영됨 (0.3.0). Windows 측정·합격 숫자는 아직 비어 있음.** 이 환경에서는 Windows 빌드와 트레이를 실행하지 않았어요. 주인 PC에서 아래 “Windows에서 돌릴 것”을 실행한 뒤 `next/test-logs/baseline_memory.txt`의 중앙값을 이 표에 적어요. `app/`은 그대로예요.
+**상태: 0.3.0 기준선과 `38e6b9b` 재측정은 주인 PC에서 채움 (2026-11-02). 소프트웨어 렌더는 코드에 반영됨. 그 중앙값을 다시 재는 일은 남아 있어요.** `app/`은 그대로예요. 0.3.0에서 `ConcurrentGarbageCollection=false`일 때 트레이만 57MB(private 15MB, 아이콘 341ms), 설정 창 192MB(private 162MB, 첫 프레임 중앙값 1648ms, 회차 1648/1522/3795), 메모 7개 276MB(private 250MB)였어요. 동시 GC를 켜면 설정 첫 프레임 684ms, 메모 7개 264MB, 트레이 56MB / 293ms였어요. `38e6b9b`는 트레이 60MB·약 290ms, 설정 첫 프레임 662ms, 설정 195/162MB, 메모 7개 240/212MB였어요. 그 표로 기본값을 true로 정했고, 설정·메모가 목표를 넘는 부분은 3.3에서 소프트웨어 렌더로 줄여요.
 
 | 항목 | 코드 | Windows에서 채울 것 |
 |---|---|---|
 | TFM `net10.0-windows`, SDK 10.0.403(또는 같은 10 기능 대역의 더 높은 SDK) | `global.json`, csproj | `dotnet publish` 종료 코드 0 |
-| H.NotifyIcon.Wpf 2.4.1, `UseWindowsForms` 제거 | `TrayService` | 스모크 56 PASS (0.2.0의 43 + 트레이 13) |
+| H.NotifyIcon.Wpf 2.4.1, `UseWindowsForms` 제거 | `TrayService` | 스모크 58 PASS (0.2.0의 43 + 트레이 13 + 소프트웨어 렌더 2) |
 | ReadyToRun, 프레임워크 종속, 단일 파일·트림·AOT 끔 | csproj, `Properties/PublishProfiles/ReadyToRun.pubxml` | publish 폴더에 `coreclr.dll` 없음, dll에 ReadyToRun |
 | 트레이만 / 설정 창 / 숨긴 설정 창 / 메모 7개, GC 동시 켜짐·꺼짐 각 3회 중앙값 | `next/measure-baseline.ps1` | `next/test-logs/baseline_memory.txt` |
-| `ConcurrentGarbageCollection` | **false 유지** (0.2.0과 같음) | 표를 보기 전에는 바꾸지 않음 |
+| `ConcurrentGarbageCollection` | **true** (0.4.0, 3.3의 기준선으로 결정) | `gc_concurrent=true` 중앙값이 목표 안인지 |
 | 3.4.8 `build.ps1` 경고 0 | `app/` 변경 없음 | 오류 0, 경고 0. exe를 배포 폴더에 복사하지 않음 |
-| 노트 23, 읽기 전용 저장 차단, extrastest 26/0, settingstest | 노트 테스트는 그대로 | 각 종료 코드 0 |
+| 노트 23 (0.4.0은 26), 읽기 전용 저장 차단, extrastest 26/0, settingstest | 0.4.0 노트는 표시 크기·pict 바이트·선형 확대 3개가 더해짐 | 각 종료 코드 0 |
 
 채택하지 않음 (0단계 범위 밖): CommunityToolkit.Mvvm(기존 화면을 ViewModel로 옮기지 않음), CsWin32(새 P/Invoke가 없음), Microsoft.Extensions.Hosting·Logging(켜진 기능 서비스는 뒤 단계), Serilog, Octokit, WPF-UI, WinUI 3.
 
@@ -550,7 +578,7 @@ Stop-Process -Id $p.Id
 - ReadyToRun, 프레임워크 종속.
 - 측정 3종과 숨긴 설정 창을 `next/test-logs/baseline_memory.txt`에 기록.
 - 3.4.8 `build.ps1`은 동작 변경 없이 경고 0인지만 확인(HANDOFF에 남은 확인). 소스를 기능 쪽으로 고치지 않아요.
-- 합격: 스모크 56(기존 43은 유지, 트레이 단언 13이 늘었음), 노트 23, 읽기 전용 저장 차단, extrastest 26/0, settingstest PASS.
+- 합격: 스모크 58(기존 43은 유지, 트레이 단언 13, 소프트웨어 렌더 2), 노트 26(0.4.0), 읽기 전용 저장 차단, extrastest 26/0, settingstest PASS.
 
 ### 1단계 — 메모를 3.4.8과 같게
 
@@ -652,7 +680,7 @@ Stop-Process -Id $p.Id
 
 | 단계 | 매번 돌릴 것 | 그 단계에 더할 것 | 돌리지 말 것 |
 |---|---|---|---|
-| 0 | 3.4.8 `extrastest`, `settingstest`. Next `--smoketest`(56), `--notetest`(23) | `next/measure-baseline.ps1` → `baseline_memory.txt`. `version`으로 3.4.8 문자열 확인 | 프리셋 CLI, 실모니터, `ConcurrentGarbageCollection`을 숫자 없이 바꾸기 |
+| 0 | 3.4.8 `extrastest`, `settingstest`. Next `--smoketest`(58), `--notetest`(0.4.0은 26, 그 전은 23) | `next/measure-baseline.ps1` → `baseline_memory.txt`. `version`으로 3.4.8 문자열 확인 | 프리셋 CLI, 실모니터 |
 | 1 | 위 + 3.4.8 `notestest`, `imagetest` | Next 노트 테스트에 이미지 라운드트립, 삭제, 단축키 등록은 테스트 창의 메시지 흉내(전역 후킹 설치 없음), 읽기 전용 | 실제 메모 폴더, 전역 핫키가 사용자 키를 가로채는 실행 |
 | 2 | 위 + `configtest` | 화면 밖 탭 순회, 패치 후 Pt/Presets 키 보존 | 시작프로그램 lnk 생성 |
 | 3 | 위 + `icontest`(탐색기에 쓰지 않는 범위) | layouts.json 병합 픽스처 | 실제 바탕화면, `Desk.Apply`의 실리스트뷰 |
@@ -665,7 +693,7 @@ Stop-Process -Id $p.Id
 
 `lockscreen` / `sleepauth` / `blankautologon`의 실인자는 어느 단계에서도 자동 실행하지 않아요. 로직은 `lockscreenpolicytest`처럼 프로세스 밖 정책을 건드리지 않는 복제품으로만 옮겨요. `blankcheck`는 종료 코드만 보므로 허용이에요.
 
-스모크가 이미 하는 일(대비, 포커스 안 가져감, Mica 클로크, Alt+F4는 숨기기)은 셸을 건드리는 단계마다 유지해요. 0.2.0은 43개였어요. 0.3.0은 트레이(다크 메뉴, 메뉴로 열기, 왼쪽 클릭, 종료 연결, 풍선 크롬, 스모크가 셸 아이콘을 만들지 않음)를 더해 56개예요. 개수가 줄면 이유를 계획 개정에 적어요.
+스모크가 이미 하는 일(대비, 포커스 안 가져감, Mica 클로크, Alt+F4는 숨기기)은 셸을 건드리는 단계마다 유지해요. 0.2.0은 43개였어요. 0.3.0은 트레이(다크 메뉴, 메뉴로 열기, 왼쪽 클릭, 종료 연결, 풍선 크롬, 스모크가 셸 아이콘을 만들지 않음)를 더해 56개예요. 0.4.0 스모크는 58개예요(설정 창과 메모 창이 소프트웨어 렌더인지 2개). 노트는 23에서 26으로 늘었어요(표시 비트맵이 1280px 이하, 저장 후 pict 바이트 길이가 같음, 확대가 Linear). 개수가 줄면 이유를 계획 개정에 적어요.
 
 CI는 저장소에 아직 없어요. 이 계획도 GitHub Actions를 필수로 두지 않아요. 시험 장소는 지금처럼 주인 PC의 격리 폴더예요. 봇 환경은 Windows 트레이를 띄울 수 있으면 화면 밖 스모크까지, 없으면 스크립트 컴파일과 문서 검토까지예요. 못 한 실사용(모니터 전환, 카톡, FancyZones, 잡아서 이동)은 “직접 확인해 주세요”로 남겨요.
 

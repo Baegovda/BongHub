@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -18,6 +19,9 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Before any HWND. The first hardware window pulls in D3D9On12 (descriptor heaps and, on Intel, a driver allocation counted in this process). That is the settings-window jump past the tray; the managed heap stays a few MB. Software raster keeps the same tree, fonts, and note colors.
+        RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
+        AppEnv.RenderModeLabel = "software";
         base.OnStartup(e);
         AppEnv.Init(e.Args);
         AppEnv.Mark("onstartup");
@@ -101,13 +105,19 @@ public partial class App : Application
         if (page != null) w.Navigate(page);
         bool first = !w.EverShown;
         if (first)
+        {
             WindowFx.Of(w).AfterFirstFrame += () =>
             {
                 int tier = 0;
+                RenderMode? hwndRender = null;
                 try { tier = RenderCapability.Tier >> 16; } catch { }
-                AppEnv.NoteFirstFrame(NoteManager.Windows.Count, tier, GC.GetTotalMemory(false) / 1048576);
+                try { hwndRender = HwndSource.FromHwnd(Win32.Handle(w))?.CompositionTarget?.RenderMode; } catch { }
+                AppEnv.NoteFirstFrame(NoteManager.Windows.Count, tier, GC.GetTotalMemory(false) / 1048576, hwndRender?.ToString() ?? "null");
             };
-        if (!w.IsVisible) { w.Show(); if (first) AppEnv.Mark("show_returned"); if (!first) w.Reappear(); }
+            // After the timestamp, so the radial-glow raster is not inside first_frame_ms.
+            WindowFx.Of(w).AfterFirstFrame += w.ShowDecorations;
+        }
+        if (!w.IsVisible) { AppEnv.Mark("show_begin"); w.Show(); if (first) AppEnv.Mark("show_returned"); if (!first) w.Reappear(); }
         if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
         if (!AppEnv.Off) w.Activate();
     }

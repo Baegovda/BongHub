@@ -3,7 +3,7 @@ namespace BongHub.Next;
 /// <summary>Process-wide environment: data folder (overridable), test flags, read-only guard.</summary>
 public static class AppEnv
 {
-    public const string Version = "0.3.0";
+    public const string Version = "0.4.0";
     /// <summary>Shared with app/BongHub.cs NotesWriterLock. First live owner is the only writer of the default notes folder.</summary>
     public const string NotesWriterMutexName = @"Local\BongHub_NotesWriter";
     public static string DefaultDataDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BongHub");
@@ -138,6 +138,10 @@ public static class AppEnv
     public static int? NotesAtFirstFrame { get; private set; }
     public static int? RenderTierAtFirstFrame { get; private set; }
     public static long? HeapMbAtFirstFrame { get; private set; }
+    /// <summary>Process render preference recorded for the baseline log. "software" avoids the D3D9On12 device.</summary>
+    public static string RenderModeLabel { get; set; } = "";
+    public static string? HwndRenderModeAtFirstFrame { get; private set; }
+    public static bool IdleTrimDone { get; private set; }
     public static int? StartupNotesOpened { get; private set; }
     public static bool SettingsHidden { get; private set; }
     /// <summary>Startup phase timestamp (ms since process start).</summary>
@@ -154,7 +158,7 @@ public static class AppEnv
         }
         catch { }
     }
-    public static void NoteFirstFrame(int notesOpen, int renderTier, long heapMb)
+    public static void NoteFirstFrame(int notesOpen, int renderTier, long heapMb, string hwndRenderMode)
     {
         try
         {
@@ -162,8 +166,15 @@ public static class AppEnv
             NotesAtFirstFrame = notesOpen;
             RenderTierAtFirstFrame = renderTier;
             HeapMbAtFirstFrame = heapMb;
+            HwndRenderModeAtFirstFrame = hwndRenderMode;
             WriteStartup();
         }
+        catch { }
+    }
+    /// <summary>Startup trim finished. The baseline samples memory about 20s later; this only marks that the trim ran.</summary>
+    public static void NoteIdleTrim()
+    {
+        try { IdleTrimDone = true; Mark("idle_trim"); WriteStartup(); }
         catch { }
     }
     public static void NoteStartupNotes(int opened)
@@ -183,6 +194,7 @@ public static class AppEnv
         if (OutDir == null) return;
         var sb = new System.Text.StringBuilder();
         sb.Append($"main_window_created={(MainWindowCreated ? 1 : 0)}\r\n");
+        if (RenderModeLabel.Length > 0) sb.Append($"render_mode={RenderModeLabel}\r\n");
         if (TrayVisibleMs != null) sb.Append($"tray_visible_ms={TrayVisibleMs:0}\r\n");
         if (FirstFrameMs != null)
         {
@@ -190,10 +202,12 @@ public static class AppEnv
             sb.Append($"notes_open_at_first_frame={NotesAtFirstFrame}\r\n");
             sb.Append($"readonly={ReadOnly}\r\n");
             sb.Append($"render_tier={RenderTierAtFirstFrame}\r\n");
+            sb.Append($"hwnd_render_mode={HwndRenderModeAtFirstFrame}\r\n");
             sb.Append($"managed_heap_mb={HeapMbAtFirstFrame}\r\n");
         }
         if (StartupNotesOpened != null) sb.Append($"startup_notes_opened={StartupNotesOpened}\r\n");
         if (SettingsHidden) sb.Append("settings_hidden=1\r\n");
+        if (IdleTrimDone) sb.Append("idle_trim=1\r\n");
         sb.Append($"phases: {Marks}\r\n");
         File.WriteAllText(Path.Combine(OutDir, "next_startup.txt"), sb.ToString());
     }

@@ -9,13 +9,13 @@
     <RootNamespace>BongHub.Next</RootNamespace>
     <ApplicationIcon>..\..\app\res\icon_blocks.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.3.0</Version>
-    <FileVersion>0.3.0.0</FileVersion>
+    <Version>0.4.0</Version>
+    <FileVersion>0.4.0.0</FileVersion>
     <Product>BongHub Next</Product>
     <SatelliteResourceLanguages>ko</SatelliteResourceLanguages>
     <TieredPGO>true</TieredPGO>
-    <!-- 0.2.0 choice. Phase 0 measures true and false; do not flip this until next/test-logs/baseline_memory.txt is filled on Windows. -->
-    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <!-- 0.4.0. Phase 0 on the owner PC: concurrent GC cut settings first_frame 1648ms (outlier 3795) to 684ms and did not grow the tray. -->
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <DefaultItemExcludes>$(DefaultItemExcludes);publish\**</DefaultItemExcludes>
   </PropertyGroup>
 

@@ -52,6 +52,8 @@ public static class SmokeTest
         t.Info($"settings: backdrop(Mica)={st.Backdrop}, cloaked at creation={st.CloakedAtCreate}, cloaked after reveal={st.CloakedAfterReveal}");
         t.Check("DWM cloak engaged before first paint", st.CloakedAtCreate > 0, $"DWMWA_CLOAKED={st.CloakedAtCreate}");
         t.Check("uncloaked after first frame", st.CloakedAfterReveal == 0, $"DWMWA_CLOAKED={st.CloakedAfterReveal}");
+        var settingsMode = HwndSource.FromHwnd(Win32.Handle(w))?.CompositionTarget?.RenderMode;
+        t.Check("settings window renders in software", settingsMode == RenderMode.SoftwareOnly, settingsMode?.ToString() ?? "no target");
         double compLum = NoteColors.Lum(Color.FromRgb(compBg.R, compBg.G, compBg.B));
         t.Check("composition background not white", compBg.A == 0 || compLum < 0.05, $"#{compBg.A:X2}{compBg.R:X2}{compBg.G:X2}{compBg.B:X2} (transparent = Mica shows through)");
         await TestKit.Until(() => w.Root.Opacity >= 0.999, 2000);
@@ -103,6 +105,8 @@ public static class SmokeTest
         t.Check("note did not take focus (ShowActivated=false)", TestKit.NotForeground(note) && !note.ShowActivated);
         var r = Win32.Rect(note);
         t.Check("note placed by physical pixels", r.Left == 200 + AppEnv.OffsetX && r.Top == 200 + AppEnv.OffsetY && r.Width == 330 && r.Height == 330, $"{r.Left},{r.Top} {r.Width}x{r.Height}");
+        var noteMode = HwndSource.FromHwnd(Win32.Handle(note))?.CompositionTarget?.RenderMode;
+        t.Check("note window renders in software", noteMode == RenderMode.SoftwareOnly, noteMode?.ToString() ?? "no target");
         note.Editor.Document.Blocks.Clear();
         note.Editor.Document.Blocks.Add(new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run("오늘 할 일")) { FontWeight = FontWeights.Bold, FontSize = 18 });
         note.Editor.Document.Blocks.Add(new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run("· 디자인 확인하기  · BongHub Next 테스트")));
