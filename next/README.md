@@ -36,7 +36,7 @@ BongHub.Next.exe --smoketest
 BongHub.Next.exe --notetest --data <notes 복사본>
 ```
 
-0.2.0 기록(`next/test-logs/next_smoketest.txt`, `next_notetest.txt`)은 스모크 **43 PASS**, 노트 **23 PASS**예요. 0.3.0 스모크는 **56**, 0.4.0 스모크는 **58**, 노트는 **26**이에요. 0.5.0 스모크는 **65 PASS**, 노트는 `data/notes` 7개(그림 포함)를 복사했을 때 **89 PASS**예요. 늘린 단언은 글자 7–48, 메모 페이지의 모두 보이기·숨기기·복사·삭제, 트레이 메뉴 항목, 핫키 미등록, 충돌 풍선, 모두 숨기기/보이기, 그리고 노트 쪽의 삭제·단축키 흉내·맞춤 색·그림 바이트·`picwgoal`·그림 가드·뷰어·클램프·읽기 전용 삭제예요. 노트 테스트에는 `data/notes`의 json·rtf 7개를 임시 폴더로 복사해 `--data`로 넘기세요. `data/` 원본은 고치지 마세요. `--off`에서는 `RegisterHotKey`와 `SetWindowsHookEx`를 호출하지 않아요.
+0.2.0 기록(`next/test-logs/next_smoketest.txt`, `next_notetest.txt`)은 스모크 **43 PASS**, 노트 **23 PASS**예요. 0.3.0 스모크는 **56**, 0.4.0 스모크는 **58**, 노트는 **26**이에요. 0.5.0 스모크는 **65 PASS**, 노트는 `data/notes` 7개(그림 포함)를 복사했을 때 **89 PASS**예요. 0.6.0 스모크는 **82 PASS**(8탭 순회, 탭 순서 패치, 시작프로그램 스위치, 정보 탭, 폴더 열기 금지), 노트는 **89**예요. 늘린 단언은 글자 7–48, 메모 페이지의 모두 보이기·숨기기·복사·삭제, 트레이 메뉴 항목, 핫키 미등록, 충돌 풍선, 모두 숨기기/보이기, 그리고 노트 쪽의 삭제·단축키 흉내·맞춤 색·그림 바이트·`picwgoal`·그림 가드·뷰어·클램프·읽기 전용 삭제예요. 노트 테스트에는 `data/notes`의 json·rtf 7개를 임시 폴더로 복사해 `--data`로 넘기세요. `data/` 원본은 고치지 마세요. `--off`에서는 `RegisterHotKey`와 `SetWindowsHookEx`를 호출하지 않아요.
 
 ## 메모리 기준선
 

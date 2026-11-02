@@ -16,7 +16,7 @@
 | **배포 exe** | **3.4.9** @ `C:\Users\Revaptor_FX\BongHub\BongHub.exe`. 파일 버전 **3.4.9.0** (PC에서 확인). 3.4.8 백업 `backup\3.4.8_20261102_123333` |
 | **`main` 소스** | 트레이 **3.4.9** (`app/BongHub.cs`, `app/version.txt`) + Next **0.5.0** (`next/BongHub.Next/`) |
 | **PR** | **#4·#5·#6·#7·#9 병합.** 열린 PR은 이 문서의 설정 패치(#8) |
-| Next 시험 | 0.4.0을 Windows에서 확인: 스모크 **58**, 노트 **26**, 설정 첫 프레임 **593ms**. 0.5.0 기대값은 스모크 **65**, 노트 **89**(7개 복사본, 그림 포함). 저장소 `next/test-logs/`의 옛 파일은 0.2.0 스모크 43 / 노트 23 |
+| Next 시험 | 0.4.0을 Windows에서 확인: 스모크 **58**, 노트 **26**, 설정 첫 프레임 **593ms**. 0.6.0 기대값은 스모크 **82**, 노트 **89**(7개 복사본, 그림 포함). 저장소 `next/test-logs/`의 옛 파일은 0.2.0 스모크 43 / 노트 23 |
 | Next 메모리 | Windows 유휴, 작업 집합/private: 트레이 **8/18MB**, 설정 **20/64MB**, 메모 7개 **22/94MB** |
 | 런타임 | `%LOCALAPPDATA%\BongHub\` |
 | 클라우드 | **Enabled=true**. `data/`가 `main`에 커밋됨. 커밋 대부분은 `sync: REVAPTOR-FX …` (수는 `git log --grep='^sync:'`로 확인) |

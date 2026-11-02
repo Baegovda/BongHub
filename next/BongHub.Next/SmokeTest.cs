@@ -71,7 +71,7 @@ public static class SmokeTest
         ContrastCheck(t, w, w.FirstSecondary, "secondary text", 4.5);
         ContrastCheck(t, w, w.AppTitle, "sidebar title", 7);
 
-        foreach (var page in new[] { "notes", "general", "more", "about" })
+        foreach (var page in new[] { "windows", "notes", "kakao", "desktop", "general", "powertoys", "about" })
         {
             w.Navigate(page);
             t.Check($"tab {page} switch is non-blocking (<60ms)", w.LastNavigateMs < 60, $"{w.LastNavigateMs:0.0} ms");
@@ -99,6 +99,17 @@ public static class SmokeTest
         await TestKit.Delay(400);
         t.Check("reopen from tray after Alt+F4", reopenErr == null && w.IsVisible && w.Root.Opacity > 0.99, reopenErr?.Message ?? $"visible={w.IsVisible}");
         t.Check("reopen did not take focus", TestKit.NotForeground(w));
+        t.Check("eight settings tabs", w.Pages.Count == 8 && w.Pages.Any(p => p.Label == "모니터 프리셋") && w.Pages.Any(p => p.Label == "카톡 광고 제거"));
+        t.Check("startup switch is display only", w.StartupSwitchEnabled == false);
+        t.Check("about shows version and hotkeys", w.AboutMentionsVersion && w.AboutMentionsHotkey);
+        t.Check("open folder stays inside tests", w.RequestOpenDataFolder() == false && w.FolderLaunches == 0);
+        string markerCfg = "{\r\n  \"Version\": 2,\r\n  \"Presets\": [{ \"Name\": \"작업\", \"Hotkey\": \"Ctrl+Alt+1\", \"Marker\": \"PRESET_KEEP\" }],\r\n  \"Pt\": { \"Zones\": { \"Enabled\": false, \"Marker\": \"PT_KEEP\" } },\r\n  \"Desk\": { \"HotkeySave\": \"Ctrl+Alt+S\", \"Marker\": \"DESK_KEEP\" },\r\n  \"General\": { \"OverlayOpacity\": 70 }\r\n}\r\n";
+        File.WriteAllText(AppEnv.ConfigPath, markerCfg);
+        ConfigStore.Load();
+        w.ApplyTabOrder(ConfigStore.TabOrder);
+        bool moved = w.MoveTab("about", 1);
+        string patched = File.ReadAllText(AppEnv.ConfigPath);
+        t.Check("tab order keeps Pt Presets and Desk bytes", moved && patched.Contains("PRESET_KEEP") && patched.Contains("PT_KEEP") && patched.Contains("DESK_KEEP") && patched.Contains("\"OverlayOpacity\": 70") && patched.Contains("\"TabOrder\""));
 
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);

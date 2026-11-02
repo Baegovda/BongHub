@@ -10,14 +10,19 @@ namespace BongHub.Next;
 
 public partial class MainWindow : Window
 {
-    public static readonly (string Key, string Label, string Glyph, string Hex)[] Pages =
+    public static readonly (string Key, string Label, string Glyph, string Hex)[] Catalog =
     {
         ("presets", "모니터 프리셋", "\uE7F4", "4C8AFE"),
-        ("notes",   "스티커 메모", "\uE70B", "F5B83D"),
+        ("windows", "창 위치", "\uE737", "5AC8FA"),
+        ("notes", "스티커 메모", "\uE70B", "F5B83D"),
+        ("kakao", "카톡 광고 제거", "\uE8BD", "FFCC00"),
+        ("desktop", "바탕화면 아이콘", "\uE8A9", "34C759"),
+        ("powertoys", "PowerToys", "\uE945", "AF52DE"),
         ("general", "일반", "\uE713", "8E8E93"),
-        ("more",    "더 보기", "\uE712", "AF52DE"),
-        ("about",   "정보", "\uE946", "34C759"),
+        ("about", "정보", "\uE946", "5856D6"),
     };
+    public static readonly string[] DefaultTabOrder = { "presets", "windows", "notes", "kakao", "desktop", "powertoys", "general", "about" };
+    public IReadOnlyList<(string Key, string Label, string Glyph, string Hex)> Pages { get; private set; } = Catalog;
     public string CurrentPage { get; private set; } = "";
     public bool EverShown { get; private set; }
     public TextBlock? TitleBlock { get; private set; }
@@ -25,6 +30,10 @@ public partial class MainWindow : Window
     public TextBlock? FirstSecondary { get; private set; }
     public double LastNavigateMs { get; private set; }
     public Slider? NoteFontSlider { get; private set; }
+    public bool StartupSwitchEnabled { get; private set; }
+    public bool AboutMentionsVersion { get; private set; }
+    public bool AboutMentionsHotkey { get; private set; }
+    public int FolderLaunches { get; private set; }
     readonly HashSet<string> noteChecks = new(StringComparer.Ordinal);
     readonly Dictionary<string, Border> navRows = new();
     bool hiding;
@@ -42,8 +51,8 @@ public partial class MainWindow : Window
         };
         if (AppEnv.Off) { ShowActivated = false; WindowStartupLocation = WindowStartupLocation.Manual; Left = -30000; Top = -30000; }
         ContentRendered += (_, _) => EverShown = true;
-        int i = 0;
-        foreach (var p in Pages) Nav.Children.Add(NavRow(p, i++));
+        ApplyTabOrder(ConfigStore.TabOrder);
+        RebuildNav();
         MinBtn.Click += (_, _) => WindowState = WindowState.Minimized;
         CloseBtn.Click += (_, _) => Close();
         Closing += (_, e) =>
@@ -91,6 +100,69 @@ public partial class MainWindow : Window
         navRows[p.Key] = row;
         return row;
     }
+
+    int IndexOfPage(string key)
+    {
+        for (int i = 0; i < Pages.Count; i++) if (Pages[i].Key == key) return i;
+        return -1;
+    }
+
+    public void ApplyTabOrder(IEnumerable<string>? saved)
+    {
+        var keys = new List<string>();
+        if (saved != null)
+            foreach (var k in saved)
+                if (Catalog.Any(p => p.Key == k) && !keys.Contains(k)) keys.Add(k);
+        foreach (var k in DefaultTabOrder)
+            if (!keys.Contains(k)) keys.Add(k);
+        Pages = keys.Select(k => Catalog.First(p => p.Key == k)).ToList();
+    }
+
+    public void RebuildNav()
+    {
+        Nav.Children.Clear();
+        navRows.Clear();
+        int i = 0;
+        foreach (var p in Pages) Nav.Children.Add(NavRow(p, i++));
+        if (CurrentPage.Length > 0) Navigate(CurrentPage);
+    }
+
+    /// <summary>Reorder one tab and splice <c>General.TabOrder</c>. Other config bytes stay.</summary>
+    public bool MoveTab(string key, int to)
+    {
+        var keys = Pages.Select(p => p.Key).ToList();
+        int from = keys.IndexOf(key);
+        if (from < 0 || to < 0 || to >= keys.Count || from == to) return false;
+        keys.RemoveAt(from);
+        keys.Insert(to, key);
+        var arr = new JsonArray();
+        foreach (var k in keys) arr.Add(JsonValue.Create(k));
+        if (!ConfigStore.SetSectionValue("General", "TabOrder", arr)) return false;
+        ConfigStore.TabOrder.Clear();
+        ConfigStore.TabOrder.AddRange(keys);
+        string stay = CurrentPage;
+        ApplyTabOrder(keys);
+        Nav.Children.Clear();
+        navRows.Clear();
+        int i = 0;
+        foreach (var p in Pages) Nav.Children.Add(NavRow(p, i++));
+        if (stay.Length > 0) { CurrentPage = ""; Navigate(stay); }
+        return true;
+    }
+
+    /// <summary>Opens the data folder. Tests and <c>--off</c> record the request and do not start Explorer.</summary>
+    public bool RequestOpenDataFolder()
+    {
+        if (AppEnv.Off || AppEnv.Smoke || AppEnv.NoteTest) return false;
+        try
+        {
+            Directory.CreateDirectory(AppEnv.DataDir);
+            Process.Start(new ProcessStartInfo("explorer.exe", AppEnv.DataDir) { UseShellExecute = true });
+            FolderLaunches++;
+            return true;
+        }
+        catch (Exception e) { AppEnv.Log("open folder: " + e.Message); return false; }
+    }
     public static Border Tile(string glyph, string hex, double size, double radius, double font)
     {
         var c = (Color)ColorConverter.ConvertFromString("#" + hex);
@@ -105,7 +177,7 @@ public partial class MainWindow : Window
     public void Navigate(string key)
     {
         var sw = Stopwatch.StartNew();
-        int idx = Array.FindIndex(Pages, p => p.Key == key); if (idx < 0) return;
+        int idx = IndexOfPage(key); if (idx < 0) return;
         bool animate = CurrentPage != "" && CurrentPage != key;
         if (animate) Fx.MoveY(NavSelT, idx * 42, 320);
         else { NavSelT.BeginAnimation(TranslateTransform.YProperty, null); NavSelT.Y = idx * 42; }
@@ -124,9 +196,12 @@ public partial class MainWindow : Window
         switch (key)
         {
             case "presets": PagePresets(); break;
+            case "windows": PageWindows(); break;
             case "notes": PageNotes(); break;
+            case "kakao": PageKakao(); break;
+            case "desktop": PageDesktop(); break;
+            case "powertoys": PagePowerToys(); break;
             case "general": PageGeneral(); break;
-            case "more": PageMore(); break;
             default: PageAbout(); break;
         }
         if (animate) Fx.SlideIn(PageHost);
@@ -504,46 +579,123 @@ public partial class MainWindow : Window
         };
     }
 
-    void PageGeneral()
+    void PageWindows()
     {
+        Footer("조건에 맞는 창을 옮기는 동작은 아직 3.4.9예요. Next는 규칙 이름만 보여요.");
         var g = Group();
-        Row(g, "\uE7E8", "34C759", "Windows 시작 시 실행", "3.4.8의 시작프로그램 바로가기를 건드리지 않도록 Next에서는 아직 꺼 두었어요.", Switch(false, _ => { }, enabled: false));
-        Row(g, "\uE9E9", "5AC8FA", "애니메이션 줄이기", "창과 화면 전환 움직임을 최소화해요.", Switch(NextSettings.ReduceMotion, v => NextSettings.SetReduceMotion(v)));
-        Header("상태");
-        var s = Group();
-        var proc = Process.GetCurrentProcess();
-        Row(s, "\uE950", "8E8E93", "메모리", null, Value($"{proc.PrivateMemorySize64 / 1048576} MB"));
-        Row(s, "\uE7BA", AppEnv.ReadOnly ? "FF9500" : "34C759", "3.4.8 동시 실행", null, Value(AppEnv.ReadOnly ? "읽기 전용" : AppEnv.LegacyRunning() ? "실행 중" : "꺼져 있음"));
-        Row(s, "\uE946", "4C8AFE", "버전", null, Value("Next " + AppEnv.Version));
+        if (ConfigStore.Rules.Count == 0)
+            Row(g, "\uE737", "5AC8FA", "저장된 규칙 없음", "창은 움직이지 않아요.", null);
+        else
+            foreach (var r in ConfigStore.Rules.Take(8))
+                Row(g, "\uE737", "5AC8FA", r.Name.Length > 0 ? r.Name : "(이름 없음)", r.Enabled ? "사용" : "꺼짐", null);
     }
 
-    void PageMore()
+    void PageKakao()
     {
-        Footer("아래 기능은 아직 안정 버전(3.4.8)에서 동작해요. Next로 하나씩 옮기는 중이에요.");
+        Footer("광고 숨김은 3.4.9의 BongAd가 해요. Next는 켜고 끄지 않아요.");
         var g = Group();
-        Row(g, "\uE8BD", "FFCC00", "카카오톡 알림 규칙", "3.4.8에서 사용", Chevron());
-        Row(g, "\uE7F4", "5856D6", "모니터 · 밝기 전환", "3.4.8에서 사용", Chevron());
-        Row(g, "\uE80F", "34C759", "바탕화면 아이콘 정리", "3.4.8에서 사용", Chevron());
-        Row(g, "\uE753", "5AC8FA", "클라우드 동기화", "3.4.8에서 사용", Chevron());
+        Row(g, "\uE8BD", "FFCC00", "광고 숨김", ConfigStore.KakaoAdBlock ? "설정은 켜짐" : "설정은 꺼짐", null);
+        Row(g, "\uE790", "8E8E93", "다크 오버레이", ConfigStore.KakaoDark ? "설정은 켜짐" : "설정은 꺼짐", null);
+    }
+
+    void PageDesktop()
+    {
+        Footer("바탕화면 아이콘은 옮기지 않아요. 저장된 단축키만 보여요.");
+        var g = Group();
+        Row(g, "\uE8A9", "34C759", "자동 저장", ConfigStore.DeskAutoSave ? "켜짐" : "꺼짐", null);
+        Row(g, "\uE70F", "4C8AFE", "저장 단축키", ConfigStore.DeskHotkeySave.Length > 0 ? ConfigStore.DeskHotkeySave : "없음", null);
+        Row(g, "\uE8A5", "5AC8FA", "복원 단축키", ConfigStore.DeskHotkeyRestore.Length > 0 ? ConfigStore.DeskHotkeyRestore : "없음", null);
+    }
+
+    void PagePowerToys()
+    {
+        Footer("후킹과 창 이동은 하지 않아요. 설정 파일의 켜짐만 보여요.");
+        var g = Group();
+        if (ConfigStore.PowerToys.Count == 0)
+            Row(g, "\uE945", "AF52DE", "PowerToys 설정 없음", "코드 기본은 위험한 항목이 꺼져 있어요.", null);
+        else
+            foreach (var toy in ConfigStore.PowerToys)
+                Row(g, "\uE945", "AF52DE", toy.Name, (toy.Enabled ? "켜짐" : "꺼짐") + (toy.Hotkey.Length > 0 ? " · " + toy.Hotkey : ""), null);
+    }
+
+    void PageGeneral()
+    {
+        Header("자리를 비우면");
+        var idle = Group();
+        Row(idle, "\uE823", "FF9500", "자동 전환", "입력 없으면 고른 모니터 프리셋 이름만 저장해요. 전환은 하지 않아요.", Switch(ConfigStore.IdleEnabled, v =>
+        {
+            if (!ConfigStore.SetSectionValue("General", "IdleEnabled", JsonValue.Create(v))) return;
+            ConfigStore.SetIdle(v, ConfigStore.IdleMinutes, ConfigStore.IdlePreset);
+        }, !AppEnv.ReadOnly));
+        var minutes = new Slider { Minimum = 1, Maximum = 180, Width = 140, IsEnabled = !AppEnv.ReadOnly, IsSnapToTickEnabled = true, TickFrequency = 1, Value = ConfigStore.IdleMinutes };
+        var minuteLabel = Value(((int)minutes.Value).ToString());
+        minutes.ValueChanged += (_, _) =>
+        {
+            int v = (int)Math.Round(minutes.Value);
+            minuteLabel.Text = v.ToString();
+            if (v == ConfigStore.IdleMinutes) return;
+            if (!ConfigStore.SetSectionValue("General", "IdleMinutes", JsonValue.Create(v))) return;
+            ConfigStore.SetIdle(ConfigStore.IdleEnabled, v, ConfigStore.IdlePreset);
+        };
+        var minuteTrail = new StackPanel { Orientation = Orientation.Horizontal };
+        minuteTrail.Children.Add(minutes); minuteTrail.Children.Add(minuteLabel);
+        Row(idle, "\uE823", "8E8E93", "대기 분", "1–180", minuteTrail);
+        string preset = ConfigStore.IdlePreset.Length > 0 ? ConfigStore.IdlePreset : (ConfigStore.Presets.FirstOrDefault()?.Name ?? "");
+        Row(idle, "\uE7F4", "4C8AFE", "실행할 프리셋", preset.Length > 0 ? preset : "없음", null);
+
+        Header("전환 화면");
+        var ov = Group();
+        Row(ov, "\uE7F4", "5856D6", "로딩 화면", "모든 모니터 프리셋. 지금은 띄우지 않아요.", Switch(ConfigStore.OverlayEnabled, v =>
+        {
+            if (!ConfigStore.SetSectionValue("General", "OverlayEnabled", JsonValue.Create(v))) return;
+            ConfigStore.SetOverlay(v, ConfigStore.OverlayOpacity);
+        }, !AppEnv.ReadOnly));
+        var op = new Slider { Minimum = 20, Maximum = 100, Width = 140, IsEnabled = !AppEnv.ReadOnly, Value = ConfigStore.OverlayOpacity };
+        var opLabel = Value(ConfigStore.OverlayOpacity.ToString());
+        op.ValueChanged += (_, _) =>
+        {
+            int v = (int)Math.Round(op.Value);
+            opLabel.Text = v.ToString();
+            if (v == ConfigStore.OverlayOpacity) return;
+            if (!ConfigStore.SetSectionValue("General", "OverlayOpacity", JsonValue.Create(v))) return;
+            ConfigStore.SetOverlay(ConfigStore.OverlayEnabled, v);
+        };
+        var opTrail = new StackPanel { Orientation = Orientation.Horizontal };
+        opTrail.Children.Add(op); opTrail.Children.Add(opLabel);
+        Row(ov, "\uE7F4", "8E8E93", "배경 어둡기", "20–100. 지금 화면은 어둡히지 않아요.", opTrail);
+
+        Header("시작");
+        var start = Group();
+        var startup = Switch(false, _ => { }, enabled: false);
+        StartupSwitchEnabled = startup.IsEnabled;
+        Row(start, "\uE7E8", "34C759", "Windows 시작 시 실행", "바로가기는 보여 주기만 하고 만들거나 지우지 않아요.", startup);
+        var open = new Button { Content = "폴더 열기", Padding = new Thickness(12, 6, 12, 6), IsEnabled = !AppEnv.ReadOnly };
+        open.Click += (_, _) => RequestOpenDataFolder();
+        Row(start, "\uE8B7", "5AC8FA", "설정 폴더", AppEnv.DataDir, open);
+        Row(start, "\uE9E9", "8E8E93", "애니메이션 줄이기", "Next만의 설정이에요. 공유 config.json에는 없어요.", Switch(NextSettings.ReduceMotion, v => NextSettings.SetReduceMotion(v)));
     }
 
     void PageAbout()
     {
         var hero = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 10, 0, 18) };
-        var icon = new Border { Width = 84, Height = 84, CornerRadius = new CornerRadius(22), Background = (Brush)FindResource("AccentGradient"), HorizontalAlignment = HorizontalAlignment.Center,
-            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 30, ShadowDepth = 6, Opacity = 0.35, Direction = 270, Color = Color.FromRgb(0x4C, 0x8A, 0xFE) } };
-        var grid = new UniformGrid4();
-        icon.Child = grid;
+        var icon = new Border { Width = 84, Height = 84, CornerRadius = new CornerRadius(22), Background = (Brush)FindResource("AccentGradient"), HorizontalAlignment = HorizontalAlignment.Center };
+        icon.Child = new UniformGrid4();
         hero.Children.Add(icon);
         hero.Children.Add(new TextBlock { Text = "BongHub Next", FontFamily = (FontFamily)FindResource("DisplayFont"), FontSize = 24, FontWeight = FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 14, 0, 2) });
         var ver = new TextBlock { Text = $"버전 {AppEnv.Version} · .NET 10 WPF", Foreground = (Brush)FindResource("Secondary"), HorizontalAlignment = HorizontalAlignment.Center };
         FirstSecondary ??= ver;
         hero.Children.Add(ver);
         PageHost.Children.Add(hero);
+        AboutMentionsVersion = ver.Text.Contains(AppEnv.Version);
         var g = Group();
-        Row(g, null, null, "안정 버전", null, Value("3.4.8 (그대로 사용)"));
-        Row(g, null, null, "단일 실행", null, Value(App.MutexName.Replace("Local\\", "")));
-        Row(g, null, null, "데이터", null, Value(AppEnv.IsDefaultData ? "3.4.8과 공유" : "테스트 복사본"));
+        Row(g, null, null, "배포 트레이", null, Value("3.4.9"));
+        Row(g, null, null, "구성요소", "WPF, H.NotifyIcon. WinForms 없음.", null);
+        string hotkeys = "새 메모 " + (ConfigStore.Notes.Hotkey.Length > 0 ? ConfigStore.Notes.Hotkey : "없음");
+        foreach (var p in ConfigStore.Presets.Take(4))
+            if (p.Hotkey.Length > 0) hotkeys += " · " + p.Name + " " + p.Hotkey;
+        AboutMentionsHotkey = hotkeys.Contains("메모");
+        Row(g, null, null, "단축키", hotkeys, null);
+        Row(g, null, null, "변경", "0.6.0 설정 셸. 메모는 0.5.0.", null);
     }
 
     sealed class UniformGrid4 : Grid

@@ -150,6 +150,16 @@ finally
     try { Directory.Delete(dir, true); } catch { }
 }
 
+const string Shell = "{\"Version\":2,\"Presets\":[{\"Marker\":\"PRESET_KEEP\"}],\"Pt\":{\"Marker\":\"PT_KEEP\"},\"Desk\":{\"Marker\":\"DESK_KEEP\"},\"General\":{\"OverlayOpacity\":70}}";
+var order = new JsonArray();
+order.Add(JsonValue.Create("about"));
+order.Add(JsonValue.Create("presets"));
+Check("general tab order splice", NotesConfigPatch.TryApply(Shell, "General", "TabOrder", order, out string shelled)
+    && shelled.Contains("PRESET_KEEP") && shelled.Contains("PT_KEEP") && shelled.Contains("DESK_KEEP")
+    && shelled.Contains("\"OverlayOpacity\":70") && shelled.Contains("\"TabOrder\""));
+Check("notes patch still leaves Presets", NotesConfigPatch.TryApply(Shell, "Opacity", JsonValue.Create(9), out string notesOnly)
+    && notesOnly.Contains("\"Opacity\": 9") && notesOnly.Contains("PRESET_KEEP") && notesOnly.Contains("PT_KEEP") && notesOnly.Contains("DESK_KEEP"));
+
 Console.WriteLine(fail == 0 ? "RESULT PASS" : "RESULT FAIL " + fail);
 return fail == 0 ? 0 : 1;
 

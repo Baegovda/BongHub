@@ -11,14 +11,18 @@ namespace BongHub.Next;
 public static class NotesConfigPatch
 {
     public static bool TryApply(string text, string key, JsonNode? value, out string updated)
+        => TryApply(text, "Notes", key, value, out updated);
+
+    /// <summary>Splices one value under a top-level object such as <c>Notes</c> or <c>General</c>. Other bytes stay.</summary>
+    public static bool TryApply(string text, string section, string key, JsonNode? value, out string updated)
     {
         updated = text;
-        if (string.IsNullOrEmpty(text) || value is null || !IsKey(key)) return false;
+        if (string.IsNullOrEmpty(text) || value is null || !IsKey(section) || !IsKey(key)) return false;
         var r = new R(text);
         r.SkipWs();
         if (r.Eof || r.C != '{') return false;
         int rootOpen = r.I;
-        if (!r.ReadObject(out int rootClose, out int rootMembers, out int rootLast, out var notes, wantChild: "Notes")) return false;
+        if (!r.ReadObject(out int rootClose, out int rootMembers, out int rootLast, out var notes, wantChild: section)) return false;
         if (notes.IsObject)
         {
             var inner = new R(text) { I = notes.ValueStart };
@@ -43,7 +47,7 @@ public static class NotesConfigPatch
         string notesJson = rootPretty
             ? "{" + nl + memberIndent + ExtraIndent(memberIndent) + innerText + nl + memberIndent + "}"
             : "{" + innerText + "}";
-        return InsertMember(text, rootOpen, rootClose, rootMembers, rootLast, "\"Notes\": " + notesJson, out updated);
+        return InsertMember(text, rootOpen, rootClose, rootMembers, rootLast, "\"" + section + "\": " + notesJson, out updated);
     }
 
     /// <summary>Minimal config when the file does not exist yet. 3.4.x pretty-print uses CRLF and two-space indents.</summary>
@@ -53,20 +57,29 @@ public static class NotesConfigPatch
         return "{\r\n  \"Version\": 2,\r\n  \"Notes\": {\r\n    \"" + key + "\": " + Format(value) + "\r\n  }\r\n}";
     }
 
+    public static string CreateSection(string section, string key, JsonNode value)
+    {
+        if (!IsKey(section) || !IsKey(key) || value is null) throw new ArgumentException("key");
+        return "{\r\n  \"Version\": 2,\r\n  \"" + section + "\": {\r\n    \"" + key + "\": " + Format(value) + "\r\n  }\r\n}";
+    }
+
     /// <summary>
     /// Patch <paramref name="path"/> in place. Returns false when the file cannot be patched safely
     /// (it is left untouched). <paramref name="changed"/> is false when the value was already there.
     /// </summary>
     public static bool TryWriteFile(string path, string key, JsonNode? value, out bool changed)
+        => TryWriteFile(path, "Notes", key, value, out changed);
+
+    public static bool TryWriteFile(string path, string section, string key, JsonNode? value, out bool changed)
     {
         changed = false;
-        if (string.IsNullOrEmpty(path) || value is null || !IsKey(key)) return false;
+        if (string.IsNullOrEmpty(path) || value is null || !IsKey(section) || !IsKey(key)) return false;
         var enc = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
         if (!File.Exists(path))
         {
             string? dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            WriteAtomic(path, enc.GetBytes(CreateNew(key, value)), bom: false);
+            WriteAtomic(path, enc.GetBytes(section == "Notes" ? CreateNew(key, value) : CreateSection(section, key, value)), bom: false);
             changed = true;
             return true;
         }
@@ -75,7 +88,7 @@ public static class NotesConfigPatch
         string text;
         try { text = enc.GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0)); }
         catch (DecoderFallbackException) { return false; }
-        if (!TryApply(text, key, value, out string updated)) return false;
+        if (!TryApply(text, section, key, value, out string updated)) return false;
         if (updated == text) return true;
         WriteAtomic(path, enc.GetBytes(updated), bom);
         changed = true;
