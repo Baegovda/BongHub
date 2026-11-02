@@ -1,0 +1,33 @@
+name: repo check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version strings
+        run: bash .github/scripts/check-versions.sh
+
+      - name: PR does not carry human edits under data/
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash .github/scripts/check-data-pr.sh "$BASE_SHA"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Notes config patch
+        run: dotnet run --project next/BongHub.Next.PatchTests/BongHub.Next.PatchTests.csproj -c Release --nologo

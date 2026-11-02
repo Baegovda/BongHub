@@ -4,19 +4,20 @@ Windows 트레이 유틸리티입니다. 부제는 "석봉이의 유틸 창고"�
 
 ## 현재 버전 (2026-11-02 KST)
 
-- **PC에 배포·실행 중:** BongHub **3.4.7** (`C:\Users\Revaptor_FX\BongHub\BongHub.exe`). 3.4.8은 아직 이 경로에 올리지 않음
-- **이 저장소 PR #4 (`cursor/next-writer-lock-c7a7`) 소스:** 트레이 **3.4.8** + BongHub.Next **0.2.0**. 2026-11-02에 격리된 임시 폴더(데이터 복사본)에서 빌드·시험 PASS. 배포 exe는 그대로 3.4.7
-- **BongHub.Next 0.3.0 (0단계):** `net10.0-windows`, H.NotifyIcon.Wpf 2.4.1, WinForms 없음. 메모리 숫자는 Windows에서 `next/measure-baseline.ps1`로 채워요. `app/` 3.4.x는 그대로예요
+- **`main` 소스:** 트레이 **3.4.8** (`app/version.txt`, `AppInfo.Version`) + BongHub.Next **0.3.0** (`net10.0-windows`, H.NotifyIcon.Wpf 2.4.1, WinForms 없음)
+- **PC 배포 exe:** `C:\Users\Revaptor_FX\BongHub\BongHub.exe` 버전은 **PC에서 확인할 것**. 이 저장소는 그 파일 버전을 단정하지 않아요
+- **병합된 PR:** #4 메모 저장 잠금과 Next 도입, #5 이식 계획, #6 Next 0.3.0 (.NET 10 기준선)
+- **열린 PR:** #7 Next 0.4.0 메모리 (미병합, `main`에 없음)
 - 런타임 데이터: `%LOCALAPPDATA%\BongHub\` (`config.json`, `notes\`, …)
-- GitHub Actions 등 **CI 없음**
+- 검사: `.github/workflows/repo-check.yml` 이 버전 문자열이 어긋나거나, PR에서 `sync:` 가 아닌 커밋이 `data/`를 건드리면 실패해요. Windows 빌드·스모크는 아직 없어요
 
 ## 구성
 
-- `app/` — 트레이 앱 소스 (`BongHub.cs`, `build.ps1`, `CHANGELOG.md`, `res/`, `_dev/`). PR 브랜치는 v3.4.8, `main`은 v3.4.7
-- `next/` — BongHub.Next **0.3.0** (WPF, .NET 10, H.NotifyIcon). 3.4.x 데이터와 `Local\BongHub_NotesWriter`를 그대로 써요
+- `app/` — 트레이 앱 소스 (`BongHub.cs`, `build.ps1`, `CHANGELOG.md`, `res/`, `_dev/`). `main`은 **3.4.8**
+- `next/` — BongHub.Next **0.3.0** (WPF, .NET 10, H.NotifyIcon). 3.4.x 데이터와 `Local\BongHub_NotesWriter`를 그대로 써요. Notes 설정 한 키는 그 값만 고치고 나머지 바이트는 그대로 둬요
 - `legacy/BongAd/` — 카카오톡 광고 제거 도우미 원본
 - `docs/HANDOFF.md` — 인수인계 문서
-- `data/` — **클라우드 동기화 페이로드**. 앱이 `main`에 커밋합니다(`sync: …` 커밋, 2026-11-01 기준 약 101개). 사람이 직접 고치지 마세요
+- `data/` — **클라우드 동기화 페이로드**. 앱이 `main`에 `sync: …` 커밋으로 올려요. 사람이 직접 고치지 마세요. PR에서 그 외 커밋이 `data/`를 바꾸면 검사가 실패해요
 
 배포 폴더 `C:\Users\Revaptor_FX\BongHub\`는 저장소 `app/`에서 빌드한 exe·소스를 올려 쓰는 PC 쪽 경로입니다.
 
