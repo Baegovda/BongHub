@@ -374,7 +374,7 @@ Next 전용(공유 파일이 아님): `ReduceMotion` (`ConfigStore.cs` `NextSett
 
 ### 1.15 클라우드 동기화
 
-`Cloud` `:725`. Next **없음**. 로컬 작업 복사본은 `%LOCALAPPDATA%\BongHub\cloud\repo`이고, 커밋되는 트리는 저장소의 `data/`예요.
+`Cloud` `:725`. Next 0.12.0은 같은 병합을 메모리 원격으로 확인하고, git은 일반 실행의 저장권자만 실행해요. 로컬 작업 복사본은 `%LOCALAPPDATA%\BongHub\cloud\repo`이고, 커밋되는 트리는 저장소의 `data/`예요.
 
 - 스키마 `Cloud.Schema = 1`. 원격 `meta.json`의 schema가 더 크면 덮어쓰지 않고 “업데이트 필요”. 더 작으면 schema와 `minApp`을 올려 씀 (`Merge` `:845`).
 - `config.json`은 파일 전체, `config.stamp.json`의 시각이 최신이 이김.
@@ -644,10 +644,12 @@ Stop-Process -Id $p.Id
 
 ### 8단계 — 클라우드
 
-- 저장권자만 `Cloud.Apply`에 해당하는 서비스를 시작해요.
-- git.exe + gh.exe. Octokit 없음. 스키마 1, 톰스톤, mtime.
-- 테스트는 로컬 bare 저장소. `github.com/Baegovda/BongHub` push 금지.
-- 합격: `cloudtest` 동등(설정 전체, 메모별, 배치별, 삭제, 더 높은 schema면 중단).
+**상태: 코드 반영됨 (0.12.0).** 병합은 메모리 원격으로 확인해요. 테스트·`--off`·CI는 GitHub에 연결하거나 git·gh를 실행하거나 토큰을 읽지 않아요.
+
+- 저장권자만 동기화해요. 잠금은 `Local\BongHub_NotesWriter` 그대로예요.
+- git.exe만 일반 실행에서 써요. Octokit과 gh 로그인은 없어요. 스키마 1, 톰스톤, mtime, 커밋 `sync: <기기>`.
+- `Cloud.Enabled`만 그 값의 바이트를 바꿔요. 원격 스키마가 더 크면 중단해요.
+- 합격: 스모크 **107**, 노트 **89**. 실제 저장소 push는 직접 확인해 주세요.
 
 ### 9단계 — 은퇴
 
@@ -665,7 +667,7 @@ Stop-Process -Id $p.Id
 |---|---|
 | WPF가 RTF 그림을 버림 | 1단계 가드. 파일을 덮어쓰지 않음. msftedit는 쓰지 않음 |
 | 3.4.7(잠금 없음)과 Next가 겹침 | 배포 트레이를 3.4.8로 올린 뒤에 Next를 매일 쓰게 해요. HANDOFF에 남은 “Next 먼저 → 코드 4” 확인을 0단계 수동 항목으로 두어요 |
-| 양쪽이 클라우드 push | 저장권자만. 8단계 전에 Next는 git을 실행하지 않음 |
+| 양쪽이 클라우드 push | 저장권자만. 읽기 전용인 Next는 git을 실행하지 않음 |
 | 시작프로그램이 Next를 가리켜 3.4.8이 안 켜짐 | 9단계 전 lnk 변경 금지. 테스트가 Startup 폴더를 쓰지 않음 |
 | 테스트가 모니터·밝기·아이콘·후킹을 침 | 5절 금지 목록. `--off`에서 후킹 API를 호출하면 테스트 실패로 처리 |
 | 잠금 화면·절전·자동 로그인 테스트가 실제 정책을 바꿈 | `*test` 격리 키만. `enable`/`disable`/`restore` 실인자 금지 |
@@ -696,7 +698,7 @@ Stop-Process -Id $p.Id
 | 5 | 위 + `pttest` | 계산·단위·영역 기하·붙여넣기 변환. 0.9.0 스모크 **98**, 노트 **89** | 저수준 후킹, HKCU 우클릭 키, `resize` GUI, `workspace` CLI, 밝기 |
 | 6 | 위 + `extrastest` 시나리오를 Next 목으로 | 0.10.0 스모크 **101**, 노트 **89**. 가짜 디스플레이만 | MMT, 밝기 API, DisplayFusion/탐색기 종료, “지금 적용” |
 | 7 | 위 + `kakaotest` 시나리오를 Next 목으로 | 0.11.0 스모크 **104**, 노트 **89**. 가짜 창만 | 실제 카톡 창, 도우미 실행 |
-| 8 | 위 + `cloudtest` | 로컬 bare repo | `gh` 네트워크, `Baegovda/BongHub` push, 비밀 출력 |
+| 8 | 위 + `cloudtest` 시나리오를 메모리 원격으로 | 0.12.0 스모크 **107**, 노트 **89**. git·gh 없음 | `gh` 네트워크, `Baegovda/BongHub` push, 비밀 출력 |
 | 9 | 0–8 전부 | 잠금 순서(3.4.8 코드 4, Next 읽기 전용)는 배포 트레이를 끈 수동 확인으로 기록 | 수동 확인을 자동 테스트로 대체하지 않음 |
 
 `lockscreen` / `sleepauth` / `blankautologon`의 실인자는 어느 단계에서도 자동 실행하지 않아요. 로직은 `lockscreenpolicytest`처럼 프로세스 밖 정책을 건드리지 않는 복제품으로만 옮겨요. `blankcheck`는 종료 코드만 보므로 허용이에요.

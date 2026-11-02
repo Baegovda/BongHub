@@ -763,6 +763,34 @@ public partial class MainWindow : Window
             }
     }
 
+    public string CloudAction { get; private set; } = "";
+    public int CloudBlocks { get; private set; }
+    public void RequestCloudSync()
+    {
+        if (!CloudGate.RealAllowed)
+        {
+            CloudBlocks++;
+            CloudAction = "blocked";
+            return;
+        }
+        try
+        {
+            var transport = new GitCloudTransport(ConfigStore.CloudRepo, ConfigStore.CloudBranch, Environment.MachineName);
+            var ws = new CloudWorkspace
+            {
+                ConfigFile = AppEnv.ConfigPath,
+                NotesDir = AppEnv.NotesDir,
+                DeskDir = System.IO.Path.Combine(AppEnv.DataDir, "desktop"),
+                Device = Environment.MachineName,
+                AppVersion = AppEnv.Version,
+                UtcNow = DateTime.UtcNow,
+                LocalNow = DateTime.Now
+            };
+            CloudAction = CloudEngine.Run(ws, transport, writer: !AppEnv.ReadOnly);
+            if (CloudAction.Length == 0) CloudAction = "synced";
+        }
+        catch (Exception ex) { CloudAction = ex.Message; }
+    }
     public string KakaoAction { get; private set; } = "";
     public int KakaoBlocks { get; private set; }
     public void RequestSyncKakao()
@@ -945,6 +973,15 @@ public partial class MainWindow : Window
         open.Click += (_, _) => RequestOpenDataFolder();
         Row(start, "\uE8B7", "5AC8FA", "설정 폴더", AppEnv.DataDir, open);
         Row(start, "\uE9E9", "8E8E93", "애니메이션 줄이기", "Next만의 설정이에요. 공유 config.json에는 없어요.", Switch(NextSettings.ReduceMotion, v => NextSettings.SetReduceMotion(v)));
+
+        Header("클라우드");
+        var cloud = Group();
+        Row(cloud, "\uE753", "4C8AFE", "동기화", ConfigStore.CloudEnabled ? "켜짐 · 저장권자만" : "꺼짐", Switch(ConfigStore.CloudEnabled, v =>
+        {
+            if (!ConfigStore.SetCloudEnabled(v)) return;
+        }, !AppEnv.ReadOnly));
+        Row(cloud, "\uE753", "8E8E93", "저장소", ConfigStore.CloudRepo.Length > 0 ? ConfigStore.CloudRepo : "없음", null);
+        Row(cloud, "\uE768", "34C759", "지금 동기화", "일반 실행의 저장권자만 git을 실행해요. 시험에서는 막혀요.", null, RequestCloudSync);
     }
 
     void PageAbout()
@@ -967,7 +1004,7 @@ public partial class MainWindow : Window
             if (p.Hotkey.Length > 0) hotkeys += " · " + p.Name + " " + p.Hotkey;
         AboutMentionsHotkey = hotkeys.Contains("메모");
         Row(g, null, null, "단축키", hotkeys, null);
-        Row(g, null, null, "변경", "0.11.0 카톡 광고 숨김. 모니터 프리셋은 0.10.0.", null);
+        Row(g, null, null, "변경", "0.12.0 클라우드 동기화. 카톡 광고 숨김은 0.11.0.", null);
     }
 
     sealed class UniformGrid4 : Grid
