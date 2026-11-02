@@ -296,16 +296,51 @@ static class RichEditRtf
             (mbi.AllocationBase, mbi.RegionSize),
             (mbi.AllocationBase, 65536),
         };
+        if (!TryResolveTargets(out var from)) return "export missing";
         string last = "";
         foreach (var (baseAddr, size) in tries)
         {
             if (baseAddr == IntPtr.Zero || size == 0) continue;
             var info = new CfgTarget { Offset = UIntPtr.Zero, Flags = (UIntPtr)1 };
-            if (SetProcessValidCallTargets((IntPtr)(-1), baseAddr, (UIntPtr)size, 1, ref info))
-                return "ok base=0x" + baseAddr.ToInt64().ToString("X") + " size=" + size;
-            last = "err=" + Marshal.GetLastWin32Error() + " base=0x" + baseAddr.ToInt64().ToString("X") + " size=" + size;
+            int hr = CallTargets((IntPtr)(-1), baseAddr, (UIntPtr)size, 1, info);
+            if (hr != 0)
+                return "ok via " + from + " base=0x" + baseAddr.ToInt64().ToString("X") + " size=" + size;
+            last = "err=" + Marshal.GetLastWin32Error() + " via " + from + " base=0x" + baseAddr.ToInt64().ToString("X") + " size=" + size;
         }
         return last.Length == 0 ? "no region" : last;
+    }
+
+    static SetTargetsFn? Targets;
+    static string TargetsFrom = "";
+
+    static bool TryResolveTargets(out string from)
+    {
+        from = TargetsFrom;
+        if (Targets != null) return true;
+        foreach (var dll in new[] { "kernelbase.dll", "kernel32.dll" })
+        {
+            IntPtr h = LoadLibrary(dll);
+            if (h == IntPtr.Zero) continue;
+            IntPtr p = GetProcAddress(h, "SetProcessValidCallTargets");
+            if (p == IntPtr.Zero) continue;
+            Targets = Marshal.GetDelegateForFunctionPointer<SetTargetsFn>(p);
+            TargetsFrom = dll;
+            from = dll;
+            return true;
+        }
+        return false;
+    }
+
+    static int CallTargets(IntPtr process, IntPtr virt, UIntPtr region, uint count, CfgTarget info)
+    {
+        int bytes = Marshal.SizeOf<CfgTarget>();
+        IntPtr mem = Marshal.AllocHGlobal(bytes);
+        try
+        {
+            Marshal.StructureToPtr(info, mem, false);
+            return Targets!(process, virt, region, count, mem);
+        }
+        finally { Marshal.FreeHGlobal(mem); }
     }
 
     static string ModuleOf(IntPtr addr)
@@ -388,8 +423,11 @@ static class RichEditRtf
     static extern bool FlushInstructionCache(IntPtr process, IntPtr addr, UIntPtr size);
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern UIntPtr VirtualQuery(IntPtr addr, out MemInfo info, UIntPtr length);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool SetProcessValidCallTargets(IntPtr process, IntPtr virt, UIntPtr region, uint count, ref CfgTarget info);
+    [DllImport("kernel32.dll", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)]
+    static extern IntPtr GetProcAddress(IntPtr module, string name);
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    delegate int SetTargetsFn(IntPtr process, IntPtr virt, UIntPtr region, uint count, IntPtr info);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     static extern bool GetModuleHandleExW(uint flags, IntPtr addr, out IntPtr module);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
