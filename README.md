@@ -4,15 +4,15 @@ Windows 트레이 유틸리티입니다. 부제는 "석봉이의 유틸 창고"�
 
 ## 현재 버전 (2026-11-02 KST)
 
-- **PC에 배포·실행 중:** BongHub **3.4.7** (`C:\Users\Revaptor_FX\BongHub\BongHub.exe`). 3.4.8은 아직 이 경로에 올리지 않음
-- **이 저장소 PR #4 (`cursor/next-writer-lock-c7a7`) 소스:** 트레이 **3.4.8** + BongHub.Next **0.2.0**. 2026-11-02에 격리된 임시 폴더(데이터 복사본)에서 빌드·시험 PASS. 배포 exe는 그대로 3.4.7
-- **BongHub.Next 0.3.0 (0단계):** `net10.0-windows`, H.NotifyIcon.Wpf 2.4.1, WinForms 없음. 메모리 숫자는 Windows에서 `next/measure-baseline.ps1`로 채워요. `app/` 3.4.x는 그대로예요
+- **PC에서 죽은 배포본:** BongHub **3.4.8** (2026-11-02 11:46 KST)과 **3.4.7** (2026-11-01 23:35 KST). UI 스레드 예외 뒤 `Application.Exit`가 열린 창 목록을 수정 중 열거하다 종료
+- **이 저장소 소스:** 트레이 **3.4.9** (그 종료 경로와 창 프로시저 예외 수정). 배포 폴더 `C:\Users\Revaptor_FX\BongHub\`에 복사하기 전에는 PC exe가 바뀌지 않음
+- **BongHub.Next 0.3.0 (0단계):** `net10.0-windows`, H.NotifyIcon.Wpf 2.4.1, WinForms 없음. 메모리 숫자는 Windows에서 `next/measure-baseline.ps1`로 채워요. `app/` 3.4.x는 버그 수정만 해요
 - 런타임 데이터: `%LOCALAPPDATA%\BongHub\` (`config.json`, `notes\`, …)
 - GitHub Actions 등 **CI 없음**
 
 ## 구성
 
-- `app/` — 트레이 앱 소스 (`BongHub.cs`, `build.ps1`, `CHANGELOG.md`, `res/`, `_dev/`). PR 브랜치는 v3.4.8, `main`은 v3.4.7
+- `app/` — 트레이 앱 소스 (`BongHub.cs`, `build.ps1`, `CHANGELOG.md`, `res/`, `_dev/`). 이 브랜치의 트레이는 v3.4.9
 - `next/` — BongHub.Next **0.3.0** (WPF, .NET 10, H.NotifyIcon). 3.4.x 데이터와 `Local\BongHub_NotesWriter`를 그대로 써요
 - `legacy/BongAd/` — 카카오톡 광고 제거 도우미 원본
 - `docs/HANDOFF.md` — 인수인계 문서
