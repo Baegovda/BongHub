@@ -3,14 +3,14 @@ namespace BongHub;
 /// <summary>Process-wide environment: data folder (overridable), test flags, read-only guard.</summary>
 public static class AppEnv
 {
-    public const string Version = "1.0.0";
+    public const string Version = "1.0.1";
     /// <summary>First live owner is the only writer of the default notes folder. The name stays <c>Local\BongHub_NotesWriter</c>.</summary>
     public const string NotesWriterMutexName = @"Local\BongHub_NotesWriter";
     public static string DefaultDataDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BongHub");
     public static string DataDir { get; private set; } = DefaultDataDir;
     public static string NotesDir => Path.Combine(DataDir, "notes");
     public static string ConfigPath => Path.Combine(DataDir, "config.json");
-    public static string NextSettingsPath => IsDefaultData ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BongHub", "settings.json") : Path.Combine(DataDir, "settings.json");
+    public static string SettingsPath => IsDefaultData ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BongHub", "settings.json") : Path.Combine(DataDir, "settings.json");
     public static string LogPath => Path.Combine(OutDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BongHub"), "error.log");
     public static bool IsDefaultData => string.Equals(Path.GetFullPath(DataDir).TrimEnd('\\'), Path.GetFullPath(DefaultDataDir).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
     public static bool ReadOnly { get; set; }
@@ -22,7 +22,7 @@ public static class AppEnv
     public static int OffsetY => Off ? -30000 : 0;
     public static bool Smoke { get; private set; }
     public static bool NoteTest { get; private set; }
-    /// <summary>Folder passed with <c>--data</c> or <c>BONGHUB_NEXT_DATA</c> when <c>--smoketest</c> refused it. Never written.</summary>
+    /// <summary>Folder passed with <c>--data</c> or <c>BONGHUB_DATA</c> when <c>--smoketest</c> refused it. Never written.</summary>
     public static string? IgnoredDataDir { get; private set; }
     /// <summary>Show the settings window off-screen, then hide it and stay running. Used by the Phase 0 memory baseline.</summary>
     public static bool IdleHidden { get; private set; }
@@ -36,7 +36,7 @@ public static class AppEnv
     {
         Args = args;
         bool askedData = false;
-        var env = Environment.GetEnvironmentVariable("BONGHUB_NEXT_DATA");
+        var env = Environment.GetEnvironmentVariable("BONGHUB_DATA");
         if (!string.IsNullOrWhiteSpace(env)) { DataDir = env; askedData = true; }
         for (int i = 0; i < args.Length; i++)
         {
@@ -53,7 +53,7 @@ public static class AppEnv
             Off = true;
             OutDir ??= AppContext.BaseDirectory;
             // tests never touch the real data folder
-            if (IsDefaultData) DataDir = Path.Combine(Path.GetTempPath(), "bhnext_test_" + Environment.ProcessId);
+            if (IsDefaultData) DataDir = Path.Combine(Path.GetTempPath(), "bonghub_test_" + Environment.ProcessId);
         }
         if (Smoke)
         {
@@ -61,9 +61,9 @@ public static class AppEnv
             if (askedData)
             {
                 IgnoredDataDir = DataDir;
-                Log("smoketest ignores --data and BONGHUB_NEXT_DATA");
+                Log("smoketest ignores --data and BONGHUB_DATA");
             }
-            DataDir = Path.Combine(Path.GetTempPath(), "bhnext_smoke_" + Environment.ProcessId);
+            DataDir = Path.Combine(Path.GetTempPath(), "bonghub_smoke_" + Environment.ProcessId);
             Directory.CreateDirectory(DataDir);
         }
         if (OutDir != null) Directory.CreateDirectory(OutDir);

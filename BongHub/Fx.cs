@@ -135,7 +135,7 @@ public static class Fx
 }
 
 /// <summary>
-/// Window plumbing shared by every Next window: dark DWM frame, rounded corners, optional Mica,
+/// Window plumbing shared by every BongHub window: dark DWM frame, rounded corners, optional Mica,
 /// and the anti-white-flash sequence (DWM cloak from HWND creation until WPF has committed its first frame).
 /// </summary>
 public static class WindowFx

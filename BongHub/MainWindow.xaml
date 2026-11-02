@@ -44,7 +44,7 @@
           </Border>
           <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
             <TextBlock x:Name="AppTitle" Text="BongHub" FontFamily="{StaticResource DisplayFont}" FontSize="17" FontWeight="Bold"/>
-            <TextBlock x:Name="AppSub" Text="Next" FontSize="11.5" Foreground="{StaticResource Secondary}"/>
+            <TextBlock x:Name="AppSub" Text="석봉이의 유틸 창고" FontSize="11.5" Foreground="{StaticResource Secondary}"/>
           </StackPanel>
         </StackPanel>
         <Border x:Name="StatusPill" DockPanel.Dock="Bottom" CornerRadius="12" Background="#1AFFFFFF" Padding="12,9">

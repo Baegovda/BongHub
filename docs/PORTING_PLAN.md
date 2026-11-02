@@ -1,10 +1,10 @@
 # BongHub 이식 계획
 
-> 1.0.0에서 WinForms 3.4.x를 제거하고 WPF 앱이 `BongHub/`·`BongHub.exe`가 됐어요. 아래 `app/`·`next/` 경로는 그 이전 기록이에요.
+> 1.0.0에서 WinForms 3.4.x를 제거하고 WPF 앱이 `BongHub/`·`BongHub.exe`가 됐어요. 아래 `app/` 경로는 그 이전 기록이에요.
 
 ## 결론
 
-**3.4.x는 지금 기능에서 얼려요.** 버그 수정과 데이터 형식 호환만 하고, 새 기능은 Next에만 넣어요. **3.4.x 은퇴는 Next가 아래 목록을 모두 ‘있음’으로 채운 뒤**예요. 그 전에 배포 폴더의 exe를 Next로 바꾸거나, 시작프로그램 바로가기를 Next로 돌리거나, `Local\BongHub_Tray`를 Next가 차지하지 않아요.
+**3.4.x는 지금 기능에서 얼려요.** 버그 수정과 데이터 형식 호환만 하고, 새 기능은 BongHub에만 넣어요. **3.4.x 은퇴는 BongHub가 아래 목록을 모두 ‘있음’으로 채운 뒤**예요. 그 전에 배포 폴더의 exe를 BongHub로 바꾸거나, 시작프로그램 바로가기를 BongHub로 돌리거나, `Local\BongHub_Tray`를 BongHub가 차지하지 않아요.
 
 **UI는 WPF를 유지해요.** WinUI 3(Windows App SDK 안정 2.6.4)으로 갈아타지 않아요. 메모의 저장 형식이 Win32 RichEdit RTF(`\pngblip`/`\jpegblip`)이고, 전역 후킹·DDC/CI·탐색기 목록은 Win32예요. WinUI 3은 그 표면을 다시 짜야 하고, 비패키지 배포는 Windows App SDK 런타임이 따로 필요해요. 지원 창도 짧아요(2.0 계열 서비스 종료 2027-04-29). 지금 셸이 이미 WPF예요.
 
@@ -21,9 +21,9 @@
 | 메모 7개(지금 `data/notes` 규모)를 연 뒤 유휴 | **≤ 180MB**, 이후 10분 증가 **≤ 10MB** |
 | PowerToys가 모두 꺼진 상태와 켠 상태의 유휴 차이 | 후킹이 꺼져 있으면 **≤ 15MB** |
 
-지금 숫자 227–239MB는 스모크(설정 창 + 메모 창, `next/test-logs/smoketest.txt`)예요. 트레이만의 유휴가 아니에요. 최적화 전에 그 둘을 따로 재요. 3.4.7 트레이 약 103MB, CLI 시작 약 61ms는 비교 기준이에요. 61ms는 창을 만들지 않는 .NET Framework 진입점이에요. WPF 목표로 쓰지 않아요. 트레이 아이콘까지 **≤ 500ms**, 설정 첫 프레임 **≤ 700ms**(런타임이 이미 설치된 Release ReadyToRun).
+지금 숫자 227–239MB는 스모크(설정 창 + 메모 창, `test-logs/smoketest.txt`)예요. 트레이만의 유휴가 아니에요. 최적화 전에 그 둘을 따로 재요. 3.4.7 트레이 약 103MB, CLI 시작 약 61ms는 비교 기준이에요. 61ms는 창을 만들지 않는 .NET Framework 진입점이에요. WPF 목표로 쓰지 않아요. 트레이 아이콘까지 **≤ 500ms**, 설정 첫 프레임 **≤ 700ms**(런타임이 이미 설치된 Release ReadyToRun).
 
-**데이터 규칙:** `%LOCALAPPDATA%\BongHub`의 `config.json`, `notes\<id>.json`+`.rtf`, `desktop\layouts.json`은 3.4.x가 끝까지 읽고 써야 해요. 클라우드 스키마는 **1**로 유지해요. Next 전용 값은 `%LOCALAPPDATA%\BongHub\settings.json`에만 둬요. 저장권은 계속 `Local\BongHub_NotesWriter`예요.
+**데이터 규칙:** `%LOCALAPPDATA%\BongHub`의 `config.json`, `notes\<id>.json`+`.rtf`, `desktop\layouts.json`은 3.4.x가 끝까지 읽고 써야 해요. 클라우드 스키마는 **1**로 유지해요. BongHub 전용 값은 `%LOCALAPPDATA%\BongHub\settings.json`에만 둬요. 저장권은 계속 `Local\BongHub_NotesWriter`예요.
 
 ---
 
@@ -31,11 +31,11 @@
 
 상태 뜻:
 
-- **있음** — Next에서 같은 사용자 동작이 돼요.
+- **있음** — BongHub에서 같은 사용자 동작이 돼요.
 - **일부** — 화면이나 데이터는 있으나 3.4.8보다 짧아요.
-- **없음** — Next에 동작이 없어요.
+- **없음** — BongHub에 동작이 없어요.
 
-줄 번호는 PR #4 팁의 `app/BongHub.cs`(8541줄)와 `next/BongHub`예요.
+줄 번호는 PR #4 팁의 `app/BongHub.cs`(8541줄)와 `BongHub`예요.
 
 ### 1.1 요약
 
@@ -51,7 +51,7 @@
 
 ### 1.2 트레이와 셸
 
-| 기능 | 3.4.8 | Next |
+| 기능 | 3.4.8 | BongHub |
 |---|---|---|
 | 트레이 아이콘, 블록 아이콘 | `TrayApp` `app/BongHub.cs:7126`, `Program.InitIcon` `:7508` | **있음.** `TrayService` — H.NotifyIcon.Wpf 2.4.1 (0.3.0). WinForms `NotifyIcon`는 0단계에서 뺐어요 |
 | 왼쪽 더블클릭 → 설정 | `:7138` | **일부.** 왼쪽 클릭 한 번 (`TrayService.cs:20`) |
@@ -64,7 +64,7 @@
 | 풍선 알림(전환 실패, 단축키 실패, 아이콘 복원) | `Balloon` `:7295` | **없음** |
 | 트레이 툴팁에 클라우드 상태 | `:7142` | **없음** |
 | 이미 실행 중이면 기존 창을 띄우고 종료(코드 1) | `:7611` | **있음.** `Local\BongHub.SingleInstance` + Show 이벤트 (`App.xaml.cs:12`, `:35`) |
-| Next가 저장 중이면 안내 후 코드 4 | `:7604` | 해당 없음(Next가 잠금의 다른 쪽). 트레이 뮤텍스가 있으면 Next는 읽기 전용 (`AppEnv.cs:59`) |
+| BongHub가 저장 중이면 안내 후 코드 4 | `:7604` | 해당 없음(BongHub가 잠금의 다른 쪽). 트레이 뮤텍스가 있으면 BongHub는 읽기 전용 (`AppEnv.cs:59`) |
 | 설정 창 커스텀 타이틀바, 스냅·그림자 유지 | `ChromeForm` `:3732`, `TitleBar` `:3812` | **일부.** WPF `WindowChrome` + Mica (`MainWindow.xaml`, `Fx.cs` `WindowFx`). 그라데이션 다크는 유지. 닫기 = 숨기기 (`MainWindow.xaml.cs:47`) |
 | 사이드바 8탭, 끌어서 순서 변경 → `General.TabOrder` | `PageKeys` `:3888`, `HookNavDrag` `:3903` | **일부.** 5탭 고정: 모니터 프리셋, 스티커 메모, 일반, 더 보기, 정보 (`MainWindow.xaml.cs:13`). 순서 저장 없음 |
 | 변경 즉시 저장, 적용 버튼 없음 | `Changed`/`Flush` `:4038` | **일부.** Notes 키만 즉시 패치 (`ConfigStore.SetNotesValue` `:48`). 다른 설정은 편집 UI가 없음 |
@@ -80,7 +80,7 @@
 
 ### 1.3 모니터 프리셋
 
-전환 본체는 `Core.Run` (`:1355`). Next 0.10.0은 이름·단축키·밝기 요약을 보여주고, “지금 적용”은 일반 실행에서만 게이트를 통과해요. 테스트는 명령을 기록만 해요. 지도·오버레이·자리비움 자동 전환은 아직 **없음**.
+전환 본체는 `Core.Run` (`:1355`). BongHub 0.10.0은 이름·단축키·밝기 요약을 보여주고, “지금 적용”은 일반 실행에서만 게이트를 통과해요. 테스트는 명령을 기록만 해요. 지도·오버레이·자리비움 자동 전환은 아직 **없음**.
 
 | 기능 | 위치 |
 |---|---|
@@ -114,7 +114,7 @@
 
 ### 1.5 창 위치
 
-**없음.** 데이터는 `config.json`의 `GlobalRules`와 프리셋 `Rules`에 있고, Next는 그 키를 지우지 않아요(패치가 다른 키를 유지).
+**없음.** 데이터는 `config.json`의 `GlobalRules`와 프리셋 `Rules`에 있고, BongHub는 그 키를 지우지 않아요(패치가 다른 키를 유지).
 
 | 기능 | 위치 |
 |---|---|
@@ -131,9 +131,9 @@
 
 ### 1.6 스티커 메모
 
-저장 형식은 양쪽이 같아요. `notes\<12자 id>.json` + `.rtf`. 날짜는 `\/Date(ms)\/` (`NoteMeta` `:2650`, Next `MsDateConverter` `NoteStore.cs:25`).
+저장 형식은 양쪽이 같아요. `notes\<12자 id>.json` + `.rtf`. 날짜는 `\/Date(ms)\/` (`NoteMeta` `:2650`, BongHub `MsDateConverter` `NoteStore.cs:25`).
 
-| 기능 | 3.4.8 | Next |
+| 기능 | 3.4.8 | BongHub |
 |---|---|---|
 | 메모 로드·저장(tmp 후 교체), 손상 파일은 건너뛰거나 안전 열기 | `Notes` `:2818` | **있음.** `NoteStore.cs`. 클라우드 `_deleted.json`은 건너뜀 (`:60`) |
 | 새 메모, 기본색을 피한 무작위 색 | `Notes.New` `:2857`, `NoteColors.Random` `:2685` | **있음.** `NoteStore.Create`, `NoteColors.Random` |
@@ -164,12 +164,12 @@
 | 화면 밖으로 나가지 않게 클램프, 해상도 변경 대응 | `Clamp` `:2905` | **일부.** 처음 배치(`PlacePhysical`). 이후 모니터 변경 클램프는 없음 |
 | 8MB 넘으면 경고 | `:3641` | **없음** |
 | 클라우드가 메모를 갈아끼우면 열린 창을 다시 읽기 | `ReloadFromDisk` `:2891` | **없음**(클라우드 단계) |
-| 읽기 전용(트레이가 저장권) | 3.4.8에는 없는 Next 동작 | **있음.** `AppEnv.DenyWrite`, 편집기 `IsReadOnly` |
+| 읽기 전용(트레이가 저장권) | 3.4.8에는 없는 BongHub 동작 | **있음.** `AppEnv.DenyWrite`, 편집기 `IsReadOnly` |
 | 메모 안 단축키 안내 문구 | `:4517` | **없음** |
 
 ### 1.7 카톡 광고 제거
 
-Next 0.11.0은 인자 `/nocompact`, `/dark`, `/restore`와 광고 판별을 가짜 창으로 확인해요. 도우미 실행은 일반 실행에서 광고 숨김이 켜져 있을 때만이에요. 도우미 바이트는 내장 `BongAd.exe` (`Kakao` `:2569`).
+BongHub 0.11.0은 인자 `/nocompact`, `/dark`, `/restore`와 광고 판별을 가짜 창으로 확인해요. 도우미 실행은 일반 실행에서 광고 숨김이 켜져 있을 때만이에요. 도우미 바이트는 내장 `BongAd.exe` (`Kakao` `:2569`).
 
 | 기능 | 위치 |
 |---|---|
@@ -199,22 +199,22 @@ Next 0.11.0은 인자 `/nocompact`, `/dark`, `/restore`와 광고 판별을 가�
 
 ### 1.9 일반
 
-| 기능 | 3.4.8 | Next |
+| 기능 | 3.4.8 | BongHub |
 |---|---|---|
-| Windows 시작 시 실행 (`Startup\BongHub.lnk`, 옛 `모니터 단축키.lnk` 이전) | `Startup` `:5362` | **일부.** 스위치가 보이고 비활성 (`MainWindow.xaml.cs:266`). 바로가기를 쓰지 않음. 은퇴 전에는 Next가 이 lnk의 대상을 바꾸면 안 돼요 |
+| Windows 시작 시 실행 (`Startup\BongHub.lnk`, 옛 `모니터 단축키.lnk` 이전) | `Startup` `:5362` | **일부.** 스위치가 보이고 비활성 (`MainWindow.xaml.cs:266`). 바로가기를 쓰지 않음. 은퇴 전에는 BongHub가 이 lnk의 대상을 바꾸면 안 돼요 |
 | 자리비움 | `:4720` | **없음** |
 | 잠금 배경만 숨김(인증 유지). HKLM 정책 `NoLockScreen`, 백업 `SOFTWARE\BongHub\LockScreenBackup`, 다른 값이 있으면 덮어쓰지 않음 | `LockScreenPolicy` `:588`, UI `:4741` | **없음** |
 | 절전 복귀 인증(AC/DC) 끄기·복원. 전원 계획이 바뀌거나 남이 바꾸면 중단 | `SleepResumeAuth` `:634`, UI `:4757` | **없음** |
 | 무암호 로컬 계정 부팅 자동 로그인. 빈 `DefaultPassword`만. 기존 자동 로그인이 있으면 중단 | `BlankAutoLogon` `:671` | **없음** |
 | 암호 있는 계정은 Sysinternals Autologon 문서만 연다. 앱은 암호를 받지 않음 | `:4764` | **없음** |
 | 설정 폴더 열기 | `:4796` | **없음**(메모 페이지에 경로 표시는 있음) |
-| 애니메이션 줄이기 | 없음 | **있음.** Next 전용 `settings.json` (`NextSettings`) |
+| 애니메이션 줄이기 | 없음 | **있음.** BongHub 전용 `settings.json` (`AppSettings`) |
 
 잠금·절전·자동 로그인은 별도 프로세스를 `runas`로 띄워요(`lockscreen`, `sleepauth`, `blankautologon`). 테스트에서 이 인자를 실제 PC에 실행하지 않아요.
 
 ### 1.10 PowerToys 스타일 기능
 
-코드 기본값은 위험한 것(Zones, Grab, Palette, Paste, Peek)이 **꺼져** 있고, 사용자 `data/config.json`은 여러 항목이 켜져 있어요. 문서·코드 기본과 PC 설정을 구분해요. Next는 **없음**. 카드 UI는 `BuildPowerToys` `:4865`, 키 `PtKeys` `:4851`.
+코드 기본값은 위험한 것(Zones, Grab, Palette, Paste, Peek)이 **꺼져** 있고, 사용자 `data/config.json`은 여러 항목이 켜져 있어요. 문서·코드 기본과 PC 설정을 구분해요. BongHub는 **없음**. 카드 UI는 `BuildPowerToys` `:4865`, 키 `PtKeys` `:4851`.
 
 **FancyZones** (`ZonesCfg` `:5446`, `Zones` `:5475`)
 
@@ -273,7 +273,7 @@ Next 0.11.0은 인자 `/nocompact`, `/dark`, `/restore`와 광고 판별을 가�
 
 등록은 `RegisterHotKey` + `MOD_NOREPEAT` (`RegisterAll` `:7277`). 설정 저장 즉시 다시 등록해요. 창을 닫을 때까지 기다리지 않아요. 실패하면 `%LOCALAPPDATA%\BongHub\hotkeys_status.txt`와 풍선.
 
-| 단축키 | 하는 일 | id | 코드 기본 | Next |
+| 단축키 | 하는 일 | id | 코드 기본 | BongHub |
 |---|---|---|---|---|
 | Ctrl+Alt+1 | 프리셋 작업 | 100부터 | 예 (`:221`) | 표시만 |
 | Ctrl+Alt+0 | 프리셋 자리비움 | 이어서 | 예 (`:223`) | 표시만 |
@@ -294,7 +294,7 @@ Next 0.11.0은 인자 `/nocompact`, `/dark`, `/restore`와 광고 판별을 가�
 
 ### 1.12 백그라운드 동작
 
-| 동작 | 주기·조건 | 위치 | Next |
+| 동작 | 주기·조건 | 위치 | BongHub |
 |---|---|---|---|
 | 메모 저장권 뮤텍스, 트레이 뮤텍스보다 먼저 | 프로세스 수명. abandoned면 다음이 인수 | `NotesWriterLock` `:7475` | **있음.** 테스트·임시 폴더는 잡지 않음 (`AppEnv.cs:59`) |
 | 단일 인스턴스 | `Local\BongHub_Tray` | `:7611` | **있음.** 다른 이름 `Local\BongHub.SingleInstance`. 은퇴 전에는 이 이름을 트레이 뮤텍스로 바꾸지 않아요 |
@@ -312,9 +312,9 @@ Next 0.11.0은 인자 `/nocompact`, `/dark`, `/restore`와 광고 판별을 가�
 
 ### 1.13 설정 키
 
-`config.json`은 `JavaScriptSerializer`로 읽고, 저장은 들여쓰기 있는 JSON이에요 (`Config.ToJson` `:266`, `Pretty` `:316`). `Version` 기본 2 (`:206`). Next가 Notes 키를 패치할 때는 그 값의 JSON 토큰만 갈아끼워요 (`NotesConfigPatch`). 다른 키와 들여쓰기는 바이트 그대로고, 값이 같으면 파일을 다시 쓰지 않아요. 키를 지우지만 않으면 3.4.8 `Load`는 통과해요. 새 필수 키를 공유 파일에 넣지 않아요.
+`config.json`은 `JavaScriptSerializer`로 읽고, 저장은 들여쓰기 있는 JSON이에요 (`Config.ToJson` `:266`, `Pretty` `:316`). `Version` 기본 2 (`:206`). BongHub가 Notes 키를 패치할 때는 그 값의 JSON 토큰만 갈아끼워요 (`NotesConfigPatch`). 다른 키와 들여쓰기는 바이트 그대로고, 값이 같으면 파일을 다시 쓰지 않아요. 키를 지우지만 않으면 3.4.8 `Load`는 통과해요. 새 필수 키를 공유 파일에 넣지 않아요.
 
-| 키 | 코드 기본 | 하는 일 | Next가 읽고 씀 |
+| 키 | 코드 기본 | 하는 일 | BongHub가 읽고 씀 |
 |---|---|---|---|
 | `Version` | 2 | 설정 형식 | 파일이 없을 때만 2를 만듦. 올리기 금지 |
 | `Presets[].Name, Hotkey` | 작업 Ctrl+Alt+1, 자리비움 Ctrl+Alt+0 | 표시·등록 | **읽기만** |
@@ -324,7 +324,7 @@ Next 0.11.0은 인자 `/nocompact`, `/dark`, `/restore`와 광고 판별을 가�
 | `Rules[]` | 빈 목록 | 창 규칙. 필드는 `WindowRule` `:135` | 유지 |
 | `Brightness[]` (`Monitor`, `Value` −1=유지) | 빈 목록 | 밝기 | 유지 |
 | `DeskLayout, Workspace` | "" | 연계 id | 유지 |
-| `General.TabOrder` | 빈 목록이면 UI 기본 순서 | 탭 순서 | 유지. Next는 안 읽음 |
+| `General.TabOrder` | 빈 목록이면 UI 기본 순서 | 탭 순서 | 유지. BongHub는 안 읽음 |
 | `General.IdleEnabled, IdleMinutes, IdlePreset` | true, 30, 자리비움 | 자리비움 | 유지 |
 | `General.SkipIfAudio, AudioThreshold` | true, 0.001 | 소리 중 건너뛰기 | 유지 |
 | `General.OverlayEnabled, OverlayOpacity` | true, 82 (범위 20–100) | 전역 오버레이 | 유지 |
@@ -332,7 +332,7 @@ Next 0.11.0은 인자 `/nocompact`, `/dark`, `/restore`와 광고 판별을 가�
 | `GlobalRules` | 빈 목록 | 항상 적용 규칙 | 유지 |
 | `Notes.DefaultColor` | `g:blocks` (`ColorVer<2`면 yellow를 이 값으로) | 무작위 제외 색 | **읽기.** 쓰기 UI 없음 |
 | `Notes.Gradient` | true | 그라데이션 | **읽고 씀** |
-| `Notes.ColorVer` | 0 → 정규화 시 2 | 색 마이그레이션 | 유지. Next가 올리면 안 됨 |
+| `Notes.ColorVer` | 0 → 정규화 시 2 | 색 마이그레이션 | 유지. BongHub가 올리면 안 됨 |
 | `Notes.FontSize` | 11 (7–48) | 본문 | **읽고 씀.** UI는 10/11/13만 |
 | `Notes.Opacity` | 100 (정규화 30–100, UI 40–100) | 창 불투명도 | **읽고 씀** |
 | `Notes.Hotkey` | Ctrl+Alt+N | 전역 키 | **읽기** |
@@ -340,8 +340,8 @@ Next 0.11.0은 인자 `/nocompact`, `/dark`, `/restore`와 광고 판별을 가�
 | `Desk.AutoSave, AutoSaveMinutes` | true, 10 (1–240) | 주기 저장 | 유지 |
 | `Desk.SaveOnExit, SaveBeforeSwitch, RestoreOnChange, RestoreOnStartup` | true, true, true, false | 자동 복원 | 유지 |
 | `Desk.HotkeySave, HotkeyRestore` | "" | 단축키 | 유지 |
-| `Cloud.Enabled, Repo, Branch, PullMinutes` | false, `https://github.com/Baegovda/BongHub.git`, main, 2 | 동기화 | 유지. Next는 동기화를 시작하지 않음 |
-| `Pt.ShortcutVersion` | 0 → 1로 올리며 옛 기본키만 이전 | 단축키 마이그레이션 | 유지. Next가 올리면 안 됨 |
+| `Cloud.Enabled, Repo, Branch, PullMinutes` | false, `https://github.com/Baegovda/BongHub.git`, main, 2 | 동기화 | 유지. BongHub는 동기화를 시작하지 않음 |
+| `Pt.ShortcutVersion` | 0 → 1로 올리며 옛 기본키만 이전 | 단축키 마이그레이션 | 유지. BongHub가 올리면 안 됨 |
 | `Pt.Zones.*` | `Enabled` false. 나머지 `:5446` | FancyZones | 유지 |
 | `Pt.Grab.*` | Enabled false, Modifier Alt, Resize true, SkipFullscreen true | 잡아서 이동 | 유지 |
 | `Pt.Work.Enabled, LaunchMissing, MoveExisting, Items[]` | true, true, true, 빈 목록 | 작업 영역. `WsApp` `:5459` | 유지 |
@@ -350,15 +350,15 @@ Next 0.11.0은 인자 `/nocompact`, `/dark`, `/restore`와 광고 판별을 가�
 | `Pt.Peek.*` | Enabled false, Space, CloseOnFocusLoss false, RenderHtml true | 미리보기 | 유지 |
 | `Pt.Resizer.*` | Enabled true, ContextMenu false, 프리셋 4개, Fit fit, ShrinkOnly true, Quality 90, NameFormat `%1 (%2)`, Fallback png | 리사이저 | 유지 |
 
-Next 전용(공유 파일이 아님): `ReduceMotion` (`ConfigStore.cs` `NextSettings`).
+BongHub 전용(공유 파일이 아님): `ReduceMotion` (`ConfigStore.cs` `AppSettings`).
 
-메모 JSON 필드 순서: `Id, Color, X, Y, W, H, TopMost, Open, Zoom, Text, Modified`. 3.4.8은 public 필드 선언 순서예요. Next 클래스도 그 순서예요. 필드를 중간에 끼우지 않아요.
+메모 JSON 필드 순서: `Id, Color, X, Y, W, H, TopMost, Open, Zoom, Text, Modified`. 3.4.8은 public 필드 선언 순서예요. BongHub 클래스도 그 순서예요. 필드를 중간에 끼우지 않아요.
 
 바탕화면 배치: `Id, Name, Key, Desc, Auto, Saved, Items[{Name,X,Y}]` (`DeskLayout` `:349`).
 
 ### 1.14 외부 도구
 
-| 도구 | 쓰는 곳 | 라이선스·위치 | Next |
+| 도구 | 쓰는 곳 | 라이선스·위치 | BongHub |
 |---|---|---|---|
 | NirSoft MultiMonitorTool.exe | 리소스로 포함하고 `%LOCALAPPDATA%\BongHub\`에 풀어서 `/enable` `/disable` `/LoadConfig` `/SaveConfig` `/SetPrimary` `/scomma` | `Core.Extract` `:1340`. 정보 탭에 버전 표시 `:4843` | **없음** |
 | work_layout.cfg | 작업 프리셋 기본 레이아웃 | 같은 Extract | **없음** |
@@ -374,7 +374,7 @@ Next 전용(공유 파일이 아님): `ReduceMotion` (`ConfigStore.cs` `NextSett
 
 ### 1.15 클라우드 동기화
 
-`Cloud` `:725`. Next 0.12.0은 같은 병합을 메모리 원격으로 확인하고, git은 일반 실행의 저장권자만 실행해요. 로컬 작업 복사본은 `%LOCALAPPDATA%\BongHub\cloud\repo`이고, 커밋되는 트리는 저장소의 `data/`예요.
+`Cloud` `:725`. BongHub 0.12.0은 같은 병합을 메모리 원격으로 확인하고, git은 일반 실행의 저장권자만 실행해요. 로컬 작업 복사본은 `%LOCALAPPDATA%\BongHub\cloud\repo`이고, 커밋되는 트리는 저장소의 `data/`예요.
 
 - 스키마 `Cloud.Schema = 1`. 원격 `meta.json`의 schema가 더 크면 덮어쓰지 않고 “업데이트 필요”. 더 작으면 schema와 `minApp`을 올려 씀 (`Merge` `:845`).
 - `config.json`은 파일 전체, `config.stamp.json`의 시각이 최신이 이김.
@@ -418,7 +418,7 @@ Next 전용(공유 파일이 아님): `ReduceMotion` (`ConfigStore.cs` `NextSett
 | `blankcheck` | 현재 계정이 로컬인지 종료 코드만 | 허용(상태를 바꾸지 않음) |
 | `paritytest` | `TestEnv.Off`만 켜고 case 없음 → 9 | 그대로 두기(실수 전환 방지) |
 
-Next 테스트: `--smoketest`, `--notetest`. 0.2.0 기록은 스모크 43, 노트 23이에요. 0.3.0 스모크는 그 43개에 트레이 단언 13개(다크 메뉴, 메뉴로 열기, 왼쪽 클릭, 종료, 풍선, 셸 아이콘을 만들지 않음)를 더해 **56**이에요. 0.4.0 스모크는 거기에 소프트웨어 렌더 2개(설정 창, 메모 창)를 더해 **58**이에요. 0.4.0 노트는 그 23개에 표시 비트맵 크기·원본 pict 바이트 유지 2개와 선형 확대 1개를 더해 **26**이에요. `--data`, `BONGHUB_NEXT_DATA`, `--out`, `--off`, `--tray`, `--quit`, `--idle-hidden`(화면 밖 설정 창을 만든 뒤 숨김. 메모리 기준선용). 테스트와 `--off` 측정은 임시 폴더라 `Local\BongHub_NotesWriter`를 잡지 않아요. `--off`는 Next 단일 실행 뮤텍스를 잡지 않아, 이미 켜진 Next 창을 끌어올리지 않아요.
+BongHub 테스트: `--smoketest`, `--notetest`. 0.2.0 기록은 스모크 43, 노트 23이에요. 0.3.0 스모크는 그 43개에 트레이 단언 13개(다크 메뉴, 메뉴로 열기, 왼쪽 클릭, 종료, 풍선, 셸 아이콘을 만들지 않음)를 더해 **56**이에요. 0.4.0 스모크는 거기에 소프트웨어 렌더 2개(설정 창, 메모 창)를 더해 **58**이에요. 0.4.0 노트는 그 23개에 표시 비트맵 크기·원본 pict 바이트 유지 2개와 선형 확대 1개를 더해 **26**이에요. `--data`, `BONGHUB_DATA`, `--out`, `--off`, `--tray`, `--quit`, `--idle-hidden`(화면 밖 설정 창을 만든 뒤 숨김. 메모리 기준선용). 테스트와 `--off` 측정은 임시 폴더라 `Local\BongHub_NotesWriter`를 잡지 않아요. `--off`는 BongHub 단일 실행 뮤텍스를 잡지 않아, 이미 켜진 BongHub 창을 끌어올리지 않아요.
 
 ---
 
@@ -432,7 +432,7 @@ Next 테스트: `--smoketest`, `--notetest`. 0.2.0 기록은 스모크 43, 노�
 | .NET 8에 남기 | 8.0.33, 지원 종료 2026-11-10 | 같음 | 하지 않음 | 보안 패치가 곧 끝나요. 아래 H.NotifyIcon 2.4.1도 net10을 겨냥해요 |
 | WPF | SDK에 포함 (UseWPF) | 같음 | **유지** | 스모크 227MB의 대부분이에요. 창을 만들기 전에 트레이만 재면 더 낮게 나와요. 그 숫자를 0단계 기준으로 삼아요 |
 | WinUI 3 | Windows App SDK **2.6.4** (2026-10-27). 1.8은 2026-09-24에 서비스 종료. 2.0 계열 종료 2027-04-29 | 마이크로소프트 | **채택하지 않음** | 비패키지는 런타임 설치 또는 자체 포함이에요. 자체 포함은 디스크가 크고, RichEdit RTF와 전역 후킹을 다시 짜야 해요. 메모리 이득이 측정된 적 없어요 |
-| WinForms | UseWindowsForms, 트레이만 | 같음 | **트레이를 빼면 참조 제거** | 지금 Next는 아이콘 하나 때문에 WPF와 WinForms를 같이 올려요. 같이 있으면 작업 집합이 늘어나요. 0단계에서 뺀 뒤 다시 재요 |
+| WinForms | UseWindowsForms, 트레이만 | 같음 | **트레이를 빼면 참조 제거** | 지금 BongHub는 아이콘 하나 때문에 WPF와 WinForms를 같이 올려요. 같이 있으면 작업 집합이 늘어나요. 0단계에서 뺀 뒤 다시 재요 |
 | CommunityToolkit.Mvvm | **8.4.2** (2026-03-25) | MIT | **새 화면부터 사용** | 소스 생성기라 런타임 리플렉션이 거의 없어요. 작업 집합 영향은 1MB 안쪽이에요. 0단계에서 기존 코드 전체를 ViewModel로 옮기지 않아요 |
 | H.NotifyIcon.Wpf | **2.4.1** (2025-12-01). 2.5는 아직 dev/beta | MIT | **0단계에 트레이 교체** | net10-windows와 net462만 대상이에요. WinForms `NotifyIcon` 없이 아이콘·메뉴·풍선을 그려요. WinForms 제거가 목표예요. 풍선과 다크 메뉴를 스모크로 확인해요 |
 | WPF-UI (lepoco) | **4.3.0** (2026-05-04). 4.0–4.2 일부는 치명 버그로 표시됨 | MIT | **셸로 쓰지 않음** | Fluent 테마·NavigationView가 컨트롤 트리를 키워요. 지금 셸은 그라데이션 다크·블록 아이콘·즉시 저장이고, Mica는 `WindowFx`가 이미 해요. 컨트롤 팩을 올리면 227MB를 줄이는 방향이 아니에요 |
@@ -443,7 +443,7 @@ Next 테스트: `--smoketest`, `--notetest`. 0.2.0 기록은 스모크 43, 노�
 | Serilog | **4.4.0** (2026-07-10) + Sinks.File **7.0.0** + Extensions.Hosting **10.0.0** | Apache-2.0 | **기본은 아님** | 구조화 로그가 필요할 때 위 버전으로 바꿔요. 동기화 실패 한 줄을 위해 싱크 구성을 늘리면 시작 경로가 늘어요. 4.4.1-dev는 쓰지 않아요 |
 | Octokit | **14.0.0** (2026-01-08) | MIT | **쓰지 않음** | REST로 커밋을 만들면 지금 git 병합(mtime, 톰스톤, `data/` 히스토리)을 다시 구현해요. 인증도 gh 자격 증명과 갈라져요. 동기화는 **git.exe + gh.exe**를 유지해요 |
 | libwebp 1.6.0 (dwebp/webpmux) | 이미 `app/res` | libwebp 라이선스(`app/res/WebP-LICENSE.txt`) | **미리보기 단계까지 유지** | 프로세스만 잠깐 띄워요. 상주 메모리가 아니에요. 관리되는 디코더로 바꾸려면 라이선스와 ‘애니메이션은 첫 프레임’ 동작을 맞춘 뒤에 비교해요 |
-| MultiMonitorTool, BongAd | 기존 바이너리 | 지금 고지 그대로 | **그대로 포함** | Next 리소스로 옮기고, 푸는 위치는 계속 `%LOCALAPPDATA%\BongHub`예요. 두 벌로 풀지 않아요 |
+| MultiMonitorTool, BongAd | 기존 바이너리 | 지금 고지 그대로 | **그대로 포함** | BongHub 리소스로 옮기고, 푸는 위치는 계속 `%LOCALAPPDATA%\BongHub`예요. 두 벌로 풀지 않아요 |
 
 게시 설정(0단계에서 csproj에 반영할 값):
 
@@ -487,9 +487,9 @@ Next 테스트: `--smoketest`, `--notetest`. 0.2.0 기록은 스모크 43, 노�
 자동 측정은 임시 데이터만 써요. 프리셋 CLI, MMT, 실제 모니터, 실제 바탕화면, 배포 중인 3.4.7 프로세스는 건드리지 않아요.
 
 ```powershell
-dotnet publish next\BongHub\BongHub.csproj -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=true
-$pub = "next\BongHub\bin\Release\net10.0-windows\win-x64\publish"
-$data = Join-Path $env:TEMP ("bhnext_mem_" + $PID)
+dotnet publish BongHub\BongHub.csproj -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=true
+$pub = "BongHub\bin\Release\net10.0-windows\win-x64\publish"
+$data = Join-Path $env:TEMP ("bonghub_mem_" + $PID)
 New-Item -ItemType Directory -Force $data | Out-Null
 # 메모 0개, OpenOnStartup false 인 config.json 을 $data 에 복사 (data/ 원본은 수정하지 않음)
 $p = Start-Process "$pub\BongHub.exe" -ArgumentList "--tray","--off","--data",$data -PassThru
@@ -499,9 +499,9 @@ $p.Refresh()
 Stop-Process -Id $p.Id
 ```
 
-같은 방법으로 설정 창(`--off`만, `--tray` 없음)과, 메모 7개 복사본을 연 경우를 각 3회 재고 중앙값을 `next/test-logs/`에 남겨요. 로그 파일은 결과 txt만 커밋하고 `bin/`은 커밋하지 않아요.
+같은 방법으로 설정 창(`--off`만, `--tray` 없음)과, 메모 7개 복사본을 연 경우를 각 3회 재고 중앙값을 `test-logs/`에 남겨요. 로그 파일은 결과 txt만 커밋하고 `bin/`은 커밋하지 않아요.
 
-이 절차는 `next/measure-baseline.ps1`에 있어요. 시나리오는 네 가지예요. 계획의 3종(트레이만, 설정 창, 메모 7개)에, 설정 창을 만든 뒤 숨긴 상태(`--tray --off --idle-hidden`)를 더해요. 목표 표의 “트레이만”은 MainWindow를 아직 만들지 않은 상태이고, 숨긴 창 행은 그 트리를 그대로 들고 있는 상태예요. 스크립트는 준비 줄(`startup.txt`)이 생긴 뒤 20초를 쉬고 재요. `data/`와 `%LOCALAPPDATA%\BongHub`는 읽지도 쓰지도 않아요. 메모 7개는 동기화된 `data/notes` 개수와 무관하게, 스크립트가 임시 폴더에 고정으로 만들어요. 본문이 있는 RTF 7개이고 그 중 하나는 1×1 PNG예요. 스크립트는 동시 GC를 끈 경우와 켠 경우를 각 3회 재요. csproj 기본값은 0.4.0부터 true이고, 스크립트는 끝나면 runtimeconfig도 true로 돌려놔요. 판정은 `gc_concurrent=true` 중앙값이에요. 창을 끄는 동안의 멈춤은 이 스크립트가 재지 않아요. 실모니터에서 드래그하지 않아요.
+이 절차는 `measure-baseline.ps1`에 있어요. 시나리오는 네 가지예요. 계획의 3종(트레이만, 설정 창, 메모 7개)에, 설정 창을 만든 뒤 숨긴 상태(`--tray --off --idle-hidden`)를 더해요. 목표 표의 “트레이만”은 MainWindow를 아직 만들지 않은 상태이고, 숨긴 창 행은 그 트리를 그대로 들고 있는 상태예요. 스크립트는 준비 줄(`startup.txt`)이 생긴 뒤 20초를 쉬고 재요. `data/`와 `%LOCALAPPDATA%\BongHub`는 읽지도 쓰지도 않아요. 메모 7개는 동기화된 `data/notes` 개수와 무관하게, 스크립트가 임시 폴더에 고정으로 만들어요. 본문이 있는 RTF 7개이고 그 중 하나는 1×1 PNG예요. 스크립트는 동시 GC를 끈 경우와 켠 경우를 각 3회 재요. csproj 기본값은 0.4.0부터 true이고, 스크립트는 끝나면 runtimeconfig도 true로 돌려놔요. 판정은 `gc_concurrent=true` 중앙값이에요. 창을 끄는 동안의 멈춤은 이 스크립트가 재지 않아요. 실모니터에서 드래그하지 않아요.
 
 시작은 기존 `startup.txt`와 같이 프로세스 시작 시각부터 첫 `ContentRendered`까지예요 (`first_frame_ms`). 트레이 시점은 아이콘이 보인 직후 `tray_visible_ms`로 같은 파일에 남겨요. `--out`이 있을 때만 써요. 트레이만이면 `main_window_created=0`이고 `first_frame_ms`는 없어요.
 
@@ -541,17 +541,17 @@ Stop-Process -Id $p.Id
 
 ## 4. 이식 순서
 
-각 단계는 그 상태만으로 주인 PC의 숨은 데스크톱 또는 화면 밖 좌표에서 시험할 수 있어야 해요. 3.4.8 exe는 그 단계의 배포 트레이로 남아 있어요. Next 버전은 단계마다 올리고 CHANGELOG에 해당하는 메모를 `next/` 쪽에 남겨요. 3.4.x CHANGELOG는 유지보수 수정이 있을 때만 올려요.
+각 단계는 그 상태만으로 주인 PC의 숨은 데스크톱 또는 화면 밖 좌표에서 시험할 수 있어야 해요. 3.4.8 exe는 그 단계의 배포 트레이로 남아 있어요. BongHub 버전은 단계마다 올리고 CHANGELOG에 해당하는 메모를 `` 쪽에 남겨요. 3.4.x CHANGELOG는 유지보수 수정이 있을 때만 올려요.
 
 ### 데이터 호환 (모든 단계)
 
 1. 공유 파일의 필드 이름·메모 필드 순서·`\/Date(ms)\/`·RTF `\pict`를 유지해요.
-2. 공유 `config.json`에 Next만 아는 필수 키를 넣지 않아요. `ReduceMotion`처럼 Next 파일에 둬요.
+2. 공유 `config.json`에 BongHub만 아는 필수 키를 넣지 않아요. `ReduceMotion`처럼 BongHub 파일에 둬요.
 3. `Version`은 2, `Cloud.Schema`는 1, `Notes.ColorVer`와 `Pt.ShortcutVersion`은 3.4.8 정규화가 한 번 더 돌아도 사용자 키가 바뀌지 않게 둬요.
-4. 저장권은 `Local\BongHub_NotesWriter` 한 개예요. 잡는 순서는 `docs/HANDOFF.md` 3.2와 같아요. 프리셋 CLI, `resize`, `workspace`는 이 잠금을 보지 않아요. Next가 그 셋의 역할을 맡기 전에는 Next도 그 인자로 모니터나 창을 움직이지 않아요.
+4. 저장권은 `Local\BongHub_NotesWriter` 한 개예요. 잡는 순서는 `docs/HANDOFF.md` 3.2와 같아요. 프리셋 CLI, `resize`, `workspace`는 이 잠금을 보지 않아요. BongHub가 그 셋의 역할을 맡기 전에는 BongHub도 그 인자로 모니터나 창을 움직이지 않아요.
 5. 저장권자만 클라우드를 돌려요. 두 프로세스가 같이 push하지 않아요.
 6. `Startup\BongHub.lnk`의 대상은 은퇴 커밋 전까지 3.4.x exe예요.
-7. Next는 `Local\BongHub_Tray`를 만들지 않아요. 만들면 3.4.8이 “이미 실행 중”(코드 1)으로 끝나요.
+7. BongHub는 `Local\BongHub_Tray`를 만들지 않아요. 만들면 3.4.8이 “이미 실행 중”(코드 1)으로 끝나요.
 8. 설정 패치는 모르는 키를 삭제하지 않아요. Notes 한 키는 그 값 토큰만 바꾸고, 바깥 바이트는 그대로 둬요.
 9. 새 config를 옛 exe가 저장하면 옛 exe가 모르는 키가 사라질 수 있어요(`docs/HANDOFF.md` 배포 절). 그래서 공유 파일에 새 키를 넣지 않아요.
 
@@ -564,7 +564,7 @@ Stop-Process -Id $p.Id
 | TFM `net10.0-windows`, SDK 10.0.403(또는 같은 10 기능 대역의 더 높은 SDK) | `global.json`, csproj | `dotnet publish` 종료 코드 0 |
 | H.NotifyIcon.Wpf 2.4.1, `UseWindowsForms` 제거 | `TrayService` | 스모크 58 PASS (0.2.0의 43 + 트레이 13 + 소프트웨어 렌더 2) |
 | ReadyToRun, 프레임워크 종속, 단일 파일·트림·AOT 끔 | csproj, `Properties/PublishProfiles/ReadyToRun.pubxml` | publish 폴더에 `coreclr.dll` 없음, dll에 ReadyToRun |
-| 트레이만 / 설정 창 / 숨긴 설정 창 / 메모 7개, GC 동시 켜짐·꺼짐 각 3회 중앙값 | `next/measure-baseline.ps1` | `next/test-logs/baseline_memory.txt` |
+| 트레이만 / 설정 창 / 숨긴 설정 창 / 메모 7개, GC 동시 켜짐·꺼짐 각 3회 중앙값 | `measure-baseline.ps1` | `test-logs/baseline_memory.txt` |
 | `ConcurrentGarbageCollection` | **true** (0.4.0, 3.3의 기준선으로 결정) | `gc_concurrent=true` 중앙값이 목표 안인지 |
 | 3.4.8 `build.ps1` 경고 0 | `app/` 변경 없음 | 오류 0, 경고 0. exe를 배포 폴더에 복사하지 않음 |
 | 노트 23 (0.4.0은 26), 읽기 전용 저장 차단, extrastest 26/0, settingstest | 0.4.0 노트는 표시 크기·pict 바이트·선형 확대 3개가 더해짐 | 각 종료 코드 0 |
@@ -576,7 +576,7 @@ Stop-Process -Id $p.Id
 - TFM `net10.0-windows`. SDK 10.0.403으로 `dotnet publish` PASS.
 - H.NotifyIcon.Wpf 2.4.1. `UseWindowsForms` 제거. 다크 메뉴·왼쪽 클릭·종료·풍선이 스모크에서 통과. 스모크는 셸 트레이 아이콘을 만들지 않아요.
 - ReadyToRun, 프레임워크 종속.
-- 측정 3종과 숨긴 설정 창을 `next/test-logs/baseline_memory.txt`에 기록.
+- 측정 3종과 숨긴 설정 창을 `test-logs/baseline_memory.txt`에 기록.
 - 3.4.8 `build.ps1`은 동작 변경 없이 경고 0인지만 확인(HANDOFF에 남은 확인). 소스를 기능 쪽으로 고치지 않아요.
 - 합격: 스모크 58(기존 43은 유지, 트레이 단언 13, 소프트웨어 렌더 2), 노트 26(0.4.0), 읽기 전용 저장 차단, extrastest 26/0, settingstest PASS.
 
@@ -589,7 +589,7 @@ Stop-Process -Id $p.Id
 - 이미지: 디스크의 `\pngblip`/`\jpegblip`을 유지해요. WPF `RichTextBox`가 pict를 떨어뜨리면 그 파일 바이트를 그대로 두고 로그만 남겨요. msftedit는 쓰지 않아요. 크기 조절은 `\picwgoal`/`\pichgoal`만 바꿔요.
 - 뷰어, 복사, 25–100%, 폭 맞춤, 이동, 첫 드래그 지연, 모달 중 활성화, 화면 클램프(`--off`에서는 좌표 테스트를 위해 클램프하지 않음).
 - 트레이 메뉴의 메모 항목(새 메모, 모두 보이기, 모두 숨기기).
-- 합격: 스모크 **65**, 노트 **89**(7개 복사본에 그림이 있을 때). 3.4.9 `notestest`/`imagetest`는 자기 임시 폴더만 쓰므로 경로 인자를 넣지 않아요(`app/` 동결). Next 노트 테스트가 같은 형식(JSON 필드 순서, `\/Date(ms)\/`, blip 바이트, `\picwgoal`)을 단언해요. 잠금 순서는 HANDOFF 3.2 그대로예요. 메모리 기준선은 0.4.0 숫자(트레이 8/18MB, 설정 20/64MB·593ms, 메모 7개 22/94MB, 소프트웨어 렌더)를 넘기면 안 돼요.
+- 합격: 스모크 **65**, 노트 **89**(7개 복사본에 그림이 있을 때). 3.4.9 `notestest`/`imagetest`는 자기 임시 폴더만 쓰므로 경로 인자를 넣지 않아요(`app/` 동결). BongHub 노트 테스트가 같은 형식(JSON 필드 순서, `\/Date(ms)\/`, blip 바이트, `\picwgoal`)을 단언해요. 잠금 순서는 HANDOFF 3.2 그대로예요. 메모리 기준선은 0.4.0 숫자(트레이 8/18MB, 설정 20/64MB·593ms, 메모 7개 22/94MB, 소프트웨어 렌더)를 넘기면 안 돼요.
 
 ### 2단계 — 설정 셸 (위험 기능 제외)
 
@@ -655,20 +655,20 @@ Stop-Process -Id $p.Id
 
 체크리스트의 사용자 기능이 모두 **있음**이고, 0–8 테스트가 임시 폴더에서 PASS이며, 메모리 표를 기록한 뒤예요.
 
-- 시작프로그램 lnk 대상을 Next exe로.
-- 배포 폴더를 Next로 바꾸기 전에 `backup\`에 3.4.x exe·cs를 복사(HANDOFF 규칙).
+- 시작프로그램 lnk 대상을 BongHub exe로.
+- 배포 폴더를 BongHub로 바꾸기 전에 `backup\`에 3.4.x exe·cs를 복사(HANDOFF 규칙).
 - 3.4.x exe는 바로가기에서 빼되, 한 버전 동안 폴더에 남겨 롤백할 수 있게 해요.
 - 롤백 시 공유 config를 옛 exe가 읽어요. 그래서 9단계 직전까지 새 키를 넣지 않은 상태가 유지돼야 해요.
-- 소스의 `app/` 삭제는 사용자가 매일 Next만 쓴 뒤를 따로 요청할 때 해요. 이 계획의 완료 조건에 소스 삭제는 없어요.
+- 소스의 `app/` 삭제는 사용자가 매일 BongHub만 쓴 뒤를 따로 요청할 때 해요. 이 계획의 완료 조건에 소스 삭제는 없어요.
 
 ### 위험
 
 | 위험 | 대응 |
 |---|---|
 | WPF가 RTF 그림을 버림 | 1단계 가드. 파일을 덮어쓰지 않음. msftedit는 쓰지 않음 |
-| 3.4.7(잠금 없음)과 Next가 겹침 | 배포 트레이를 3.4.8로 올린 뒤에 Next를 매일 쓰게 해요. HANDOFF에 남은 “Next 먼저 → 코드 4” 확인을 0단계 수동 항목으로 두어요 |
-| 양쪽이 클라우드 push | 저장권자만. 읽기 전용인 Next는 git을 실행하지 않음 |
-| 시작프로그램이 Next를 가리켜 3.4.8이 안 켜짐 | 9단계 전 lnk 변경 금지. 테스트가 Startup 폴더를 쓰지 않음 |
+| 3.4.7(잠금 없음)과 BongHub가 겹침 | 배포 트레이를 3.4.8로 올린 뒤에 BongHub를 매일 쓰게 해요. HANDOFF에 남은 “BongHub 먼저 → 코드 4” 확인을 0단계 수동 항목으로 두어요 |
+| 양쪽이 클라우드 push | 저장권자만. 읽기 전용인 BongHub는 git을 실행하지 않음 |
+| 시작프로그램이 BongHub를 가리켜 3.4.8이 안 켜짐 | 9단계 전 lnk 변경 금지. 테스트가 Startup 폴더를 쓰지 않음 |
 | 테스트가 모니터·밝기·아이콘·후킹을 침 | 5절 금지 목록. `--off`에서 후킹 API를 호출하면 테스트 실패로 처리 |
 | 잠금 화면·절전·자동 로그인 테스트가 실제 정책을 바꿈 | `*test` 격리 키만. `enable`/`disable`/`restore` 실인자 금지 |
 | WinUI·WPF-UI·자체 포함·트림으로 메모리가 더 늘어남 | 2절에서 채택하지 않음 |
@@ -690,16 +690,16 @@ Stop-Process -Id $p.Id
 
 | 단계 | 매번 돌릴 것 | 그 단계에 더할 것 | 돌리지 말 것 |
 |---|---|---|---|
-| 0 | 3.4.9 `extrastest`, `settingstest`. Next `--smoketest`(0.5.0은 65, 0.4.0은 58), `--notetest`(0.5.0은 89, 0.4.0은 26, 그 전은 23) | `next/measure-baseline.ps1` → `baseline_memory.txt`. `version`으로 3.4.9 문자열 확인 | 프리셋 CLI, 실모니터 |
-| 1 | 위 + 3.4.9 `notestest`, `imagetest` | Next 노트 테스트에 이미지 라운드트립, 삭제, 단축키 등록은 테스트 창의 메시지 흉내(전역 후킹 설치 없음), 읽기 전용. 0.5.0 기대값은 스모크 65, 노트 89 | 실제 메모 폴더, 전역 핫키가 사용자 키를 가로채는 실행 |
+| 0 | 3.4.9 `extrastest`, `settingstest`. BongHub `--smoketest`(0.5.0은 65, 0.4.0은 58), `--notetest`(0.5.0은 89, 0.4.0은 26, 그 전은 23) | `measure-baseline.ps1` → `baseline_memory.txt`. `version`으로 3.4.9 문자열 확인 | 프리셋 CLI, 실모니터 |
+| 1 | 위 + 3.4.9 `notestest`, `imagetest` | BongHub 노트 테스트에 이미지 라운드트립, 삭제, 단축키 등록은 테스트 창의 메시지 흉내(전역 후킹 설치 없음), 읽기 전용. 0.5.0 기대값은 스모크 65, 노트 89 | 실제 메모 폴더, 전역 핫키가 사용자 키를 가로채는 실행 |
 | 2 | 위 + `configtest` | 화면 밖 탭 순회, 패치 후 Pt/Presets/Desk 키 보존. 0.6.0 스모크 **83**, 노트 **89** | 시작프로그램 lnk 생성 |
 | 3 | 위 + `icontest`(탐색기에 쓰지 않는 범위) | layouts.json 병합 픽스처. 0.7.0 스모크 **89**, 노트 **89**. 가짜 목록만 | 실제 바탕화면, `Desk.Apply`의 실리스트뷰 |
 | 4 | 위 + `windowtest`, `watchbench` | 가짜 창만 이동. 0.8.0 스모크 **93**, 노트 **89** | 사용자 창, 작업 영역 실행, 전역 후킹 |
 | 5 | 위 + `pttest` | 계산·단위·영역 기하·붙여넣기 변환. 0.9.0 스모크 **98**, 노트 **89** | 저수준 후킹, HKCU 우클릭 키, `resize` GUI, `workspace` CLI, 밝기 |
-| 6 | 위 + `extrastest` 시나리오를 Next 목으로 | 0.10.0 스모크 **101**, 노트 **89**. 가짜 디스플레이만 | MMT, 밝기 API, DisplayFusion/탐색기 종료, “지금 적용” |
-| 7 | 위 + `kakaotest` 시나리오를 Next 목으로 | 0.11.0 스모크 **104**, 노트 **89**. 가짜 창만 | 실제 카톡 창, 도우미 실행 |
+| 6 | 위 + `extrastest` 시나리오를 BongHub 목으로 | 0.10.0 스모크 **101**, 노트 **89**. 가짜 디스플레이만 | MMT, 밝기 API, DisplayFusion/탐색기 종료, “지금 적용” |
+| 7 | 위 + `kakaotest` 시나리오를 BongHub 목으로 | 0.11.0 스모크 **104**, 노트 **89**. 가짜 창만 | 실제 카톡 창, 도우미 실행 |
 | 8 | 위 + `cloudtest` 시나리오를 메모리 원격으로 | 0.12.0 스모크 **107**, 노트 **89**. git·gh 없음 | `gh` 네트워크, `Baegovda/BongHub` push, 비밀 출력 |
-| 9 | 0–8 전부 | 잠금 순서(3.4.8 코드 4, Next 읽기 전용)는 배포 트레이를 끈 수동 확인으로 기록 | 수동 확인을 자동 테스트로 대체하지 않음 |
+| 9 | 0–8 전부 | 잠금 순서(3.4.8 코드 4, BongHub 읽기 전용)는 배포 트레이를 끈 수동 확인으로 기록 | 수동 확인을 자동 테스트로 대체하지 않음 |
 
 `lockscreen` / `sleepauth` / `blankautologon`의 실인자는 어느 단계에서도 자동 실행하지 않아요. 로직은 `lockscreenpolicytest`처럼 프로세스 밖 정책을 건드리지 않는 복제품으로만 옮겨요. `blankcheck`는 종료 코드만 보므로 허용이에요.
 
@@ -713,6 +713,6 @@ CI는 저장소에 아직 없어요. 이 계획도 GitHub Actions를 필수로 �
 
 허용: 크래시, 저장 잠금, 데이터 손실, 빌드 경고처럼 동작이 바뀌지 않는 수정. 버전은 3.4.9 이상으로만.
 
-허용하지 않음: 새 탭, 새 단축키 기본값, 새 config 키, 스키마 2, 모니터 알고리즘 변경, UI 개편. 그런 요구는 Next 단계로 옮겨요.
+허용하지 않음: 새 탭, 새 단축키 기본값, 새 config 키, 스키마 2, 모니터 알고리즘 변경, UI 개편. 그런 요구는 BongHub 단계로 옮겨요.
 
-3.4.8에 이미 있는 동작(잠금, 경고 정리)은 이 계획의 기능 목록에 포함돼요. Next가 그 잠금을 느슨하게 만들면 안 돼요.
+3.4.8에 이미 있는 동작(잠금, 경고 정리)은 이 계획의 기능 목록에 포함돼요. BongHub가 그 잠금을 느슨하게 만들면 안 돼요.

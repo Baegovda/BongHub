@@ -972,7 +972,7 @@ public partial class MainWindow : Window
         var open = new Button { Content = "폴더 열기", Padding = new Thickness(12, 6, 12, 6), IsEnabled = !AppEnv.ReadOnly };
         open.Click += (_, _) => RequestOpenDataFolder();
         Row(start, "\uE8B7", "5AC8FA", "설정 폴더", AppEnv.DataDir, open);
-        Row(start, "\uE9E9", "8E8E93", "애니메이션 줄이기", "이 앱만의 설정이에요. 공유 config.json에는 없어요.", Switch(NextSettings.ReduceMotion, v => NextSettings.SetReduceMotion(v)));
+        Row(start, "\uE9E9", "8E8E93", "애니메이션 줄이기", "이 앱만의 설정이에요. 공유 config.json에는 없어요.", Switch(AppSettings.ReduceMotion, v => AppSettings.SetReduceMotion(v)));
 
         Header("클라우드");
         var cloud = Group();
@@ -1004,7 +1004,7 @@ public partial class MainWindow : Window
             if (p.Hotkey.Length > 0) hotkeys += " · " + p.Name + " " + p.Hotkey;
         AboutMentionsHotkey = hotkeys.Contains("메모");
         Row(g, null, null, "단축키", hotkeys, null);
-        Row(g, null, null, "변경", "1.0.0. 3.4.x 트레이를 이 앱으로 바꿨어요.", null);
+        Row(g, null, null, "변경", "1.0.1. 사이드바 이름을 BongHub로 맞췄어요.", null);
     }
 
     sealed class UniformGrid4 : Grid

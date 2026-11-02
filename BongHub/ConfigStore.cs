@@ -267,18 +267,18 @@ public static class ConfigStore
     public static int CountNotes() => NoteStore.All.Count;
 }
 
-/// <summary>Next-only preferences (kept outside 3.4.7's config).</summary>
-public static class NextSettings
+/// <summary>Preferences kept outside the shared config.json.</summary>
+public static class AppSettings
 {
     public static bool ReduceMotion { get; private set; }
     public static void Load()
     {
-        try { if (File.Exists(AppEnv.NextSettingsPath) && JsonNode.Parse(File.ReadAllText(AppEnv.NextSettingsPath)) is JsonObject o) ReduceMotion = o["ReduceMotion"]?.GetValue<bool>() ?? false; } catch { }
+        try { if (File.Exists(AppEnv.SettingsPath) && JsonNode.Parse(File.ReadAllText(AppEnv.SettingsPath)) is JsonObject o) ReduceMotion = o["ReduceMotion"]?.GetValue<bool>() ?? false; } catch { }
         Fx.Enabled = !ReduceMotion;
     }
     public static void SetReduceMotion(bool v)
     {
         ReduceMotion = v; Fx.Enabled = !v;
-        try { Directory.CreateDirectory(Path.GetDirectoryName(AppEnv.NextSettingsPath)!); File.WriteAllText(AppEnv.NextSettingsPath, new JsonObject { ["ReduceMotion"] = v }.ToJsonString()); } catch { }
+        try { Directory.CreateDirectory(Path.GetDirectoryName(AppEnv.SettingsPath)!); File.WriteAllText(AppEnv.SettingsPath, new JsonObject { ["ReduceMotion"] = v }.ToJsonString()); } catch { }
     }
 }
