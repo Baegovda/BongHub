@@ -30,6 +30,10 @@ public static class ConfigStore
     public static bool KakaoCompact { get; private set; } = true;
     public static bool KakaoDark { get; private set; }
     public static bool KakaoAutoApply { get; private set; } = true;
+    public static bool CloudEnabled { get; private set; }
+    public static string CloudRepo { get; private set; } = "";
+    public static string CloudBranch { get; private set; } = "main";
+    public static int CloudPullMinutes { get; private set; } = 2;
     public static string DeskHotkeySave { get; private set; } = "";
     public static string DeskHotkeyRestore { get; private set; } = "";
     public static bool DeskAutoSave { get; private set; } = true;
@@ -46,7 +50,9 @@ public static class ConfigStore
     {
         Presets.Clear(); Notes = new NotesSettings(); TabOrder.Clear(); Rules.Clear(); WindowRules.Clear(); Workspaces.Clear(); PowerToys.Clear();
         IdleEnabled = true; IdleMinutes = 30; IdlePreset = ""; SkipIfAudio = true; OverlayEnabled = true; OverlayOpacity = 82;
-        KakaoAdBlock = false; KakaoCompact = true; KakaoDark = false; KakaoAutoApply = true; DeskHotkeySave = ""; DeskHotkeyRestore = "";
+        KakaoAdBlock = false; KakaoCompact = true; KakaoDark = false; KakaoAutoApply = true;
+        CloudEnabled = false; CloudRepo = ""; CloudBranch = "main"; CloudPullMinutes = 2;
+        DeskHotkeySave = ""; DeskHotkeyRestore = "";
         DeskAutoSave = true; DeskAutoSaveMinutes = 10; DeskSaveOnExit = true; DeskSaveBeforeSwitch = true; DeskRestoreOnChange = true; DeskRestoreOnStartup = false;
         LoadError = "";
         try
@@ -93,6 +99,14 @@ public static class ConfigStore
                 KakaoCompact = Bool(k["Compact"], true);
                 KakaoDark = Bool(k["Dark"], false);
                 KakaoAutoApply = Bool(k["AutoApply"], true);
+            }
+            if (root?["Cloud"] is JsonObject cloud)
+            {
+                CloudEnabled = Bool(cloud["Enabled"], false);
+                CloudRepo = Str(cloud["Repo"]);
+                string branch = Str(cloud["Branch"]);
+                CloudBranch = branch.Length > 0 ? branch : "main";
+                CloudPullMinutes = Math.Clamp((int)Num(cloud["PullMinutes"], 2), 1, 240);
             }
             if (root?["Desk"] is JsonObject d)
             {
@@ -202,6 +216,20 @@ public static class ConfigStore
         catch (Exception e) { AppEnv.Log("config patch failed: " + e.Message); return false; }
     }
     public static KakaoSettings Kakao() => new() { AdBlock = KakaoAdBlock, Compact = KakaoCompact, Dark = KakaoDark, AutoApply = KakaoAutoApply };
+    public static CloudSettings Cloud() => new() { Enabled = CloudEnabled, Repo = CloudRepo, Branch = CloudBranch, PullMinutes = CloudPullMinutes };
+    public static bool SetCloudEnabled(bool enabled)
+    {
+        if (AppEnv.DenyWrite()) return false;
+        try
+        {
+            if (!NotesConfigPatch.TryWriteFile(AppEnv.ConfigPath, "Cloud", "Enabled", JsonValue.Create(enabled), out bool changed))
+                return false;
+            CloudEnabled = enabled;
+            if (changed) Writes++;
+            return true;
+        }
+        catch (Exception e) { AppEnv.Log("config patch failed: " + e.Message); return false; }
+    }
     public static bool SetKakaoFlag(string key, bool value)
     {
         if (AppEnv.DenyWrite()) return false;

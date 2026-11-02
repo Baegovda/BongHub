@@ -484,6 +484,7 @@ Check("kakao adblock splices one value", NotesConfigPatch.TryApply(KakaoCfgJson,
 Check("kakao adblock keeps pretty formatting", NotesConfigPatch.TryApply(KakaoPretty, "Kakao", "AdBlock", JsonValue.Create(false), out string kakaoPretty)
     && kakaoPretty == KakaoPretty.Replace("\"AdBlock\": true", "\"AdBlock\": false") && kakaoPretty.Contains("\"Compact\": true") && kakaoPretty.Contains("KAKAO_KEEP"));
 Check("kakao adblock byte span", OnlyToken(KakaoCfgJson, kakaoPatched, out string kakaoOld, out string kakaoNew) && kakaoOld == "true" && kakaoNew == "false");
+RunCloud();
 
 Console.WriteLine(fail == 0 ? "RESULT PASS" : "RESULT FAIL " + fail);
 return fail == 0 ? 0 : 1;
@@ -595,6 +596,114 @@ void RunExtras()
         PresetExtras.FindWork = oldFW; PresetExtras.LaunchWork = oldLW; PresetExtras.WorkLaunchMissing = oldLM;
         try { Directory.Delete(dir, true); } catch { }
     }
+}
+
+void RunCloud()
+{
+    string root = Path.Combine(Path.GetTempPath(), "bhnext_cloud_" + Environment.ProcessId);
+    var real = repo == null ? null : File.ReadAllBytes(Path.Combine(repo, "data", "config.json"));
+    try
+    {
+        if (Directory.Exists(root)) Directory.Delete(root, true);
+        string A(string rel) => Path.Combine(root, "pcA", rel);
+        string B(string rel) => Path.Combine(root, "pcB", rel);
+        Directory.CreateDirectory(A("notes"));
+        Directory.CreateDirectory(A("desktop"));
+        Directory.CreateDirectory(B("notes"));
+        Directory.CreateDirectory(B("desktop"));
+        var t0 = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        void At(string path, string text, DateTime when)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, text, new UTF8Encoding(false));
+            File.SetLastWriteTimeUtc(path, when);
+        }
+        At(A("config.json"), "{\"General\":{\"IdleMinutes\":17}}", t0);
+        At(A("notes/n1.json"), "{\"Id\":\"n1\",\"Text\":\"A가 쓴 메모\"}", t0);
+        At(A("notes/n1.rtf"), "{\\rtf1 A}", t0);
+        var layout = new DeskLayoutFile { Id = "L1", Name = "A 배치", Key = "k", Saved = t0, Items = new() };
+        At(A("desktop/layouts.json"), LayoutStore.Serialize(new List<DeskLayoutFile> { layout }), t0);
+        var remote = new MemoryCloud();
+        CloudWorkspace Ws(string side, string name, DateTime utc) => new()
+        {
+            ConfigFile = Path.Combine(root, side, "config.json"),
+            NotesDir = Path.Combine(root, side, "notes"),
+            DeskDir = Path.Combine(root, side, "desktop"),
+            Device = name,
+            AppVersion = "0.12.0",
+            UtcNow = utc,
+            LocalNow = utc.ToLocalTime(),
+            State = new CloudState()
+        };
+        var stateA = new CloudState();
+        var stateB = new CloudState();
+        CloudWorkspace Side(string side, string name, DateTime utc, CloudState state)
+        {
+            var ws = Ws(side, name, utc);
+            ws.State = state;
+            return ws;
+        }
+        string a1 = CloudEngine.Run(Side("pcA", "PC-A", t0.AddMinutes(1), stateA), remote, true);
+        Check("A uploads through the memory remote", a1.Length == 0 && remote.Commits.Count == 1 && remote.Commits[0].StartsWith("sync: PC-A"));
+        Check("commit tree stays under data/", remote.Snapshot().Keys.Any(k => k == "data/config.json") && remote.Snapshot().Keys.Any(k => k.StartsWith("data/notes/", StringComparison.Ordinal)) && remote.Snapshot().Keys.All(k => k == "README.md" || k.StartsWith("data/", StringComparison.Ordinal)));
+        At(B("config.json"), "{\"General\":{\"IdleMinutes\":30}}", t0);
+        string b1 = CloudEngine.Run(Side("pcB", "PC-B", t0.AddMinutes(2), stateB), remote, true);
+        Check("B first link takes cloud config", b1.Length == 0 && File.ReadAllText(B("config.json")).Contains("17"));
+        Check("B receives note", File.Exists(B("notes/n1.rtf")) && File.ReadAllText(B("notes/n1.rtf")).Contains("A"));
+        Check("B receives desktop layout", File.ReadAllText(B("desktop/layouts.json")).Contains("L1"));
+        var tEdit = t0.AddMinutes(10);
+        At(B("notes/n1.rtf"), "{\\rtf1 B edit}", tEdit);
+        At(B("notes/n2.json"), "{\"Id\":\"n2\"}", tEdit);
+        At(B("notes/n2.rtf"), "{\\rtf1 B2}", tEdit);
+        Check("B publishes its note", CloudEngine.Run(Side("pcB", "PC-B", tEdit, stateB), remote, true).Length == 0);
+        var t3 = t0.AddMinutes(11);
+        At(A("notes/n3.json"), "{\"Id\":\"n3\"}", t3);
+        At(A("notes/n3.rtf"), "{\\rtf1 A3}", t3);
+        Check("A gets B's newer edit and new note", CloudEngine.Run(Side("pcA", "PC-A", t3, stateA), remote, true).Length == 0
+            && File.ReadAllText(A("notes/n1.rtf")).Contains("B edit") && File.Exists(A("notes/n2.rtf")));
+        Check("B gets A's note", CloudEngine.Run(Side("pcB", "PC-B", t3.AddMinutes(1), stateB), remote, true).Length == 0 && File.Exists(B("notes/n3.rtf")));
+        File.Delete(A("notes/n2.json"));
+        File.Delete(A("notes/n2.rtf"));
+        var tDel = t0.AddMinutes(20);
+        Check("A tombstones the deleted note", CloudEngine.Run(Side("pcA", "PC-A", tDel, stateA), remote, true).Length == 0 && !remote.Snapshot().ContainsKey("data/notes/n2.json"));
+        Check("deletion travels", CloudEngine.Run(Side("pcB", "PC-B", tDel.AddMinutes(1), stateB), remote, true).Length == 0 && !File.Exists(B("notes/n2.json")) && !File.Exists(B("notes/n2.rtf")));
+        var tCfg = t0.AddMinutes(30);
+        At(B("config.json"), "{\"General\":{\"IdleMinutes\":44}}", tCfg);
+        CloudEngine.Run(Side("pcB", "PC-B", tCfg, stateB), remote, true);
+        Check("newer config wins", CloudEngine.Run(Side("pcA", "PC-A", tCfg.AddMinutes(1), stateA), remote, true).Length == 0 && File.ReadAllText(A("config.json")).Contains("44"));
+        var offline = new MemoryCloud { Online = false };
+        string off = CloudEngine.Run(Side("pcB", "PC-B", tCfg.AddMinutes(2), stateB), offline, true);
+        Check("offline keeps the sync pending", off.StartsWith("오프라인") && offline.Commits.Count == 0 && CloudSystem.GitStarts == 0 && CloudSystem.NetworkCalls == 0);
+        bool token = remote.Snapshot().Values.Any(f => Encoding.UTF8.GetString(f.Bytes).Contains("ghp_") || Encoding.UTF8.GetString(f.Bytes).Contains("github_pat_"));
+        Check("synced bytes contain no token", !token);
+        int calls = remote.Calls;
+        string refused = CloudEngine.Run(Side("pcA", "PC-A", tCfg, stateA), remote, false);
+        Check("reader does not sync", refused.Contains("읽기 전용") && remote.Calls == calls);
+        var newer = new MemoryCloud();
+        newer.Seed(new Dictionary<string, CloudFile> { ["data/meta.json"] = new CloudFile { Bytes = Encoding.UTF8.GetBytes("{\"schema\":2,\"minApp\":\"9.9.9\"}"), MtimeUtc = t0 } });
+        At(A("config.json"), "LOCAL", tCfg);
+        string blocked = CloudEngine.Run(Side("pcA", "PC-A", tCfg, new CloudState()), newer, true);
+        Check("higher schema stops", blocked.StartsWith("업데이트 필요") && File.ReadAllText(A("config.json")) == "LOCAL" && newer.Commits.Count == 0);
+        bool cloudThrew = false;
+        try { CloudSystem.Touch(); } catch (InvalidOperationException) { cloudThrew = true; }
+        Check("cloud gate stays shut", cloudThrew && !CloudGate.RealAllowed && CloudSystem.NativeCalls == 0 && CloudSystem.GitStarts == 0 && CloudSystem.GhStarts == 0);
+        if (repo != null)
+        {
+            string logic = File.ReadAllText(Path.Combine(repo, "next", "BongHub.Next", "CloudSync.cs"));
+            Check("cloud logic does not call git", !logic.Contains("Process.Start") && !logic.Contains("DllImport") && !logic.Contains("git.exe") && !logic.Contains("gh.exe") && !logic.Contains("ghp_"));
+            Check("cloud tests do not write data/", real != null && File.ReadAllBytes(Path.Combine(repo, "data", "config.json")).AsSpan().SequenceEqual(real));
+        }
+        const string CloudJson = "{\"Cloud\":{\"Enabled\":true,\"Repo\":\"https://github.com/Baegovda/BongHub.git\",\"Branch\":\"main\",\"PullMinutes\":2,\"Marker\":\"CLOUD_KEEP\"},\"Presets\":[{\"Marker\":\"PRESET_KEEP\"}]}";
+        const string CloudPretty = "{\r\n  \"Cloud\": {\r\n    \"Enabled\": true,\r\n    \"Repo\": \"https://github.com/Baegovda/BongHub.git\",\r\n    \"Branch\": \"main\",\r\n    \"PullMinutes\": 2,\r\n    \"Marker\": \"CLOUD_KEEP\"\r\n  },\r\n  \"Presets\": [{ \"Marker\": \"PRESET_KEEP\" }]\r\n}\r\n";
+        Check("cloud enabled splices one value", NotesConfigPatch.TryApply(CloudJson, "Cloud", "Enabled", JsonValue.Create(false), out string cloudPatched)
+            && cloudPatched == CloudJson.Replace("\"Enabled\":true", "\"Enabled\":false")
+            && cloudPatched.Contains("https://github.com/Baegovda/BongHub.git") && cloudPatched.Contains("CLOUD_KEEP") && cloudPatched.Contains("PRESET_KEEP") && cloudPatched.Contains("\"PullMinutes\":2"));
+        Check("cloud enabled keeps pretty formatting", NotesConfigPatch.TryApply(CloudPretty, "Cloud", "Enabled", JsonValue.Create(false), out string cloudPretty)
+            && cloudPretty == CloudPretty.Replace("\"Enabled\": true", "\"Enabled\": false") && cloudPretty.Contains("\"PullMinutes\": 2") && cloudPretty.Contains("CLOUD_KEEP"));
+        Check("cloud enabled byte span", OnlyToken(CloudJson, cloudPatched, out string cloudOld, out string cloudNew) && cloudOld == "true" && cloudNew == "false");
+    }
+    catch (Exception ex) { Check("cloud exception", false, ex.ToString()); }
+    finally { try { if (Directory.Exists(root)) Directory.Delete(root, true); } catch { } }
 }
 
 static string? FindRepo()

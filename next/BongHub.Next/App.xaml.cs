@@ -31,6 +31,7 @@ public partial class App : Application
         PtGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden;
         DisplayGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden;
         KakaoGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden;
+        CloudGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden && !AppEnv.ReadOnly;
         ScreenMap.Live = () => Win32.Monitors().Select(m => new MonitorSpec(m.W, m.H, m.X, m.Y, m.Primary)).ToList();
         AppEnv.Mark("onstartup");
         DispatcherUnhandledException += (_, ex) => { AppEnv.Log("unhandled: " + ex.Exception); ex.Handled = true; };
@@ -86,6 +87,8 @@ public partial class App : Application
             {
                 try { KakaoNative.Sync(ConfigStore.Kakao()); } catch { }
             }
+            CloudGate.Arm();
+            if (CloudGate.RealAllowed && ConfigStore.CloudEnabled) StartCloud();
         }
         SessionEnding += (_, _) => RequestShutdown();
         // settings window first; notes then open one per idle tick so the first frame is not held up by big RTFs
@@ -145,6 +148,32 @@ public partial class App : Application
         if (!AppEnv.Off) w.Activate();
     }
 
+    Timer? cloudTimer;
+    void StartCloud()
+    {
+        int minutes = Math.Max(1, ConfigStore.CloudPullMinutes);
+        cloudTimer = new Timer(_ =>
+        {
+            try
+            {
+                if (!CloudGate.RealAllowed || !ConfigStore.CloudEnabled) return;
+                var transport = new GitCloudTransport(ConfigStore.CloudRepo, ConfigStore.CloudBranch, Environment.MachineName);
+                var ws = new CloudWorkspace
+                {
+                    ConfigFile = AppEnv.ConfigPath,
+                    NotesDir = AppEnv.NotesDir,
+                    DeskDir = Path.Combine(AppEnv.DataDir, "desktop"),
+                    Device = Environment.MachineName,
+                    AppVersion = AppEnv.Version,
+                    UtcNow = DateTime.UtcNow,
+                    LocalNow = DateTime.Now
+                };
+                CloudEngine.Run(ws, transport, writer: true);
+            }
+            catch { }
+        }, null, 5000, minutes * 60000);
+    }
+
     public void RequestShutdown()
     {
         if (ShuttingDown) return;
@@ -159,6 +188,7 @@ public partial class App : Application
         if (!ShuttingDown) { ShuttingDown = true; try { NoteManager.FlushAll(); } catch { } }
         try { NoteHotkey.Stop(); } catch { }
         try { if (KakaoNative.Launched) KakaoNative.Restore(); } catch { }
+        try { cloudTimer?.Dispose(); } catch { }
         tray?.Dispose();
         AppEnv.ReleaseWriter();
         quitWait?.Unregister(null); showWait?.Unregister(null);

@@ -248,6 +248,48 @@ public static class SmokeTest
         try { KakaoNative.Start(""); } catch (InvalidOperationException) { kakaoThrew = true; }
         t.Check("kakao stays off real windows", kakaoThrew && w.KakaoBlocks == kakaoBlocks + 1 && w.KakaoAction == "blocked" && KakaoSystem.NativeCalls == 0 && KakaoSystem.ProcessStarts == 0 && KakaoSystem.WindowCalls == 0 && KakaoSystem.ProcessQueries == 0);
 
+        string cloudRoot = Path.Combine(Path.GetTempPath(), "bhnext_smoke_cloud_" + Environment.ProcessId);
+        try
+        {
+            Directory.CreateDirectory(cloudRoot);
+            string cfg = Path.Combine(cloudRoot, "config.json");
+            File.WriteAllText(cfg, "{\"General\":{\"IdleMinutes\":17}}");
+            File.SetLastWriteTimeUtc(cfg, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+            var mem = new MemoryCloud();
+            string synced = CloudEngine.Run(new CloudWorkspace
+            {
+                ConfigFile = cfg,
+                NotesDir = Path.Combine(cloudRoot, "notes"),
+                DeskDir = Path.Combine(cloudRoot, "desktop"),
+                Device = "PC-A",
+                AppVersion = AppEnv.Version,
+                UtcNow = new DateTime(2026, 1, 1, 0, 5, 0, DateTimeKind.Utc),
+                LocalNow = new DateTime(2026, 1, 1, 9, 5, 0)
+            }, mem, writer: true);
+            string committed = mem.Snapshot().TryGetValue("data/config.json", out var committedCfg) ? System.Text.Encoding.UTF8.GetString(committedCfg.Bytes) : "";
+            t.Check("cloud sync uses an in-memory remote", synced.Length == 0 && mem.Commits.Count == 1 && mem.Commits[0].StartsWith("sync: PC-A") && committed.Contains("17") && CloudSystem.GitStarts == 0 && CloudSystem.NetworkCalls == 0);
+            var blockedSchema = new MemoryCloud();
+            blockedSchema.Seed(new Dictionary<string, CloudFile> { ["data/meta.json"] = new CloudFile { Bytes = System.Text.Encoding.UTF8.GetBytes("{\"schema\":2,\"minApp\":\"9.9.9\"}"), MtimeUtc = DateTime.UtcNow } });
+            File.WriteAllText(cfg, "LOCAL");
+            string schema = CloudEngine.Run(new CloudWorkspace
+            {
+                ConfigFile = cfg,
+                NotesDir = Path.Combine(cloudRoot, "notes"),
+                DeskDir = Path.Combine(cloudRoot, "desktop"),
+                Device = "PC-A",
+                AppVersion = AppEnv.Version,
+                UtcNow = DateTime.UtcNow,
+                LocalNow = DateTime.Now
+            }, blockedSchema, writer: true);
+            t.Check("newer cloud schema stops the sync", schema.StartsWith("업데이트 필요") && File.ReadAllText(cfg) == "LOCAL");
+        }
+        finally { try { Directory.Delete(cloudRoot, true); } catch { } }
+        int cloudBlocks = w.CloudBlocks;
+        w.RequestCloudSync();
+        bool cloudThrew = false;
+        try { _ = new GitCloudTransport("https://github.com/Baegovda/BongHub.git", "main", "test"); } catch (InvalidOperationException) { cloudThrew = true; }
+        t.Check("cloud stays off GitHub", cloudThrew && w.CloudBlocks == cloudBlocks + 1 && w.CloudAction == "blocked" && CloudSystem.NativeCalls == 0 && CloudSystem.GitStarts == 0 && CloudSystem.GhStarts == 0 && CloudSystem.NetworkCalls == 0);
+
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);
         meta.Color = "g:lemon";   // one of the lightest gradients: hardest case for white text
