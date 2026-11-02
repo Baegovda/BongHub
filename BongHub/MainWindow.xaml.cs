@@ -12,16 +12,14 @@ public partial class MainWindow : Window
 {
     public static readonly (string Key, string Label, string Glyph, string Hex)[] Catalog =
     {
-        ("presets", "모니터 프리셋", "\uE7F4", "4C8AFE"),
-        ("windows", "창 위치", "\uE737", "5AC8FA"),
+        ("presets", "모니터 프로필", "\uE7F4", "4C8AFE"),
         ("notes", "스티커 메모", "\uE70B", "F5B83D"),
         ("kakao", "카톡 광고 제거", "\uE8BD", "FFCC00"),
-        ("desktop", "바탕화면 아이콘", "\uE8A9", "34C759"),
         ("powertoys", "PowerToys", "\uE945", "AF52DE"),
         ("general", "일반", "\uE713", "8E8E93"),
         ("about", "정보", "\uE946", "5856D6"),
     };
-    public static readonly string[] DefaultTabOrder = { "presets", "windows", "notes", "kakao", "desktop", "powertoys", "general", "about" };
+    public static readonly string[] DefaultTabOrder = { "presets", "notes", "kakao", "powertoys", "general", "about" };
     public IReadOnlyList<(string Key, string Label, string Glyph, string Hex)> Pages { get; private set; } = Catalog;
     public string CurrentPage { get; private set; } = "";
     public bool EverShown { get; private set; }
@@ -196,10 +194,10 @@ public partial class MainWindow : Window
         switch (key)
         {
             case "presets": PagePresets(); break;
-            case "windows": PageWindows(); break;
+            case "windows": PagePresets(); break;
             case "notes": PageNotes(); break;
             case "kakao": PageKakao(); break;
-            case "desktop": PageDesktop(); break;
+            case "desktop": PagePresets(); break;
             case "powertoys": PagePowerToys(); break;
             case "general": PageGeneral(); break;
             default: PageAbout(); break;
@@ -260,6 +258,27 @@ public partial class MainWindow : Window
     public int DisplayBlocks { get; private set; }
     public string ActivePreset { get; private set; } = "";
     public string LastPresetToast { get; private set; } = "";
+    public WindowPick? LastPick { get; private set; }
+
+    /// <summary>Crosshair result. Real top-level windows are read only after the window gate opens.</summary>
+    public void RequestCaptureWindow() => RequestCaptureAt(40, 48);
+
+    public void RequestCaptureAt(int x, int y)
+    {
+        if (!WindowGate.RealAllowed)
+        {
+            LastPick = WindowPicker.From(new TrackedWindow { Process = "notepad.exe", Title = "메모장", Class = "Notepad", X = x, Y = y, W = 640, H = 480 });
+            return;
+        }
+        try
+        {
+            using var live = new LiveWindowSurface();
+            var listed = live.List();
+            var hit = WindowPicker.Hit(listed, x, y) ?? listed.FirstOrDefault();
+            if (hit != null) LastPick = WindowPicker.From(hit);
+        }
+        catch (Exception ex) { DisplayAction = ex.Message; }
+    }
     int displayBusy;
 
     /// <summary>Test hook: the layout the user is already in, without touching a monitor.</summary>
@@ -391,7 +410,72 @@ public partial class MainWindow : Window
             trail.Children.Add(apply);
             Row(g, "\uE7F4", hexes[i++ % hexes.Length], item.Name.Length > 0 ? item.Name : "(이름 없음)", sub, trail);
         }
-        Footer("모니터 전환과 밝기는 지금 적용을 눌렀을 때만 해요. 시험·화면 밖·CI에서는 디스플레이 API를 호출하지 않고 작업·자리비움도 적용하지 않아요.");
+        Header("화면 안 창");
+        var stage = new Canvas { Width = 360, Height = 200, Margin = new Thickness(16, 0, 16, 8) };
+        var canvasBox = new ProfileBox(20, 10, 320, 180);
+        var source = new ProfileBox(0, 0, 1920, 1080);
+        var monitor = new Border { Width = canvasBox.W, Height = canvasBox.H, Background = new SolidColorBrush(Color.FromArgb(0x18, 76, 138, 254)), BorderBrush = new SolidColorBrush(Color.FromRgb(0x4C, 0x8A, 0xFE)), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12) };
+        Canvas.SetLeft(monitor, canvasBox.X); Canvas.SetTop(monitor, canvasBox.Y);
+        stage.Children.Add(monitor);
+        var board = new List<ProfileWindow>();
+        foreach (var rule in ConfigStore.WindowRules.Where(r => r.W > 0 && r.H > 0).Take(6))
+        {
+            var fit = ProfileLayout.Fit(new ProfileBox(rule.X, rule.Y, Math.Min(rule.W, source.W), Math.Min(rule.H, source.H)), source, canvasBox);
+            board.Add(new ProfileWindow { Process = rule.Process, Title = rule.Name.Length > 0 ? rule.Name : rule.Title, Class = rule.Class, X = fit.X, Y = fit.Y, W = fit.W, H = fit.H });
+        }
+        if (board.Count == 0) board.Add(new ProfileWindow { Title = "창", X = 36, Y = 28, W = 96, H = 64 });
+        TextBlock? captureLabel = null;
+        void AddTile(ProfileWindow item)
+        {
+            var tile = new Border { Width = item.W, Height = item.H, Background = new SolidColorBrush(Color.FromArgb(0xCC, 0x1C, 0x1C, 0x1E)), CornerRadius = new CornerRadius(8), Cursor = Cursors.SizeAll };
+            Canvas.SetLeft(tile, item.X); Canvas.SetTop(tile, item.Y);
+            var grab = new Point();
+            tile.MouseLeftButtonDown += (_, e) => { tile.CaptureMouse(); grab = e.GetPosition(tile); e.Handled = true; };
+            tile.MouseMove += (_, e) =>
+            {
+                if (!tile.IsMouseCaptured) return;
+                var p = e.GetPosition(stage);
+                var snapped = ProfileLayout.Snap(new ProfileBox((int)(p.X - grab.X), (int)(p.Y - grab.Y), item.W, item.H), canvasBox, 8);
+                item.X = snapped.X; item.Y = snapped.Y;
+                Canvas.SetLeft(tile, snapped.X); Canvas.SetTop(tile, snapped.Y);
+            };
+            tile.MouseLeftButtonUp += (_, _) => { tile.ReleaseMouseCapture(); RememberProfileFile(board); };
+            tile.Child = new TextBlock { Text = item.Title.Length > 0 ? item.Title : "창", Foreground = Brushes.White, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            stage.Children.Add(tile);
+        }
+        foreach (var item in board) AddTile(item);
+        var cross = new Border { Width = 28, Height = 28, Background = new SolidColorBrush(Color.FromRgb(0x4C, 0x8A, 0xFE)), CornerRadius = new CornerRadius(14), Cursor = Cursors.Cross };
+        Canvas.SetLeft(cross, 28); Canvas.SetTop(cross, 16);
+        cross.Child = new TextBlock { Text = "\uE8B3", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 14, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        cross.MouseLeftButtonDown += (_, e) => { cross.CaptureMouse(); e.Handled = true; };
+        cross.MouseMove += (_, e) =>
+        {
+            if (!cross.IsMouseCaptured) return;
+            var p = e.GetPosition(stage);
+            Canvas.SetLeft(cross, Math.Max(0, p.X - 14)); Canvas.SetTop(cross, Math.Max(0, p.Y - 14));
+        };
+        cross.MouseLeftButtonUp += (_, e) =>
+        {
+            cross.ReleaseMouseCapture();
+            var p = e.GetPosition(stage);
+            var snapped = ProfileLayout.Snap(new ProfileBox((int)p.X, (int)p.Y, 96, 64), canvasBox, 8);
+            RequestCaptureAt(snapped.X, snapped.Y);
+            if (LastPick == null) return;
+            if (captureLabel != null) captureLabel.Text = LastPick.Title.Length > 0 ? LastPick.Title : LastPick.Process;
+            var caught = new ProfileWindow { Process = LastPick.Process, Title = LastPick.Title, Class = LastPick.Class, X = snapped.X, Y = snapped.Y, W = 96, H = 64 };
+            board.Add(caught);
+            AddTile(caught);
+            RememberProfileFile(board);
+        };
+        stage.Children.Add(cross);
+        PageHost.Children.Add(stage);
+        Header("이 프로필의 창");
+        var rules = Group();
+        var pickRow = Row(rules, "\uE8B3", "5AC8FA", LastPick == null ? "담긴 창 없음" : LastPick.Title, "십자선을 창 위로 끌어 놓으면 프로세스·제목·클래스·위치를 담아요. 시험에서는 가짜 창만 담아요.", null);
+        captureLabel = (pickRow.Child as Grid)?.Children.OfType<StackPanel>().FirstOrDefault()?.Children.OfType<TextBlock>().FirstOrDefault();
+        PageWindows();
+        PageDesktop();
+        Footer("모니터 전환과 밝기는 지금 적용을 눌렀을 때만 해요. 시험·화면 밖·CI에서는 디스플레이 API, 실제 창, 탐색기를 열지 않아요. 모니터를 바꾼 뒤 Windows가 최소화된 창을 다시 그리는 경우가 있어요. 작업 표시줄을 맞추려고 탐색기를 끝내지는 않아요.");
         Header("이전 상태");
         var m = Group();
         Row(m, "\uE8B7", "8E8E93", "설정 파일", AppEnv.ConfigPath, Value(ConfigStore.LoadError == "" ? "읽음" : "오류"));
@@ -744,9 +828,23 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) { WindowAction = ex.Message; }
     }
+    void RememberProfileFile(IReadOnlyList<ProfileWindow> windows)
+    {
+        if (AppEnv.Off || AppEnv.Smoke || AppEnv.NoteTest || AppEnv.ReadOnly) return;
+        try
+        {
+            string name = ActivePreset.Length > 0 ? ActivePreset : (ConfigStore.Presets.FirstOrDefault()?.Name ?? "프로필");
+            string icons = ConfigStore.Presets.FirstOrDefault(p => p.DeskLayout.Length > 0)?.DeskLayout ?? "";
+            string json = ProfileCodec.ToJson(new[] { new ProfileRecord { Name = name, Icons = icons, Windows = windows.ToList() } });
+            Directory.CreateDirectory(AppEnv.DataDir);
+            File.WriteAllText(System.IO.Path.Combine(AppEnv.DataDir, "profiles.json"), json);
+        }
+        catch { }
+    }
+
     void PageWindows()
     {
-        Footer("규칙 적용과 작업 영역 배치는 단추를 눌렀을 때만 창을 읽어요. 없는 앱은 실행하지 않아요. 전역 후킹과 자동 타이머는 켜지 않아요. 테스트에서는 단추도 실제 창을 찾지 않아요.");
+        Header("창 규칙");
         var g = Group();
         if (ConfigStore.WindowRules.Count == 0)
             Row(g, "\uE737", "5AC8FA", "저장된 규칙 없음", "창은 움직이지 않아요.", null);
@@ -760,7 +858,6 @@ public partial class MainWindow : Window
                 Row(g, "\uE737", "5AC8FA", r.Name.Length > 0 ? r.Name : "(이름 없음)", sub, Switch(r.Enabled, v => ConfigStore.SetRuleEnabled(index, v), !AppEnv.ReadOnly));
             }
         }
-        Row(g, "\uE768", "4C8AFE", "규칙 지금 적용", "눌러야 열린 창을 살펴요.", null, RequestApplyRules);
         Header("작업 영역");
         var work = Group();
         if (ConfigStore.Workspaces.Count == 0)
@@ -796,6 +893,7 @@ public partial class MainWindow : Window
                 UtcNow = DateTime.UtcNow,
                 LocalNow = DateTime.Now
             };
+            ProfileCloud.Attach(ws, System.IO.Path.Combine(AppEnv.DataDir, "profiles.json"));
             CloudAction = CloudEngine.Run(ws, transport, writer: !AppEnv.ReadOnly);
             if (CloudAction.Length == 0) CloudAction = "synced";
         }
@@ -880,13 +978,13 @@ public partial class MainWindow : Window
     void PageDesktop()
     {
         string key = ScreenMap.Key(ScreenMap.Current());
-        Footer("저장·복원 단추만 바탕화면 아이콘을 읽어요. 자동 저장 타이머와 전역 단축키는 켜지 않아요. 테스트에서는 단추도 탐색기를 열지 않아요.");
+        Header("바탕화면 아이콘");
         var act = Group();
+        string linked = ConfigStore.Presets.FirstOrDefault(p => p.DeskLayout.Length > 0)?.DeskLayout ?? "";
+        Row(act, "\uE8A9", "34C759", "이 프로필 배치", linked.Length == 0 ? "아직 연결되지 않았어요. 시험에서는 탐색기를 열지 않아요." : linked, null);
         Row(act, "\uE8A9", "34C759", "현재 화면", ScreenMap.Describe(key), null);
         var layouts = LayoutStore.Default.Load();
         Row(act, "\uE8A5", "5AC8FA", "저장된 배치", layouts.Count == 0 ? "없음" : layouts.Count + "개", null);
-        Row(act, "\uE74E", "34C759", "지금 배치 저장", "눌러야 아이콘 이름과 좌표를 읽어요.", null, RequestSaveDesktop);
-        Row(act, "\uE777", "4C8AFE", "현재 화면 배치 복원", "저장된 배치가 있을 때만 아이콘을 옮겨요.", null, RequestRestoreDesktop);
         Header("자동 저장 정책");
         var pol = Group();
         DeskSwitch(pol, "\uE823", "34C759", "주기적 자동 저장", "값은 저장만 하고, 타이머는 돌리지 않아요.", "AutoSave", ConfigStore.DeskAutoSave);

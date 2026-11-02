@@ -168,6 +168,7 @@ public partial class App : Application
                     UtcNow = DateTime.UtcNow,
                     LocalNow = DateTime.Now
                 };
+                ProfileCloud.Attach(ws, Path.Combine(AppEnv.DataDir, "profiles.json"));
                 CloudEngine.Run(ws, transport, writer: true);
             }
             catch { }
