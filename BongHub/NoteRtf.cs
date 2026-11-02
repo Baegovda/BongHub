@@ -1,10 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
-using System.Windows.Media;
 
 namespace BongHub;
 
@@ -63,7 +63,7 @@ static class NoteRtf
     public static bool AppliesAutomaticInk(byte[] rtf)
     {
         if (rtf == null || rtf.Length == 0) return false;
-        string s = RtfPict.Latin1.GetString(rtf);
+        string s = Encoding.Latin1.GetString(rtf);
         const string open = "{\\colortbl";
         int start = s.IndexOf(open, StringComparison.Ordinal);
         if (start < 0) return false;
@@ -72,7 +72,7 @@ static class NoteRtf
         var parts = s.Substring(start + open.Length, end - (start + open.Length)).Split(';');
         var auto = new HashSet<int>();
         for (int i = 0; i < parts.Length; i++)
-            if (TryColor(parts[i], out byte r, out byte g, out byte b) && NoteColors.IsAutomaticInk(Color.FromRgb(r, g, b)))
+            if (TryColor(parts[i], out byte r, out byte g, out byte b) && Automatic(r, g, b))
                 auto.Add(i);
         if (auto.Count == 0) return false;
         for (int i = 0; i < s.Length; i++)
@@ -89,7 +89,7 @@ static class NoteRtf
     public static byte[] StripAutomaticInk(byte[] rtf)
     {
         if (rtf == null || rtf.Length == 0) return rtf ?? [];
-        string s = RtfPict.Latin1.GetString(rtf);
+        string s = Encoding.Latin1.GetString(rtf);
         const string open = "{\\colortbl";
         int start = s.IndexOf(open, StringComparison.Ordinal);
         if (start < 0) return rtf;
@@ -102,7 +102,7 @@ static class NoteRtf
         bool dropped = false;
         for (int i = 0; i < parts.Length; i++)
         {
-            if (TryColor(parts[i], out byte r, out byte g, out byte b) && NoteColors.IsAutomaticInk(Color.FromRgb(r, g, b)))
+            if (TryColor(parts[i], out byte r, out byte g, out byte b) && Automatic(r, g, b))
             {
                 dropped = true;
                 continue;
@@ -116,8 +116,12 @@ static class NoteRtf
         sb.Append(open);
         sb.Append(string.Join(';', keep));
         sb.Append(s, end, s.Length - end);
-        return RtfPict.Latin1.GetBytes(RewriteCf(sb.ToString(), map));
+        return Encoding.Latin1.GetBytes(RewriteCf(sb.ToString(), map));
     }
+
+    /// <summary>Same bytes as <see cref="NoteColors.Text"/>, <see cref="NoteColors.DarkText"/>, and <see cref="NoteColors.LegacyText"/>.</summary>
+    static bool Automatic(byte r, byte g, byte b)
+        => (r == 240 && g == 240 && b == 246) || (r == 28 && g == 28 && b == 30) || (r == 236 && g == 236 && b == 240);
 
     static bool TryColor(string part, out byte r, out byte g, out byte b)
     {
