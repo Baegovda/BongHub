@@ -108,7 +108,7 @@ public static class NoteManager
 
     public static void ShowAll()
     {
-        foreach (var m in NoteStore.All.ToList()) Open(m, activate: false);
+        foreach (var m in NoteStore.All.ToList()) Open(m.Id, activate: false);
     }
 
     public static void HideAll()

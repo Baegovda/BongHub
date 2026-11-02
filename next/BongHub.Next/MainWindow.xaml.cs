@@ -238,13 +238,14 @@ public partial class MainWindow : Window
         fontTrail.Children.Add(fontLabel);
         Row(g, "\uE8D2", "4C8AFE", "글자 크기", "7–48pt. 열린 메모에 바로 적용돼요.", fontTrail);
         var hkBox = new TextBox { Text = ConfigStore.Notes.Hotkey, Width = 120, IsReadOnly = true, FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
-        hkBox.PreviewKeyDown += (_, e) =>
+        hkBox.PreviewKeyDown += (sender, e) =>
         {
             e.Handled = true;
             if (ro || e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.System) return;
             if (e.Key is Key.Escape or Key.Tab) return;
             string text = FormatHotkey(e.Key, Keyboard.Modifiers);
-            if (text.Length == 0 || !NoteHotkey.TryParse(text, out _, out _)) return;
+            // `out _` here would bind the lambda parameter if it were named `_` (object), not a discard.
+            if (text.Length == 0 || !NoteHotkey.TryParse(text, out uint _, out uint _)) return;
             string prev = ConfigStore.Notes.Hotkey;
             ConfigStore.Notes.Hotkey = text;
             if (!ConfigStore.SetNotesValue("Hotkey", JsonValue.Create(text))) { ConfigStore.Notes.Hotkey = prev; return; }
