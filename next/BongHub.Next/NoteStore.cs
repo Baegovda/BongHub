@@ -83,6 +83,36 @@ public static class NoteStore
         All.Insert(0, m); SaveRtf(m, []); SaveMeta(m); return m;
     }
 
+    /// <summary>Removes the json and rtf. Refuses while read-only. Does not write a tombstone (cloud is a later phase).</summary>
+    public static bool Delete(NoteMeta m)
+    {
+        if (AppEnv.DenyWrite()) { BlockedWrites++; return false; }
+        try
+        {
+            All.Remove(m);
+            if (File.Exists(MetaPath(m.Id))) File.Delete(MetaPath(m.Id));
+            if (File.Exists(RtfPath(m.Id))) File.Delete(RtfPath(m.Id));
+            Changed?.Invoke();
+            return true;
+        }
+        catch (Exception e) { LastError = e.Message; AppEnv.Log($"delete failed {m.Id}: {e.Message}"); return false; }
+    }
+
+    /// <summary>No visible text and no embedded picture. An image-only note is not blank.</summary>
+    public static bool IsBlank(NoteMeta m)
+    {
+        if (!string.IsNullOrWhiteSpace(m.Text)) return false;
+        try
+        {
+            var path = RtfPath(m.Id);
+            if (!File.Exists(path)) return true;
+            var bytes = File.ReadAllBytes(path);
+            if (bytes.Length == 0) return true;
+            return Encoding.ASCII.GetString(bytes).IndexOf("\\pict", StringComparison.Ordinal) < 0;
+        }
+        catch { return string.IsNullOrWhiteSpace(m.Text); }
+    }
+
     /// <summary>Atomic write (tmp + replace), like 3.4.7. Refuses while read-only.</summary>
     static bool Write(string path, byte[] content)
     {
@@ -151,4 +181,18 @@ public static class NoteColors
     public static Color Swatch(string k) { Raw(k, out var a, out _); return a; }
     public static Color SwatchB(string k) { Raw(k, out _, out var b); return b; }
     public static string Name(string k) { int i = I(k); if (i >= 0) return Names[i]; var g = Gradients.FirstOrDefault(x => x[0] == k); return g != null ? g[1] : k.StartsWith("c:") ? "맞춤" : "블록"; }
+    public static string Custom(Color a, Color b) => "c:" + a.R.ToString("X2") + a.G.ToString("X2") + a.B.ToString("X2") + ":" + b.R.ToString("X2") + b.G.ToString("X2") + b.B.ToString("X2");
+    public static bool TryCustom(string textA, string textB, out string key)
+    {
+        key = "";
+        if (textA.Length != 6 || textB.Length != 6) return false;
+        try
+        {
+            var k = "c:" + textA.ToUpperInvariant() + ":" + textB.ToUpperInvariant();
+            if (!Valid(k)) return false;
+            key = k;
+            return true;
+        }
+        catch { return false; }
+    }
 }

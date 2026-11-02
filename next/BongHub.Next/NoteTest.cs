@@ -160,6 +160,200 @@ public static class NoteTest
         var ha = Hashes();
         t.Check("read-only blocks every write", !wrote && nn == null && NoteStore.BlockedWrites == blocked0 + 1 && hb.Count == ha.Count && hb.All(kv => ha[kv.Key] == kv.Value));
 
+        await Phase1(t);
+
         foreach (var w in NoteManager.Windows.ToList()) w.Close();
+    }
+
+    /// <summary>Phase 1. These checks always run (they do not depend on data/notes having pictures). With the 7-note copy the earlier body adds 26, and this method adds the rest.</summary>
+    static async Task Phase1(TestKit t)
+    {
+        var host = NoteManager.NewNote();
+        t.Check("phase1 note", host != null);
+        if (host == null) return;
+        await TestKit.Until(() => host.Ready, 5000);
+        t.Check("noactivate cleared after show", (Win32.ExStyle(Win32.Handle(host)) & Win32.WS_EX_NOACTIVATE) == 0);
+        Win32.EnableWindow(Win32.Handle(host), false);
+        host.EnableDuringModal();
+        t.Check("modal re-enables the note", Win32.IsWindowEnabled(Win32.Handle(host)));
+        host.ShowLargeWarning(9L * 1024 * 1024);
+        t.Check("large-note banner", host.LargeWarningVisible);
+
+        ConfigStore.Notes.FontSize = 7;
+        host.ApplyFontSize();
+        t.Check("font 7pt", Math.Abs(host.Editor.Document.FontSize - StickyNoteWindow.PointsToDip(7)) < 0.2, host.Editor.Document.FontSize.ToString("0.00"));
+        ConfigStore.Notes.FontSize = 48;
+        host.ApplyFontSize();
+        t.Check("font 48pt", Math.Abs(host.Editor.Document.FontSize - StickyNoteWindow.PointsToDip(48)) < 0.2);
+        ConfigStore.Notes.FontSize = 99;
+        host.ApplyFontSize();
+        t.Check("font clamps at 48", Math.Abs(host.Editor.Document.FontSize - StickyNoteWindow.PointsToDip(48)) < 0.2);
+        ConfigStore.Notes.FontSize = 11;
+        host.ApplyFontSize();
+
+        host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+        foreach (var pt in new[] { 24d, 20d, 16d, 13d, 11d })
+        {
+            host.ApplyHeading(pt);
+            var sz = host.Editor.Selection.GetPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty);
+            t.Check($"heading {pt}pt", sz is double d && Math.Abs(d - StickyNoteWindow.PointsToDip(pt)) < 0.3, sz?.ToString() ?? "null");
+        }
+        host.GrowFont(100);
+        var grown = host.Editor.Selection.GetPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty);
+        t.Check("grow clamps at 48pt", grown is double g && Math.Abs(g - StickyNoteWindow.PointsToDip(48)) < 0.3);
+
+        int writes = host.MetaWrites;
+        string saved = host.Meta.Color;
+        host.PreviewColor("g:night");
+        t.Check("hover preview does not save", host.ShownColorKey == "g:night" && host.Meta.Color == saved && host.MetaWrites == writes);
+        host.PreviewColor(null);
+        t.Check("hover leave restores", host.ShownColorKey == saved && host.Meta.Color == saved);
+        host.SetColor("c:112233:AABBCC");
+        t.Check("custom color saves", host.Meta.Color == "c:112233:AABBCC" && NoteColors.Valid("c:112233:AABBCC"));
+
+        t.Check("hotkey parse Ctrl+Alt+N", NoteHotkey.TryParse("Ctrl+Alt+N", out uint mods, out uint vk) && mods == (NoteHotkey.Ctrl | NoteHotkey.Alt) && vk == 0x4E);
+        t.Check("hotkey parse empty", !NoteHotkey.TryParse("", out _, out _) && !NoteHotkey.TryParse("Ctrl+Alt", out _, out _));
+        t.Check("hotkey parse Win+Shift+V", NoteHotkey.TryParse("Win+Shift+V", out uint wm, out uint wvk) && (wm & NoteHotkey.Win) != 0 && (wm & NoteHotkey.Shift) != 0 && wvk == 0x56);
+        t.Check("hotkey normalize", NoteHotkey.Normalize("alt+ctrl+n") == "Ctrl+Alt+N");
+        int notesBefore = NoteStore.All.Count;
+        NoteHotkey.DispatchNewNote();
+        t.Check("simulated WM_HOTKEY opens a note", NoteStore.All.Count == notesBefore + 1);
+        NoteHotkey.Apply("Ctrl+Alt+M");
+        t.Check("test apply does not call RegisterHotKey", NoteHotkey.NativeRegistrations == 0 && NoteHotkey.HookInstalls == 0 && !NoteHotkey.Registered, $"reg {NoteHotkey.NativeRegistrations}");
+        bool hkWrote = ConfigStore.SetNotesValue("Hotkey", System.Text.Json.Nodes.JsonValue.Create("Ctrl+Alt+M"));
+        ConfigStore.Load();
+        t.Check("hotkey round trip", hkWrote && ConfigStore.Notes.Hotkey == "Ctrl+Alt+M");
+        ConfigStore.Notes.Hotkey = "Ctrl+Alt+N";
+        ConfigStore.SetNotesValue("Hotkey", System.Text.Json.Nodes.JsonValue.Create("Ctrl+Alt+N"));
+        bool colorWrote = ConfigStore.SetNotesValue("DefaultColor", System.Text.Json.Nodes.JsonValue.Create("c:010203:AABBCC"));
+        ConfigStore.Load();
+        t.Check("custom default color round trip", colorWrote && ConfigStore.Notes.DefaultColor == "c:010203:AABBCC" && NoteColors.Valid(ConfigStore.Notes.DefaultColor));
+        ConfigStore.Notes.FontSize = 11;
+
+        var blank = NoteStore.Create("g:mist", 120, 120, 200, 160);
+        t.Check("empty delete removes files", NoteManager.Delete(blank.Id, confirmed: false) && !File.Exists(NoteStore.MetaPath(blank.Id)) && !File.Exists(NoteStore.RtfPath(blank.Id)));
+        var kept = NoteStore.Create("g:sand", 140, 140, 220, 180);
+        kept.Text = "지우지 마"; NoteStore.SaveMeta(kept);
+        t.Check("non-empty delete waits for confirm", !NoteManager.Delete(kept.Id, confirmed: false) && File.Exists(NoteStore.MetaPath(kept.Id)));
+        t.Check("confirmed delete removes the note", NoteManager.Delete(kept.Id, confirmed: true) && NoteStore.Find(kept.Id) == null);
+        var blocked = NoteStore.Create("yellow", 160, 160, 200, 160);
+        blocked.Text = "잠금"; NoteStore.SaveMeta(blocked);
+        int blocked0 = NoteStore.BlockedWrites;
+        AppEnv.ReadOnly = true;
+        t.Check("read-only blocks delete", !NoteManager.Delete(blocked.Id, confirmed: true) && File.Exists(NoteStore.MetaPath(blocked.Id)) && NoteStore.BlockedWrites == blocked0 + 1);
+        AppEnv.ReadOnly = false;
+        NoteManager.Delete(blocked.Id, confirmed: true);
+
+        var closed = NoteStore.Create("g:slate", 180, 180, 200, 160);
+        closed.Open = false; NoteStore.SaveMeta(closed);
+        NoteManager.ShowAll();
+        t.Check("show all opens a closed note", NoteManager.IsOpen(closed.Id));
+        NoteManager.HideAll();
+        NoteStore.Load();
+        var closedBack = NoteStore.Find(closed.Id);
+        t.Check("hide all keeps the file and marks it closed", closedBack != null && !closedBack.Open && !NoteManager.IsOpen(closed.Id) && File.Exists(NoteStore.RtfPath(closed.Id)));
+        host = NoteManager.NewNote();
+        if (host != null)
+        {
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run("모두 복사")));
+            host.FlushText();
+        }
+        t.Check("all text joins notes", NoteManager.AllText().Contains("모두 복사"));
+
+        string group = RtfPict.BuildGroup(RtfPict.TinyPngBytes, jpeg: false, pxW: 1, pxH: 1, goalW: 150, goalH: 150);
+        string resized = RtfPict.WithGoals(group, 300, 300);
+        t.Check("goal edit keeps blip bytes", RtfPict.BlipHex(group) == RtfPict.BlipHex(resized) && resized.Contains(@"\picwgoal300") && resized.Contains(@"\pichgoal300"));
+        var (gw, gh) = NoteImages.ScaleGoals(100, 50, 0.5);
+        t.Check("50% goals are half the 96dpi twips", gw == 750 && gh == 375, $"{gw}x{gh}");
+        t.Check("8MB warning threshold", NoteImages.OverWarn(NoteImages.WarnBytes + 1) && !NoteImages.OverWarn(NoteImages.WarnBytes));
+        t.Check("link hit", NoteLinks.TryHit("see https://example.com/a now", 6, out var url) && url == "https://example.com/a");
+        t.Check("link miss", !NoteLinks.TryHit("see https://example.com/a now", 0, out _));
+        t.Check("www link gains https", NoteLinks.TryHit("www.example.com", 0, out var www) && www == "https://www.example.com");
+
+        var areas = new[] { new NoteLayout.Box(0, 0, 1920, 1040), new NoteLayout.Box(1920, 0, 2560, 1400) };
+        var c1 = NoteLayout.Clamp(new NoteLayout.Box(9000, 300, 300, 300), areas, 32);
+        var c2 = NoteLayout.Clamp(new NoteLayout.Box(100, 100, 300, 300), areas, 32);
+        var c3 = NoteLayout.Clamp(new NoteLayout.Box(-500, 2000, 5000, 5000), areas, 32);
+        t.Check("clamp far note into nearest area", areas[1].Contains(c1), c1.ToString());
+        t.Check("clamp leaves a visible note", c2.X == 100 && c2.Y == 100 && c2.W == 300 && c2.H == 300);
+        t.Check("clamp shrinks an oversized note", areas.Any(a => a.Contains(c3)), c3.ToString());
+
+        var picNote = NoteManager.NewNote();
+        t.Check("image note opened", picNote != null);
+        if (picNote == null) return;
+        await TestKit.Until(() => picNote.Ready, 5000);
+        string pngPath = Path.Combine(AppEnv.NotesDir, "tiny-phase1.png");
+        File.WriteAllBytes(pngPath, RtfPict.TinyPngBytes);
+        t.Check("drop inserts a png", picNote.AcceptDrop(new System.Windows.DataObject(System.Windows.DataFormats.FileDrop, new[] { pngPath })));
+        picNote.FlushText();
+        var pictBytes = File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id));
+        string hex0 = RtfPict.BlipHex(RtfPict.Parse(pictBytes)[0].Group);
+        t.Check("inserted blip is png and matches the file", pictBytes.Length > 20 && RtfPict.Parse(pictBytes).Count == 1 && hex0 == Convert.ToHexString(RtfPict.TinyPngBytes).ToLowerInvariant() && Encoding.ASCII.GetString(pictBytes).Contains(@"\pngblip"));
+        t.Check("50% scale keeps blip bytes", picNote.SetImageScale(0, 0.5));
+        picNote.FlushText();
+        var scaled = File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id));
+        var sp = RtfPict.Parse(scaled)[0];
+        t.Check("50% writes picwgoal only", RtfPict.BlipHex(sp.Group) == hex0 && sp.GoalW == NoteImages.ScaleGoals(1, 1, 0.5).GoalW, $"goal {sp.GoalW}");
+        t.Check("fit width keeps blip bytes", picNote.FitImageWidth(0));
+        picNote.FlushText();
+        t.Check("fit width payload", RtfPict.BlipHex(RtfPict.Parse(File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id)))[0].Group) == hex0);
+        t.Check("second image inserts", picNote.InsertImageFile(pngPath));
+        picNote.FlushText();
+        t.Check("two picts", RtfPict.Parse(File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id))).Count == 2);
+        t.Check("move keeps both payloads", picNote.MoveImage(0, 1));
+        picNote.FlushText();
+        var moved = RtfPict.Parse(File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id)));
+        t.Check("moved pict bytes", moved.Count == 2 && RtfPict.BlipHex(moved[0].Group) == hex0 && RtfPict.BlipHex(moved[1].Group) == hex0);
+        var copied = picNote.CopyImage(0);
+        t.Check("copy returns the blip bytes", copied != null && copied.Length == RtfPict.TinyPngBytes.Length);
+        t.Check("delete image leaves the other blip", picNote.DeleteImage(0));
+        picNote.FlushText();
+        var left = RtfPict.Parse(File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id)));
+        t.Check("one pict remains", left.Count == 1 && RtfPict.BlipHex(left[0].Group) == hex0);
+        picNote.Editor.Document.Blocks.Add(new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run("그림 유지")));
+        await TestKit.Delay(1200);
+        var afterText = File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id));
+        t.Check("text edit keeps the pict payload", RtfPict.PayloadBytes(afterText) == RtfPict.TinyPngBytes.Length && Encoding.ASCII.GetString(afterText).Contains(@"\pngblip"));
+
+        long beforeDrop = RtfPict.PayloadBytes(afterText);
+        picNote.ForcePictMismatchForTest();
+        picNote.FlushText();
+        long afterDrop = RtfPict.PayloadBytes(File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id)));
+        t.Check("pict drop keeps file bytes", afterDrop == beforeDrop, $"{beforeDrop} → {afterDrop} guard {picNote.ImageGuardHits}");
+        t.Check("pict drop hosts richedit", picNote.UsesRichEdit);
+        if (picNote.UsesRichEdit)
+        {
+            picNote.RichEditInsert("리치");
+            picNote.FlushText();
+            var hosted = File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id));
+            t.Check("richedit save keeps pngblip bytes", RtfPict.PayloadBytes(hosted) == beforeDrop && (Encoding.ASCII.GetString(hosted).Contains(@"\pngblip") || Encoding.ASCII.GetString(hosted).Contains(@"\jpegblip")));
+            t.Check("richedit plain text", picNote.PlainText().Contains("리치") || Encoding.ASCII.GetString(hosted).Contains(@"\u"), picNote.PlainText());
+        }
+        else
+        {
+            t.Check("richedit save keeps pngblip bytes", false, "msftedit did not host");
+            t.Check("richedit plain text", false, "msftedit did not host");
+        }
+
+        var viewNote = NoteManager.NewNote();
+        ImageViewerWindow? viewer = null;
+        if (viewNote != null)
+        {
+            await TestKit.Until(() => viewNote.Ready, 5000);
+            viewNote.InsertImageFile(pngPath);
+            viewer = viewNote.OpenViewer(0);
+        }
+        t.Check("viewer opens off-screen", viewer != null && Win32.Rect(viewer).Left < -10000, viewer == null ? "null" : Win32.Rect(viewer).Left.ToString());
+        if (viewer != null)
+        {
+            viewer.SetZoom(2, false);
+            t.Check("viewer zoom", Math.Abs(viewer.Zoom - 2) < 0.01);
+            viewer.Close();
+        }
+        else t.Check("viewer zoom", false, "no viewer");
+
+        t.Check("link open does not launch during notetest", host != null && host.TryOpenLink("go https://example.com/x", 3, launch: true) && host.LastLink.StartsWith("https://") && !host.LinkLaunched);
+        t.Check("shortcut ctrl+t is handled", host != null && host.HandleShortcut(System.Windows.Input.Key.T, System.Windows.Input.ModifierKeys.Control));
     }
 }

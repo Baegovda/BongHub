@@ -16,6 +16,7 @@ public partial class App : Application
     Mutex? mutex; EventWaitHandle? quitEvt, showEvt; RegisteredWaitHandle? quitWait, showWait;
     TrayService? tray;
     public MainWindow? MainWin { get; private set; }
+    public TrayService? Tray => tray;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -65,6 +66,8 @@ public partial class App : Application
         // Tests never register a shell icon. --off alone is the settings-window baseline (no tray).
         // --tray --off is the tray-only baseline and does register the icon.
         if (!AppEnv.Off || AppEnv.Has("--tray")) tray = new TrayService(this, registerShell: true);
+        // --off (tests and the memory baseline) must not register a global hotkey or create the message window.
+        if (!AppEnv.Off) NoteHotkey.Start(tray);
         SessionEnding += (_, _) => RequestShutdown();
         // settings window first; notes then open one per idle tick so the first frame is not held up by big RTFs
         if (AppEnv.IdleHidden) ShowThenHide();
@@ -134,6 +137,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         if (!ShuttingDown) { ShuttingDown = true; try { NoteManager.FlushAll(); } catch { } }
+        try { NoteHotkey.Stop(); } catch { }
         tray?.Dispose();
         AppEnv.ReleaseWriter();
         quitWait?.Unregister(null); showWait?.Unregister(null);
