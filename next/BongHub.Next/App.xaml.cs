@@ -108,10 +108,10 @@ public partial class App : Application
             WindowFx.Of(w).AfterFirstFrame += () =>
             {
                 int tier = 0;
-                string hwndMode = "na";
+                RenderMode? hwndRender = null;
                 try { tier = RenderCapability.Tier >> 16; } catch { }
-                try { hwndMode = HwndSource.FromHwnd(Win32.Handle(w))?.CompositionTarget?.RenderMode.ToString() ?? "null"; } catch { }
-                AppEnv.NoteFirstFrame(NoteManager.Windows.Count, tier, GC.GetTotalMemory(false) / 1048576, hwndMode);
+                try { hwndRender = HwndSource.FromHwnd(Win32.Handle(w))?.CompositionTarget?.RenderMode; } catch { }
+                AppEnv.NoteFirstFrame(NoteManager.Windows.Count, tier, GC.GetTotalMemory(false) / 1048576, hwndRender?.ToString() ?? "null");
             };
         if (!w.IsVisible) { w.Show(); if (first) AppEnv.Mark("show_returned"); if (!first) w.Reappear(); }
         if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;

@@ -75,7 +75,7 @@ public static class NoteManager
         if (main != null && !WindowFx.Of(main).Revealed)
             WindowFx.Of(main).AfterFirstFrame += arm;
         else
-            Application.Current.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, arm);
+            Application.Current.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, (Action)arm);
     }
 
     static void TrimOnce()

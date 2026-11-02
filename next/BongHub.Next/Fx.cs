@@ -27,17 +27,18 @@ public static class Fx
     /// A newer clock on the same property invalidates the older completion so it cannot clear the new one.
     /// </summary>
     sealed class ClockGen { public readonly Dictionary<DependencyProperty, int> Map = new(); }
-    static readonly ConditionalWeakTable<DependencyObject, ClockGen> Clocks = new();
-    static int Bump(DependencyObject target, DependencyProperty dp)
+    // UIElement and Animatable (ScaleTransform, TranslateTransform) share IAnimatable, not a BeginAnimation method on DependencyObject.
+    static readonly ConditionalWeakTable<IAnimatable, ClockGen> Clocks = new();
+    static int Bump(IAnimatable target, DependencyProperty dp)
     {
         var map = Clocks.GetOrCreateValue(target).Map;
         map.TryGetValue(dp, out int n);
         map[dp] = n + 1;
         return n + 1;
     }
-    static bool IsCurrent(DependencyObject target, DependencyProperty dp, int token)
+    static bool IsCurrent(IAnimatable target, DependencyProperty dp, int token)
         => Clocks.TryGetValue(target, out var gen) && gen.Map.TryGetValue(dp, out int cur) && cur == token;
-    static void Play(DependencyObject target, DependencyProperty dp, DoubleAnimation anim, Action done)
+    static void Play(IAnimatable target, DependencyProperty dp, DoubleAnimation anim, Action done)
     {
         anim.FillBehavior = FillBehavior.Stop;
         int token = Bump(target, dp);
@@ -159,9 +160,8 @@ public static class WindowFx
             // ProcessRenderMode is the real switch (it overrides a per-target Default). Software presents an opaque client:
             // a #D0 tint over a transparent target is premultiplied against black and looks darker than #0D1018.
             // DWM Mica is still requested; the solid fallback (the colors used when Mica is unavailable) covers it.
-            bool software = RenderOptions.ProcessRenderMode == RenderMode.SoftwareOnly
-                || target == null
-                || target.RenderMode == RenderMode.SoftwareOnly;
+            bool targetSoftware = target != null && target.RenderMode == RenderMode.SoftwareOnly;
+            bool software = RenderOptions.ProcessRenderMode == RenderMode.SoftwareOnly || target == null || targetSoftware;
             bool micaApi = wantBackdrop && Dwm.Backdrop(h, 2);
             bool mica = micaApi && !software;
             st.Backdrop = mica;
