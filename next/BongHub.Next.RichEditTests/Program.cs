@@ -68,8 +68,8 @@ static class Program
         var chosen = NoteRtf.Choose(rtf, wpf, still, out string? warning);
         bool original = chosen.AsSpan().SequenceEqual(rtf);
         bool hasPng = Encoding.ASCII.GetString(chosen).Contains(@"\pngblip", StringComparison.Ordinal);
-        bool kept = (warning == null && NoteRtf.Picts(chosen) >= still && still >= 1) || (warning != null && original && hasPng);
-        Check("edited save keeps the picture or the original png", kept, "warn=" + (warning ?? "none") + " bytes=" + chosen.Length + " picts=" + NoteRtf.Picts(chosen) + " images=" + still);
+        bool keptPicture = (warning == null && NoteRtf.Picts(chosen) >= still && still >= 1) || (warning != null && original && hasPng);
+        Check("edited save keeps the picture or the original png", keptPicture, "warn=" + (warning ?? "none") + " bytes=" + chosen.Length + " picts=" + NoteRtf.Picts(chosen) + " images=" + still);
         if (warning != null) Console.WriteLine(warning);
         Check("editor shows the edit", NoteRtf.Plain(box).Contains("리치"));
 
