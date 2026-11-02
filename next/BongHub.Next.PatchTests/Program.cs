@@ -427,6 +427,64 @@ Check("preset hotkey keeps pretty formatting", NotesConfigPatch.TryApplyArrayFie
     && presetPretty == PresetPretty.Replace("\"Hotkey\": \"Ctrl+Alt+1\"", "\"Hotkey\": \"Ctrl+Alt+2\"") && presetPretty.Contains("\"Hotkey\": \"Ctrl+Alt+0\"") && presetPretty.Contains("AWAY_KEEP"));
 Check("preset hotkey byte span", OnlyToken(PresetCfg, preseted, out string presetOld, out string presetNew) && presetOld == "Ctrl+Alt+1" && presetNew == "Ctrl+Alt+2");
 
+var talk = new List<KakaoWindow>
+{
+    new() { Id = 1, Class = "EVA_Window_Dblclk", Title = "카카오톡", Process = "KakaoTalk.exe", Y = 0, H = 700, W = 400 },
+    new() { Id = 2, ParentId = 1, Class = "EVA_ChildWindow", Process = "KakaoTalk.exe", Y = 620, H = 80, W = 400 },
+    new() { Id = 3, ParentId = 1, Title = "OnlineMainView", Process = "KakaoTalk.exe", Y = 38, H = 660, W = 400 },
+    new() { Id = 4, ParentId = 3, Title = "ChatRoomListView", Process = "KakaoTalk.exe", Y = 30, H = 600, W = 400 },
+    new() { Id = 6, ParentId = 4, Title = "ChatRoomListCtrl", Process = "KakaoTalk.exe", X = 8, Y = 143, W = 360, H = 400 },
+    new() { Id = 9, Class = "Notepad", Title = "AdView", Process = "notepad.exe", W = 100, H = 100 }
+};
+var kakaoCmds = KakaoPlan.Commands(talk, true);
+Check("kakao plan hides only the kakao ad", kakaoCmds.Contains("hide 2") && !kakaoCmds.Any(c => c.Contains(" 9")) && kakaoCmds.Contains("place 3 0 30 400 669") && kakaoCmds.Contains("place 6 8 129 360 414"));
+Check("ad title matches the helper list", KakaoArgs.IsAdTitle("하단 광고") && KakaoArgs.IsAdTitle("BannerAd") && KakaoArgs.IsAdTitle("MOMENT") && !KakaoArgs.IsAdTitle("친구") && !KakaoArgs.IsKakaoProcess("notepad.exe"));
+var host = new FakeKakaoHost();
+KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = true, Dark = false });
+Check("start compact -> 1 helper", host.Running == 1 && host.LastArgs == "" && KakaoArgs.Format(new KakaoSettings { AdBlock = true, Compact = true }) == "");
+KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = false, Dark = true });
+Check("restart /nocompact /dark stays one helper", host.Running == 1 && host.LastArgs == "/nocompact /dark");
+KakaoSync.Apply(host, new KakaoSettings { AdBlock = false });
+Check("restore stops the helper", host.Running == 0 && host.LastArgs == null && host.Log[host.Log.Count - 1] == "restore");
+KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = true, Dark = false });
+Check("sync on starts the helper", host.Running == 1 && host.LastArgs == "");
+int starts = host.Log.Count(x => x.StartsWith("start ", StringComparison.Ordinal));
+KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = true, Dark = false });
+Check("sync again does not restart", host.Running == 1 && host.Log.Count(x => x.StartsWith("start ", StringComparison.Ordinal)) == starts);
+KakaoSync.Apply(host, new KakaoSettings { AdBlock = false });
+Check("final restore stops the helper", host.Running == 0);
+bool kakaoThrew = false;
+try { KakaoSystem.Touch(); } catch (InvalidOperationException) { kakaoThrew = true; }
+Check("kakao gate stays shut", kakaoThrew && !KakaoGate.RealAllowed && KakaoSystem.NativeCalls == 0 && KakaoSystem.ProcessStarts == 0 && KakaoSystem.WindowCalls == 0 && KakaoSystem.ProcessQueries == 0);
+if (repo != null)
+{
+    string kakaoLogic = File.ReadAllText(Path.Combine(repo, "next", "BongHub.Next", "KakaoLogic.cs"));
+    Check("kakao logic file does not call windows", !kakaoLogic.Contains("DllImport") && !kakaoLogic.Contains("Process.Start") && !kakaoLogic.Contains("GetProcessesByName") && !kakaoLogic.Contains("FindWindow") && !kakaoLogic.Contains("EnumWindows") && !kakaoLogic.Contains("ShowWindow") && !kakaoLogic.Contains("SetWindowPos"));
+    string helperPath = Path.Combine(repo, "app", "res", "BongAd.exe");
+    byte[] helper = File.ReadAllBytes(helperPath);
+    string hash;
+    using (var sha = System.Security.Cryptography.SHA256.Create()) hash = Convert.ToHexString(sha.ComputeHash(helper));
+    Check("helper bytes match 3.4.x", hash == KakaoFiles.Sha256 && helper.Length > 0);
+    string tempHelper = Path.Combine(Path.GetTempPath(), "bhnext_kakao_" + Environment.ProcessId, "helper.bin");
+    try
+    {
+        bool wrote = KakaoFiles.WriteIfChanged(tempHelper, new byte[] { 1, 2, 3 });
+        bool again = KakaoFiles.WriteIfChanged(tempHelper, new byte[] { 1, 2, 3 });
+        Check("helper write skips identical bytes", wrote && !again && File.ReadAllBytes(tempHelper).Length == 3);
+    }
+    finally { try { Directory.Delete(Path.GetDirectoryName(tempHelper)!, true); } catch { } }
+    byte[] dataAfter = File.ReadAllBytes(Path.Combine(repo, "data", "config.json"));
+    Check("kakao tests do not write data/", dataBefore != null && dataAfter.AsSpan().SequenceEqual(dataBefore));
+}
+const string KakaoCfgJson = "{\"Presets\":[{\"Marker\":\"PRESET_KEEP\"}],\"Kakao\":{\"AdBlock\":true,\"Compact\":true,\"Dark\":false,\"Marker\":\"KAKAO_KEEP\"},\"Pt\":{\"Marker\":\"PT_KEEP\"},\"Desk\":{\"Marker\":\"DESK_KEEP\"}}";
+const string KakaoPretty = "{\r\n  \"Presets\": [{ \"Marker\": \"PRESET_KEEP\" }],\r\n  \"Kakao\": {\r\n    \"AdBlock\": true,\r\n    \"Compact\": true,\r\n    \"Dark\": false,\r\n    \"Marker\": \"KAKAO_KEEP\"\r\n  },\r\n  \"Pt\": { \"Marker\": \"PT_KEEP\" },\r\n  \"Desk\": { \"Marker\": \"DESK_KEEP\" }\r\n}\r\n";
+Check("kakao adblock splices one value", NotesConfigPatch.TryApply(KakaoCfgJson, "Kakao", "AdBlock", JsonValue.Create(false), out string kakaoPatched)
+    && kakaoPatched == KakaoCfgJson.Replace("\"AdBlock\":true", "\"AdBlock\":false")
+    && kakaoPatched.Contains("\"Compact\":true") && kakaoPatched.Contains("\"Dark\":false") && kakaoPatched.Contains("KAKAO_KEEP") && kakaoPatched.Contains("PRESET_KEEP") && kakaoPatched.Contains("PT_KEEP") && kakaoPatched.Contains("DESK_KEEP"));
+Check("kakao adblock keeps pretty formatting", NotesConfigPatch.TryApply(KakaoPretty, "Kakao", "AdBlock", JsonValue.Create(false), out string kakaoPretty)
+    && kakaoPretty == KakaoPretty.Replace("\"AdBlock\": true", "\"AdBlock\": false") && kakaoPretty.Contains("\"Compact\": true") && kakaoPretty.Contains("KAKAO_KEEP"));
+Check("kakao adblock byte span", OnlyToken(KakaoCfgJson, kakaoPatched, out string kakaoOld, out string kakaoNew) && kakaoOld == "true" && kakaoNew == "false");
+
 Console.WriteLine(fail == 0 ? "RESULT PASS" : "RESULT FAIL " + fail);
 return fail == 0 ? 0 : 1;
 

@@ -214,6 +214,40 @@ public static class SmokeTest
         try { new RealBright().Set("SAM73D3", 30, out _); } catch (InvalidOperationException) { brightThrew = true; }
         t.Check("display apis stay off for 작업 and 자리비움", displayThrew && brightThrew && w.DisplayBlocks == displayBlocks + 2 && w.DisplayAction == "blocked" && DisplaySystem.NativeCalls == 0 && DisplaySystem.MmtStarts == 0 && DisplaySystem.ChangeDisplaySettingsExCalls == 0 && DisplaySystem.SetDisplayConfigCalls == 0 && DisplaySystem.BrightnessCalls == 0 && DisplaySystem.DdcCalls == 0 && PresetExtras.WorkRuns == workRuns && PresetExtras.DeskRestores == deskRestores);
 
+        var talk = new List<KakaoWindow>
+        {
+            new() { Id = 1, Class = "EVA_Window_Dblclk", Title = "카카오톡", Process = "KakaoTalk.exe", X = 0, Y = 0, W = 400, H = 700 },
+            new() { Id = 2, ParentId = 1, Class = "EVA_ChildWindow", Title = "", Process = "KakaoTalk.exe", X = 0, Y = 620, W = 400, H = 80 },
+            new() { Id = 3, ParentId = 1, Title = "OnlineMainView", Process = "KakaoTalk.exe", X = 0, Y = 38, W = 400, H = 660 },
+            new() { Id = 4, ParentId = 3, Title = "ChatRoomListView", Process = "KakaoTalk.exe", X = 0, Y = 30, W = 400, H = 600 },
+            new() { Id = 5, ParentId = 4, Class = "EVA_Window_Dblclk", Title = "", Process = "KakaoTalk.exe", X = 8, Y = 56, W = 360, H = 28 },
+            new() { Id = 6, ParentId = 4, Title = "ChatRoomListCtrl", Process = "KakaoTalk.exe", X = 8, Y = 143, W = 360, H = 400 },
+            new() { Id = 7, Class = "EVA_Window_Dblclk", Title = "친구", Process = "KakaoTalk.exe", X = 20, Y = 20, W = 300, H = 400 },
+            new() { Id = 8, ParentId = 7, Title = "BannerAd", Process = "KakaoTalk.exe", X = 20, Y = 300, W = 300, H = 80 },
+            new() { Id = 9, Class = "Notepad", Title = "AdView", Process = "notepad.exe", X = 0, Y = 0, W = 100, H = 100 }
+        };
+        var kakaoCmds = KakaoPlan.Commands(talk, compact: true);
+        var surface = talk.ToDictionary(x => x.Id);
+        foreach (var cmd in kakaoCmds)
+        {
+            var bits = cmd.Split(' ');
+            if (bits[0] == "hide") surface[int.Parse(bits[1])].Visible = false;
+            else if (bits[0] == "place") { var row = surface[int.Parse(bits[1])]; row.X = int.Parse(bits[2]); row.Y = int.Parse(bits[3]); row.W = int.Parse(bits[4]); row.H = int.Parse(bits[5]); }
+        }
+        t.Check("kakao plan hides the ad on a fake window", !surface[2].Visible && !surface[8].Visible && surface[9].Visible && surface[3].Y == 30 && surface[6].Y == 129 && surface[6].H == 414 && surface[5].Y == 48 && KakaoSystem.WindowCalls == 0 && KakaoSystem.ProcessStarts == 0);
+        var host = new FakeKakaoHost();
+        KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = true, Dark = false });
+        KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = false, Dark = true });
+        int running = host.Running;
+        string darkArgs = host.LastArgs ?? "";
+        KakaoSync.Apply(host, new KakaoSettings { AdBlock = false });
+        t.Check("kakao helper args stay on the fake", running == 1 && darkArgs == "/nocompact /dark" && host.Running == 0 && host.Log.Contains("restore") && KakaoArgs.Format(new KakaoSettings { AdBlock = true, Compact = true, Dark = false }) == "");
+        int kakaoBlocks = w.KakaoBlocks;
+        w.RequestSyncKakao();
+        bool kakaoThrew = false;
+        try { KakaoNative.Start(""); } catch (InvalidOperationException) { kakaoThrew = true; }
+        t.Check("kakao stays off real windows", kakaoThrew && w.KakaoBlocks == kakaoBlocks + 1 && w.KakaoAction == "blocked" && KakaoSystem.NativeCalls == 0 && KakaoSystem.ProcessStarts == 0 && KakaoSystem.WindowCalls == 0 && KakaoSystem.ProcessQueries == 0);
+
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);
         meta.Color = "g:lemon";   // one of the lightest gradients: hardest case for white text

@@ -763,12 +763,39 @@ public partial class MainWindow : Window
             }
     }
 
+    public string KakaoAction { get; private set; } = "";
+    public int KakaoBlocks { get; private set; }
+    public void RequestSyncKakao()
+    {
+        if (!KakaoGate.RealAllowed)
+        {
+            KakaoBlocks++;
+            KakaoAction = "blocked";
+            return;
+        }
+        try
+        {
+            KakaoNative.Sync(ConfigStore.Kakao());
+            KakaoAction = ConfigStore.KakaoAdBlock ? "sync" : "restore";
+        }
+        catch (Exception ex) { KakaoAction = ex.Message; }
+    }
+    void KakaoSwitch(StackPanel group, string key, string title, string sub, bool on, string hex)
+    {
+        Row(group, "\uE8BD", hex, title, sub, Switch(on, v =>
+        {
+            if (!ConfigStore.SetKakaoFlag(key, v)) return;
+            if (key != "AutoApply") RequestSyncKakao();
+        }, !AppEnv.ReadOnly));
+    }
     void PageKakao()
     {
-        Footer("광고 숨김은 3.4.9의 BongAd가 해요. Next는 켜고 끄지 않아요.");
+        Footer("광고 숨김을 켠 일반 실행에서만 도우미가 시작해요. 시험·화면 밖·CI에서는 카톡 창을 찾거나 숨기거나 도우미를 실행하지 않아요.");
         var g = Group();
-        Row(g, "\uE8BD", "FFCC00", "광고 숨김", ConfigStore.KakaoAdBlock ? "설정은 켜짐" : "설정은 꺼짐", null);
-        Row(g, "\uE790", "8E8E93", "다크 오버레이", ConfigStore.KakaoDark ? "설정은 켜짐" : "설정은 꺼짐", null);
+        KakaoSwitch(g, "AdBlock", "광고 숨김", "켜야 도우미가 시작해요.", ConfigStore.KakaoAdBlock, "FFCC00");
+        KakaoSwitch(g, "Compact", "목록 간격 줄이기", "끄면 인자는 /nocompact 예요.", ConfigStore.KakaoCompact, "5AC8FA");
+        KakaoSwitch(g, "Dark", "다크 오버레이", "켜면 인자는 /dark 예요.", ConfigStore.KakaoDark, "8E8E93");
+        KakaoSwitch(g, "AutoApply", "시작할 때 적용", "광고 숨김이 켜져 있을 때만 일반 실행에서 시작해요.", ConfigStore.KakaoAutoApply, "34C759");
     }
 
     public string DesktopAction { get; private set; } = "";
@@ -940,7 +967,7 @@ public partial class MainWindow : Window
             if (p.Hotkey.Length > 0) hotkeys += " · " + p.Name + " " + p.Hotkey;
         AboutMentionsHotkey = hotkeys.Contains("메모");
         Row(g, null, null, "단축키", hotkeys, null);
-        Row(g, null, null, "변경", "0.10.0 모니터 프리셋. PowerToys 계산은 0.9.0.", null);
+        Row(g, null, null, "변경", "0.11.0 카톡 광고 숨김. 모니터 프리셋은 0.10.0.", null);
     }
 
     sealed class UniformGrid4 : Grid
