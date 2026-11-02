@@ -50,6 +50,42 @@ public static class NotesConfigPatch
         return InsertMember(text, rootOpen, rootClose, rootMembers, rootLast, "\"" + section + "\": " + notesJson, out updated);
     }
 
+    /// <summary>Replaces one field inside the <paramref name="index"/>-th object of a top-level array. Other bytes stay.</summary>
+    public static bool TryApplyArrayField(string text, string arrayKey, int index, string field, JsonNode? value, out string updated)
+    {
+        updated = text;
+        if (string.IsNullOrEmpty(text) || value is null || index < 0 || !IsKey(arrayKey) || !IsKey(field)) return false;
+        var r = new R(text);
+        r.SkipWs();
+        if (r.Eof || r.C != '{') return false;
+        if (!r.ReadObject(out _, out _, out _, out var arr, wantChild: arrayKey)) return false;
+        if (!arr.Found || arr.IsObject) return false;
+        var inner = new R(text) { I = arr.ValueStart };
+        if (!inner.Eat('[')) return false;
+        inner.SkipWs();
+        if (!inner.Eof && inner.C == ']') return false;
+        int seen = 0;
+        while (true)
+        {
+            inner.SkipWs();
+            if (inner.Eof || inner.C != '{') return false;
+            if (!inner.ReadObject(out _, out _, out _, out var hit, wantChild: field)) return false;
+            if (seen == index)
+            {
+                if (!hit.Found || hit.IsObject) return false;
+                string existing = text.Substring(hit.ValueStart, hit.ValueEnd - hit.ValueStart);
+                string formatted = FormatLike(existing, value);
+                if (existing == formatted || Same(existing, value)) return true;
+                updated = text.Substring(0, hit.ValueStart) + formatted + text.Substring(hit.ValueEnd);
+                return true;
+            }
+            seen++;
+            inner.SkipWs();
+            if (inner.Eat(',')) { inner.SkipWs(); if (!inner.Eof && inner.C == ']') return false; continue; }
+            return false;
+        }
+    }
+
     /// <summary>Minimal config when the file does not exist yet. 3.4.x pretty-print uses CRLF and two-space indents.</summary>
     public static string CreateNew(string key, JsonNode value)
     {
@@ -89,6 +125,24 @@ public static class NotesConfigPatch
         try { text = enc.GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0)); }
         catch (DecoderFallbackException) { return false; }
         if (!TryApply(text, section, key, value, out string updated)) return false;
+        if (updated == text) return true;
+        WriteAtomic(path, enc.GetBytes(updated), bom);
+        changed = true;
+        return true;
+    }
+
+    public static bool TryWriteArrayField(string path, string arrayKey, int index, string field, JsonNode? value, out bool changed)
+    {
+        changed = false;
+        if (string.IsNullOrEmpty(path) || value is null || index < 0 || !IsKey(arrayKey) || !IsKey(field)) return false;
+        var enc = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+        if (!File.Exists(path)) return false;
+        byte[] bytes = File.ReadAllBytes(path);
+        bool bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+        string text;
+        try { text = enc.GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0)); }
+        catch (DecoderFallbackException) { return false; }
+        if (!TryApplyArrayField(text, arrayKey, index, field, value, out string updated)) return false;
         if (updated == text) return true;
         WriteAtomic(path, enc.GetBytes(updated), bom);
         changed = true;

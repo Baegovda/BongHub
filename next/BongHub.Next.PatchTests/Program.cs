@@ -280,6 +280,49 @@ bool desktopThrew = false;
 try { using var blocked = new ExplorerIconSurface(); } catch (InvalidOperationException) { desktopThrew = true; }
 Check("desktop backend refuses before any native call", desktopThrew && ExplorerIconSurface.NativeCalls == 0 && ExplorerIconSurface.Attempts == 1);
 
+var ruleWindows = new FakeWindowSurface();
+ruleWindows.Areas["SAM"] = new WorkRect(1920, 0, 1920, 1080);
+ruleWindows.Windows.Add(new TrackedWindow { Id = 1, Process = "Discord", Title = "친구 - Discord", Class = "Chrome_WidgetWin_1", X = 0, Y = 0, W = 400, H = 300 });
+ruleWindows.Windows.Add(new TrackedWindow { Id = 2, Process = "notepad", Title = "제목 없음", X = 8, Y = 8, W = 300, H = 200 });
+var firstRules = new List<WindowRule>
+{
+    new() { Enabled = false, Process = "Discord", Action = "min" },
+    new() { Process = "Discord", Title = "친구", Action = "pos", X = 30, Y = 40, W = 900, H = 700, Pin = true },
+    new() { Process = "Discord", Action = "min" },
+    new() { Process = "notepad.exe", Action = "pos", X = 15, Y = 18, W = 500, H = 400 }
+};
+Check("first matching window rule wins", RuleEngine.Apply(ruleWindows, firstRules) == 2
+    && ruleWindows.Windows[0].X == 30 && ruleWindows.Windows[0].Y == 40 && ruleWindows.Windows[0].W == 900 && ruleWindows.Windows[0].TopMost
+    && !ruleWindows.Windows[0].Min && ruleWindows.Windows[1].X == 15 && !ruleWindows.Ops.Contains("min 1"));
+Check("rule without criteria does not match", !RuleMatch.Match(new WindowRule { Title = "" }, ruleWindows.Windows[0]));
+Check("bad title regex does not match", !RuleMatch.Match(new WindowRule { Process = "Discord", Title = "(", TitleRegex = true }, ruleWindows.Windows[0]));
+var keepRules = new KeepWatch();
+keepRules.SetRules(new[] { new WindowRule { Keep = true, Process = "Discord", Action = "pos", X = 30, Y = 40, W = 900, H = 700 } });
+int keepOps = ruleWindows.Ops.Count;
+keepRules.Check(ruleWindows, 1);
+Check("keep watch leaves an in-place window", keepRules.Active && keepRules.Applied == 0 && ruleWindows.Ops.Count == keepOps);
+ruleWindows.Windows[0].X = 400;
+keepRules.Check(ruleWindows, 1);
+Check("keep watch moves only an out-of-place window", keepRules.Applied == 1 && ruleWindows.Windows[0].X == 30);
+var workspaceMoves = WorkspacePlan.Plan(
+    new[] { new TrackedWindow { Id = 3, Process = "Code", Title = "a" }, new TrackedWindow { Id = 4, Process = "Code", Title = "b" } },
+    new[] { new WorkspaceItem { Process = "Code.exe", Title = "b", X = 100, Y = 120, W = 800, H = 600 }, new WorkspaceItem { Process = "absent", Title = "nope" } },
+    out int workspaceMissing);
+Check("workspace plan prefers the title and does not launch", workspaceMoves.Count == 1 && workspaceMoves[0].WindowId == 4 && workspaceMoves[0].X == 100 && workspaceMissing == 1);
+
+const string RuleCfg = "{\"Presets\":[{\"Marker\":\"PRESET_KEEP\",\"Rules\":[{\"Enabled\":true,\"Name\":\"프리셋\"}]}],\"Pt\":{\"Marker\":\"PT_KEEP\"},\"Desk\":{\"Marker\":\"DESK_KEEP\"},\"GlobalRules\":[{\"Enabled\":true,\"Name\":\"Discord\",\"Process\":\"Discord\",\"Keep\":false},{\"Enabled\":true,\"Name\":\"notepad\"}]}";
+const string RulePretty = "{\r\n  \"Presets\": [{ \"Marker\": \"PRESET_KEEP\" }],\r\n  \"GlobalRules\": [\r\n    {\r\n      \"Enabled\": true,\r\n      \"Name\": \"Discord\",\r\n      \"Process\": \"Discord\"\r\n    }\r\n  ],\r\n  \"Desk\": { \"Marker\": \"DESK_KEEP\" }\r\n}\r\n";
+Check("global rule enabled splices one token", NotesConfigPatch.TryApplyArrayField(RuleCfg, "GlobalRules", 0, "Enabled", JsonValue.Create(false), out string ruled)
+    && ruled == RuleCfg.Replace("\"Name\":\"Discord\",\"Process\":\"Discord\",\"Keep\":false", "\"Name\":\"Discord\",\"Process\":\"Discord\",\"Keep\":false").Replace("{\"Enabled\":true,\"Name\":\"Discord\"", "{\"Enabled\":false,\"Name\":\"Discord\"")
+    && ruled.Contains("\"Enabled\":true,\"Name\":\"프리셋\"") && ruled.Contains("\"Enabled\":true,\"Name\":\"notepad\"") && ruled.Contains("PRESET_KEEP") && ruled.Contains("PT_KEEP") && ruled.Contains("DESK_KEEP"));
+Check("global rule enabled keeps pretty formatting", NotesConfigPatch.TryApplyArrayField(RulePretty, "GlobalRules", 0, "Enabled", JsonValue.Create(false), out string ruledPretty)
+    && ruledPretty == RulePretty.Replace("\"Enabled\": true", "\"Enabled\": false"));
+Check("global rule enabled byte span", OnlyToken(RuleCfg, ruled, out string ruleOld, out string ruleNew) && ruleOld == "true" && ruleNew == "false");
+Check("window gate stays shut", !WindowGate.RealAllowed && LiveWindowSurface.NativeCalls == 0);
+bool windowThrew = false;
+try { using var blockedWindows = new LiveWindowSurface(); } catch (InvalidOperationException) { windowThrew = true; }
+Check("window backend refuses before any native call", windowThrew && LiveWindowSurface.NativeCalls == 0 && LiveWindowSurface.Attempts == 1);
+
 Console.WriteLine(fail == 0 ? "RESULT PASS" : "RESULT FAIL " + fail);
 return fail == 0 ? 0 : 1;
 

@@ -153,6 +153,33 @@ public static class SmokeTest
         try { using var blocked = new ExplorerIconSurface(); } catch (InvalidOperationException) { desktopThrew = true; }
         t.Check("desktop actions stay off the real list view", desktopThrew && w.DesktopBlocks == 2 && w.DesktopAction == "blocked" && ExplorerIconSurface.NativeCalls == 0);
 
+        var wins = new FakeWindowSurface();
+        wins.Windows.Add(new TrackedWindow { Id = 1, Process = "Discord", Title = "Discord", Class = "Chrome_WidgetWin_1", X = 0, Y = 0, W = 400, H = 300 });
+        wins.Windows.Add(new TrackedWindow { Id = 2, Process = "notepad", Title = "메모장", X = 5, Y = 5, W = 200, H = 200 });
+        var rules = new List<WindowRule>
+        {
+            new() { Name = "첫 규칙", Process = "Discord", Action = "pos", X = 40, Y = 50, W = 800, H = 600 },
+            new() { Name = "나중 규칙", Process = "Discord", Action = "min" },
+            new() { Name = "메모장", Process = "notepad.exe", Action = "pos", X = 12, Y = 16, W = 640, H = 480 }
+        };
+        int touched = RuleEngine.Apply(wins, rules);
+        t.Check("first matching window rule wins", touched == 2 && wins.Windows[0].X == 40 && wins.Windows[0].Y == 50 && wins.Windows[0].W == 800 && !wins.Windows[0].Min && wins.Windows[1].X == 12 && !wins.Ops.Contains("min 1"));
+        var keep = new KeepWatch();
+        keep.SetRules(new[] { new WindowRule { Enabled = true, Keep = true, Process = "Discord", Action = "pos", X = 40, Y = 50, W = 800, H = 600 } });
+        int ops = wins.Ops.Count;
+        keep.Check(wins, 1);
+        t.Check("keep watch leaves an in-place window", keep.Active && keep.Applied == 0 && wins.Ops.Count == ops && LiveWindowSurface.NativeCalls == 0);
+        var planned = WorkspacePlan.Plan(
+            new[] { new TrackedWindow { Id = 7, Process = "notepad", Title = "메모장" }, new TrackedWindow { Id = 8, Process = "notepad", Title = "다른" } },
+            new[] { new WorkspaceItem { Process = "notepad.exe", Title = "메모장", X = 10, Y = 20, W = 640, H = 480 }, new WorkspaceItem { Process = "missing", Title = "없음" } },
+            out int workspaceMissing);
+        t.Check("workspace plan does not launch a missing app", planned.Count == 1 && planned[0].WindowId == 7 && planned[0].X == 10 && workspaceMissing == 1);
+        w.RequestApplyRules();
+        w.RequestApplyWorkspace(null);
+        bool windowThrew = false;
+        try { using var blockedWindows = new LiveWindowSurface(); } catch (InvalidOperationException) { windowThrew = true; }
+        t.Check("window actions stay off real top-level windows", windowThrew && w.WindowBlocks == 2 && w.WindowAction == "blocked" && LiveWindowSurface.NativeCalls == 0);
+
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);
         meta.Color = "g:lemon";   // one of the lightest gradients: hardest case for white text

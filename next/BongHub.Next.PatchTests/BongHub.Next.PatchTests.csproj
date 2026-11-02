@@ -9,5 +9,6 @@
   <ItemGroup>
     <Compile Include="..\BongHub.Next\NotesConfigPatch.cs" Link="NotesConfigPatch.cs" />
     <Compile Include="..\BongHub.Next\DesktopIcons.cs" Link="DesktopIcons.cs" />
+    <Compile Include="..\BongHub.Next\WindowControl.cs" Link="WindowControl.cs" />
   </ItemGroup>
 </Project>

@@ -579,15 +579,71 @@ public partial class MainWindow : Window
         };
     }
 
+    public string WindowAction { get; private set; } = "";
+    public int WindowBlocks { get; private set; }
+    bool BlockWindows()
+    {
+        if (WindowGate.RealAllowed) return false;
+        WindowBlocks++;
+        WindowAction = "blocked";
+        return true;
+    }
+    public void RequestApplyRules()
+    {
+        if (BlockWindows()) return;
+        try
+        {
+            using var live = new LiveWindowSurface();
+            int n = RuleEngine.Apply(live, ConfigStore.WindowRules);
+            WindowAction = "rules " + n;
+        }
+        catch (Exception ex) { WindowAction = ex.Message; }
+    }
+    public void RequestApplyWorkspace(WorkspaceSnapshot? ws)
+    {
+        if (BlockWindows()) return;
+        if (ws == null || ws.Apps.Count == 0) { WindowAction = "empty"; return; }
+        try
+        {
+            using var live = new LiveWindowSurface();
+            var moves = WorkspacePlan.Plan(live.List(), ws.Apps, out int missing);
+            foreach (var m in moves)
+            {
+                if (m.State == "min") live.Minimize(m.WindowId);
+                else if (m.State == "max") { live.TryWorkArea("", m.WindowId, out var area); live.Maximize(m.WindowId, area); }
+                else live.Place(m.WindowId, m.X, m.Y, m.W, m.H);
+            }
+            WindowAction = "workspace " + moves.Count + " missing " + missing;
+        }
+        catch (Exception ex) { WindowAction = ex.Message; }
+    }
     void PageWindows()
     {
-        Footer("조건에 맞는 창을 옮기는 동작은 아직 3.4.9예요. Next는 규칙 이름만 보여요.");
+        Footer("규칙 적용과 작업 영역 배치는 단추를 눌렀을 때만 창을 읽어요. 없는 앱은 실행하지 않아요. 전역 후킹과 자동 타이머는 켜지 않아요. 테스트에서는 단추도 실제 창을 찾지 않아요.");
         var g = Group();
-        if (ConfigStore.Rules.Count == 0)
+        if (ConfigStore.WindowRules.Count == 0)
             Row(g, "\uE737", "5AC8FA", "저장된 규칙 없음", "창은 움직이지 않아요.", null);
         else
-            foreach (var r in ConfigStore.Rules.Take(8))
-                Row(g, "\uE737", "5AC8FA", r.Name.Length > 0 ? r.Name : "(이름 없음)", r.Enabled ? "사용" : "꺼짐", null);
+        {
+            int i = 0;
+            foreach (var r in ConfigStore.WindowRules.Take(8))
+            {
+                int index = i++;
+                string sub = (r.Process.Length > 0 ? r.Process + " · " : "") + r.Action + " · 위에서부터 첫 규칙만";
+                Row(g, "\uE737", "5AC8FA", r.Name.Length > 0 ? r.Name : "(이름 없음)", sub, Switch(r.Enabled, v => ConfigStore.SetRuleEnabled(index, v), !AppEnv.ReadOnly));
+            }
+        }
+        Row(g, "\uE768", "4C8AFE", "규칙 지금 적용", "눌러야 열린 창을 살펴요.", null, RequestApplyRules);
+        Header("작업 영역");
+        var work = Group();
+        if (ConfigStore.Workspaces.Count == 0)
+            Row(work, "\uE737", "5AC8FA", "저장된 작업 영역 없음", "앱을 새로 열지 않아요.", null);
+        else
+            foreach (var ws in ConfigStore.Workspaces.Take(4))
+            {
+                var item = ws;
+                Row(work, "\uE8A5", "34C759", item.Name.Length > 0 ? item.Name : "(이름 없음)", "열린 창만 옮겨요. 실행은 하지 않아요.", null, () => RequestApplyWorkspace(item));
+            }
     }
 
     void PageKakao()
@@ -762,7 +818,7 @@ public partial class MainWindow : Window
             if (p.Hotkey.Length > 0) hotkeys += " · " + p.Name + " " + p.Hotkey;
         AboutMentionsHotkey = hotkeys.Contains("메모");
         Row(g, null, null, "단축키", hotkeys, null);
-        Row(g, null, null, "변경", "0.7.0 바탕화면 아이콘. 설정 셸은 0.6.0.", null);
+        Row(g, null, null, "변경", "0.8.0 창 위치. 바탕화면 아이콘은 0.7.0.", null);
     }
 
     sealed class UniformGrid4 : Grid
