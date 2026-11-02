@@ -44,7 +44,7 @@ internal static class Win32
     public static void Place(Window w, int x, int y, int cw, int ch)
     {
         var h = Handle(w);
-        if (AppEnv.Off && h != IntPtr.Zero) OffTarget[h] = (x, y);
+        if (AppEnv.Off && h != IntPtr.Zero) OffTarget[h] = (x, y, cw, ch);
         SetWindowPos(h, IntPtr.Zero, x, y, cw, ch, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
     }
     /// <summary>MONITOR_DEFAULTTONULL: true only when the rect actually meets a monitor. Fully off-screen is false on any layout.</summary>
@@ -54,8 +54,13 @@ internal static class Win32
         var r = new RECT { Left = x, Top = y, Right = x + w, Bottom = y + h };
         return MonitorFromRect(ref r, 0) != IntPtr.Zero;
     }
-    static readonly Dictionary<IntPtr, (int X, int Y)> OffTarget = new();
-    public static void RememberOffScreen(IntPtr h, int x, int y) { if (AppEnv.Off && h != IntPtr.Zero) OffTarget[h] = (x, y); }
+    static readonly Dictionary<IntPtr, (int X, int Y, int W, int H)> OffTarget = new();
+    public static void RememberOffScreen(IntPtr h, int x, int y)
+    {
+        if (!AppEnv.Off || h == IntPtr.Zero) return;
+        OffTarget.TryGetValue(h, out var prev);
+        OffTarget[h] = (x, y, prev.W, prev.H);
+    }
     public static void ForgetOffScreen(IntPtr h) { if (h != IntPtr.Zero) OffTarget.Remove(h); }
     /// <summary>
     /// While <see cref="AppEnv.Off"/>, refuse a move onto a real monitor and keep the last Place target.
@@ -68,10 +73,20 @@ internal static class Win32
         try
         {
             var pos = Marshal.PtrToStructure<WINDOWPOS>(lp);
-            if ((pos.flags & SWP_NOMOVE) != 0 || pos.cx <= 0 || pos.cy <= 0) return IntPtr.Zero;
-            if (!OnAnyMonitor(pos.x, pos.y, pos.cx, pos.cy)) return IntPtr.Zero;
             if (!OffTarget.TryGetValue(hwnd, out var t)) return IntPtr.Zero;
-            pos.x = t.X; pos.y = t.Y;
+            bool changed = false;
+            int w = pos.cx > 0 ? pos.cx : t.W;
+            int h = pos.cy > 0 ? pos.cy : t.H;
+            if ((pos.flags & SWP_NOMOVE) == 0 && w > 0 && h > 0 && OnAnyMonitor(pos.x, pos.y, w, h))
+            {
+                pos.x = t.X; pos.y = t.Y; changed = true;
+            }
+            // DIP→device rounding on the viewer can leave the HWND 1px off the stored size. Keep the physical size.
+            if ((pos.flags & SWP_NOSIZE) == 0 && t.W > 0 && t.H > 0 && (pos.cx != t.W || pos.cy != t.H))
+            {
+                pos.cx = t.W; pos.cy = t.H; changed = true;
+            }
+            if (!changed) return IntPtr.Zero;
             Marshal.StructureToPtr(pos, lp, false);
         }
         catch (Exception e) { AppEnv.Log("offscreen pos: " + e.Message); }

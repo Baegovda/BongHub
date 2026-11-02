@@ -37,14 +37,14 @@
     </Grid>
 
     <Grid x:Name="EditorHost" Grid.Row="1" Margin="10,0,8,4">
-      <RichTextBox x:Name="Editor" Background="Transparent" BorderThickness="0"
-                   Foreground="#F0F0F6" CaretBrush="#F0F0F6" SelectionBrush="#8FB4FF" SelectionOpacity="0.4"
-                   AcceptsTab="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                   AllowDrop="True" FocusVisualStyle="{x:Null}" SpellCheck.IsEnabled="False" FontFamily="{StaticResource UiFont}">
-        <RichTextBox.Resources>
+      <!-- Idle notes stay on this viewer. A RichTextBox is created only while the note is being edited. -->
+      <FlowDocumentScrollViewer x:Name="Viewer" Background="Transparent" BorderThickness="0"
+                                VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                IsToolBarVisible="False" Focusable="False" FontFamily="{StaticResource UiFont}">
+        <FlowDocumentScrollViewer.Resources>
           <Style TargetType="Paragraph"><Setter Property="Margin" Value="0,0,0,2"/></Style>
-        </RichTextBox.Resources>
-      </RichTextBox>
+        </FlowDocumentScrollViewer.Resources>
+      </FlowDocumentScrollViewer>
       <TextBlock x:Name="Hint" Margin="6,2,0,0" Text="메모를 입력하세요" Opacity="0.45" IsHitTestVisible="False" FontSize="14"/>
       <TextBlock x:Name="LargeWarn" VerticalAlignment="Bottom" Margin="4" Padding="8,4" TextWrapping="Wrap"
                  Background="#CC3A2418" Foreground="#F5D7A1" FontSize="12" Visibility="Collapsed" IsHitTestVisible="False"/>

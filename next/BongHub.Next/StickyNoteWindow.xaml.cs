@@ -33,6 +33,24 @@ public partial class StickyNoteWindow : Window
     Image? selectedImage;
     bool loading, metaDirty, corruptBackedUp, closing, discarding, sizing;
     int sourcePictCount;
+    RichTextBox? editor;
+    public bool IsEditing => editor != null;
+    FlowDocument Document
+    {
+        get
+        {
+            if (editor != null) return editor.Document;
+            Viewer.Document ??= new FlowDocument();
+            return Viewer.Document;
+        }
+        set
+        {
+            if (editor != null) editor.Document = value;
+            else Viewer.Document = value;
+        }
+    }
+    /// <summary>The editing control. Created on first edit so idle notes do not each keep a RichTextBox.</summary>
+    public RichTextBox Editor => EnsureEditor();
     int dragHandle = -1;
     Point dragStart;
     double dragW, dragH, dragAspect;
@@ -66,10 +84,10 @@ public partial class StickyNoteWindow : Window
             PlacePhysical();
         };
         Loaded += (_, _) => PlacePhysical();
-        WindowFx.Of(this).AfterFirstFrame = () => { Ready = true; Win32.AllowActivate(Win32.Handle(this)); };
+        WindowFx.Of(this).AfterFirstFrame = () => { PlacePhysical(); Ready = true; Win32.AllowActivate(Win32.Handle(this)); };
 
-        Editor.TextChanged += (_, _) => { UpdateHint(); if (loading) return; TextDirty = true; if (sizing) return; textTimer.Stop(); textTimer.Start(); };
-        Editor.PreviewMouseWheel += (_, e) => { if (Keyboard.Modifiers != ModifierKeys.Control) return; e.Handled = true; Meta.Zoom = (float)Math.Clamp(Math.Round(Meta.Zoom + (e.Delta > 0 ? 0.1 : -0.1), 1), 0.6, 3.0); ApplyZoom(); MarkMeta(); };
+        EditorHost.PreviewMouseWheel += (_, e) => { if (Keyboard.Modifiers != ModifierKeys.Control) return; e.Handled = true; Meta.Zoom = (float)Math.Clamp(Math.Round(Meta.Zoom + (e.Delta > 0 ? 0.1 : -0.1), 1), 0.6, 3.0); ApplyZoom(); MarkMeta(); };
+        EditorHost.PreviewMouseLeftButtonDown += (_, _) => { if (editor == null && !AppEnv.ReadOnly) EnsureEditor().Focus(); };
         MouseEnter += (_, _) => Fx.Fade(Bar, 1, 160);
         MouseLeave += (_, _) => { if (!Palette.IsOpen) Fx.Fade(Bar, 0, 260); };
 
@@ -89,13 +107,9 @@ public partial class StickyNoteWindow : Window
         LargerBtn.Click += (_, _) => GrowFont(1);
         ImageBtn.Click += (_, _) => PickImage();
         CustomApply.Click += (_, _) => { if (NoteColors.TryCustom(CustomA.Text.Trim(), CustomB.Text.Trim(), out var key)) { Palette.IsOpen = false; SetColor(key); } };
-        Editor.PreviewDragOver += (_, e) => { if (CanDrop(e.Data)) { e.Effects = DragDropEffects.Copy; e.Handled = true; } };
-        Editor.Drop += (_, e) => { if (AcceptDrop(e.Data)) e.Handled = true; };
-        Editor.PreviewMouseLeftButtonDown += OnEditorDown;
-        Editor.PreviewMouseMove += OnEditorMove;
-        Editor.PreviewMouseLeftButtonUp += OnEditorUp;
-        Editor.PreviewMouseRightButtonUp += OnEditorRight;
-        Editor.PreviewMouseDoubleClick += OnEditorDouble;
+        Viewer.AllowDrop = true;
+        Viewer.PreviewDragOver += (_, e) => { if (CanDrop(e.Data)) { e.Effects = DragDropEffects.Copy; e.Handled = true; } };
+        Viewer.Drop += (_, e) => { if (!AppEnv.ReadOnly) EnsureEditor(); if (AcceptDrop(e.Data)) e.Handled = true; };
         PreviewKeyDown += (_, e) => { if (HandleShortcut(e.Key, Keyboard.Modifiers)) e.Handled = true; };
         Closing += (_, e) => { if (!App.ShuttingDown && !closing) { e.Cancel = true; CloseNote(); } };
         UpdatePin();
@@ -116,6 +130,10 @@ public partial class StickyNoteWindow : Window
             else if (!Win32.OnAnyMonitor(x, y, w, h)) { var a = Win32.WorkAreaAtCursor(); x = a.Left + 60; y = a.Top + 60; }
         }
         int px = x + AppEnv.OffsetX, py = y + AppEnv.OffsetY;
+        double dpi = Win32.Scale(this);
+        if (dpi < 0.5) dpi = 1;
+        Width = w / dpi;
+        Height = h / dpi;
         // Record the physical target before WPF applies Left/Top, so a monitor pull is undone exactly.
         Win32.RememberOffScreen(Win32.Handle(this), px, py);
         Win32.Place(this, px, py, w, h);
@@ -156,11 +174,65 @@ public partial class StickyNoteWindow : Window
         Meta.X = x; Meta.Y = y; Meta.W = r.Width; Meta.H = r.Height; metaDirty = true; return true;
     }
 
+    RichTextBox EnsureEditor()
+    {
+        if (editor != null) return editor;
+        var doc = Viewer.Document ?? new FlowDocument();
+        Viewer.Document = new FlowDocument();
+        var box = new RichTextBox
+        {
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Foreground = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF6)),
+            CaretBrush = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF6)),
+            SelectionBrush = new SolidColorBrush(Color.FromRgb(0x8F, 0xB4, 0xFF)),
+            SelectionOpacity = 0.4,
+            AcceptsTab = true,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            AllowDrop = true,
+            IsUndoEnabled = true,
+            IsReadOnly = AppEnv.ReadOnly,
+            Document = doc,
+        };
+        box.SetResourceReference(TextElement.FontFamilyProperty, "UiFont");
+        var paraStyle = new Style(typeof(Paragraph));
+        paraStyle.Setters.Add(new Setter(Block.MarginProperty, new Thickness(0, 0, 0, 2)));
+        box.Resources.Add(typeof(Paragraph), paraStyle);
+        SpellCheck.SetIsEnabled(box, false);
+        box.TextChanged += (_, _) => { UpdateHint(); if (loading) return; TextDirty = true; if (sizing) return; textTimer.Stop(); textTimer.Start(); };
+        box.PreviewDragOver += (_, e) => { if (CanDrop(e.Data)) { e.Effects = DragDropEffects.Copy; e.Handled = true; } };
+        box.Drop += (_, e) => { if (AcceptDrop(e.Data)) e.Handled = true; };
+        box.PreviewMouseLeftButtonDown += OnEditorDown;
+        box.PreviewMouseMove += OnEditorMove;
+        box.PreviewMouseLeftButtonUp += OnEditorUp;
+        box.PreviewMouseRightButtonUp += OnEditorRight;
+        box.PreviewMouseDoubleClick += OnEditorDouble;
+        box.LostKeyboardFocus += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(ReleaseEditorIfIdle));
+        editor = box;
+        EditorHost.Children.Insert(0, box);
+        Viewer.Visibility = Visibility.Collapsed;
+        ApplyZoom();
+        return box;
+    }
+
+    void ReleaseEditorIfIdle()
+    {
+        if (editor == null || dragHandle >= 0 || Palette.IsOpen) return;
+        if (editor.IsKeyboardFocusWithin || FormatBar.IsKeyboardFocusWithin || EditorHost.IsKeyboardFocusWithin) return;
+        var doc = editor.Document;
+        editor.Document = new FlowDocument();
+        EditorHost.Children.Remove(editor);
+        editor = null;
+        Viewer.Document = doc;
+        Viewer.Visibility = Visibility.Visible;
+        ApplyZoom();
+    }
+
     // ---------- document ----------
     void LoadDocument()
     {
         loading = true;
-        Editor.IsUndoEnabled = false;
         try
         {
             var path = NoteStore.RtfPath(Meta.Id);
@@ -177,7 +249,7 @@ public partial class StickyNoteWindow : Window
                     var doc = LoadFlow(proxy ? RtfPict.Placeholder(bytes) : bytes);
                     if (proxy && CollectImages(doc).Count != picts.Count)
                         doc = LoadFlow(bytes);   // placeholder did not round-trip; decode the file, then shrink
-                    Editor.Document = doc;
+                    Document = doc;
                     if (proxy) ApplyProxies(CollectImages(doc), picts);
                 }
                 catch (Exception e) { LoadStatus = "corrupt"; AppEnv.Log($"rtf load failed {Meta.Id}: {e.Message}"); SetPlain(Meta.Text); }
@@ -188,7 +260,7 @@ public partial class StickyNoteWindow : Window
             else SetPlain(Meta.Text);
             StyleDocument();
         }
-        finally { loading = false; Editor.IsUndoEnabled = true; }
+        finally { loading = false; if (editor != null) editor.IsUndoEnabled = true; }
         UpdateHint();
     }
     static FlowDocument LoadFlow(byte[] data)
@@ -236,7 +308,7 @@ public partial class StickyNoteWindow : Window
     /// <summary>True when every picture in the document is scaled linearly (no cached high-quality copy).</summary>
     public bool DisplayImagesUseLinearScaling()
     {
-        var images = CollectImages(Editor.Document);
+        var images = CollectImages(Document);
         return images.Count > 0 && images.All(im => RenderOptions.GetBitmapScalingMode(im) == BitmapScalingMode.Linear);
     }
     static List<Image> CollectImages(FlowDocument doc)
@@ -254,11 +326,11 @@ public partial class StickyNoteWindow : Window
     {
         var doc = new FlowDocument();
         foreach (var line in (text ?? "").Replace("\r\n", "\n").Split('\n')) doc.Blocks.Add(new Paragraph(new Run(line)));
-        Editor.Document = doc;
+        Document = doc;
     }
     void StyleDocument()
     {
-        var d = Editor.Document;
+        var d = Document;
         d.PagePadding = new Thickness(4, 2, 4, 6);
         d.FontFamily = (FontFamily)FindResource("UiFont");
         d.Foreground = new SolidColorBrush(NoteColors.Text);
@@ -266,7 +338,7 @@ public partial class StickyNoteWindow : Window
         d.LineHeight = double.NaN;
     }
     static int CountPict(byte[] b) { int n = 0; var s = Encoding.ASCII.GetString(b); for (int i = s.IndexOf("\\pict", StringComparison.Ordinal); i >= 0; i = s.IndexOf("\\pict", i + 5, StringComparison.Ordinal)) n++; return n; }
-    int DocImageCount() => CountImages(Editor.Document.Blocks);
+    int DocImageCount() => CountImages(Document.Blocks);
     static int CountImages(IEnumerable<Block> blocks)
     {
         int n = 0;
@@ -281,9 +353,9 @@ public partial class StickyNoteWindow : Window
     }
     public string PlainText()
     {
-        return new TextRange(Editor.Document.ContentStart, Editor.Document.ContentEnd).Text.TrimEnd('\r', '\n');
+        return new TextRange(Document.ContentStart, Document.ContentEnd).Text.TrimEnd('\r', '\n');
     }
-    void UpdateHint() => Hint.Visibility = Editor.Document.Blocks.Count <= 1 && PlainText().Length == 0 && DocImageCount() == 0 ? Visibility.Visible : Visibility.Collapsed;
+    void UpdateHint() => Hint.Visibility = Document.Blocks.Count <= 1 && PlainText().Length == 0 && DocImageCount() == 0 ? Visibility.Visible : Visibility.Collapsed;
 
     // ---------- saving (debounced: one write per gesture) ----------
     void MarkMeta() { metaDirty = true; metaTimer.Stop(); metaTimer.Start(); }
@@ -292,7 +364,7 @@ public partial class StickyNoteWindow : Window
         textTimer.Stop();
         if (!TextDirty) return;
         TextDirty = false;
-        var range = new TextRange(Editor.Document.ContentStart, Editor.Document.ContentEnd);
+        var range = new TextRange(Document.ContentStart, Document.ContentEnd);
         using var ms = new MemoryStream();
         range.Save(ms, DataFormats.Rtf);
         byte[] wpfRtf = ms.ToArray();
@@ -364,8 +436,8 @@ public partial class StickyNoteWindow : Window
         loading = true;
         try
         {
-            Editor.Document.Blocks.Clear();
-            Editor.Document.Blocks.Add(new Paragraph(new Run("떨어짐")));
+            Document.Blocks.Clear();
+            Document.Blocks.Add(new Paragraph(new Run("떨어짐")));
         }
         finally { loading = false; }
         TextDirty = true;
@@ -414,7 +486,7 @@ public partial class StickyNoteWindow : Window
     public void SetColorRefresh() => ApplyColor();
     public static double ClampPt(double pt) => Math.Clamp(pt, 7, 48);
     public static double PointsToDip(double pt) => ClampPt(pt) * 96.0 / 72.0;
-    public void ApplyFontSize() { loading = true; try { Editor.Document.FontSize = PointsToDip(ConfigStore.Notes.FontSize); } finally { loading = false; } }
+    public void ApplyFontSize() { loading = true; try { Document.FontSize = PointsToDip(ConfigStore.Notes.FontSize); } finally { loading = false; } }
     public void ApplyHeading(double pt)
     {
         if (AppEnv.ReadOnly) return;
@@ -459,8 +531,13 @@ public partial class StickyNoteWindow : Window
         double o = Math.Max(0.3, Math.Min(1.0, v / 100.0));
         if (Math.Abs(Opacity - o) > 0.001) Opacity = o;
     }
-    public void ApplyReadOnly() { Editor.IsReadOnly = AppEnv.ReadOnly; }
-    void ApplyZoom() => Editor.LayoutTransform = Math.Abs(Meta.Zoom - 1) < 0.01 ? Transform.Identity : new ScaleTransform(Meta.Zoom, Meta.Zoom);
+    public void ApplyReadOnly() { if (editor != null) editor.IsReadOnly = AppEnv.ReadOnly; }
+    void ApplyZoom()
+    {
+        var t = Math.Abs(Meta.Zoom - 1) < 0.01 ? Transform.Identity : new ScaleTransform(Meta.Zoom, Meta.Zoom);
+        Viewer.LayoutTransform = t;
+        if (editor != null) editor.LayoutTransform = t;
+    }
     public void SetTopMost(bool on) { Meta.TopMost = on; Topmost = on; UpdatePin(); metaDirty = true; FlushMeta(); }
     void UpdatePin() { PinBtn.Content = Meta.TopMost ? "\uE840" : "\uE718"; PinBtn.Foreground = Meta.TopMost ? (Brush)FindResource("Accent") : Brushes.White; }
     void ToggleFormatBar()
@@ -575,7 +652,7 @@ public partial class StickyNoteWindow : Window
     public bool InsertImageFile(string path)
     {
         if (AppEnv.ReadOnly) return false;
-        int fit = Math.Max(80, (int)(Editor.ActualWidth > 1 ? Editor.ActualWidth - 24 : 260));
+        int fit = Math.Max(80, (int)(EditorHost.ActualWidth > 1 ? EditorHost.ActualWidth - 24 : 260));
         var built = NoteImages.FromFile(path, fit);
         return built != null && AddPicture(built);
     }
@@ -583,7 +660,7 @@ public partial class StickyNoteWindow : Window
     public bool InsertBitmap(BitmapSource source)
     {
         if (AppEnv.ReadOnly || source == null) return false;
-        int fit = Math.Max(80, (int)(Editor.ActualWidth > 1 ? Editor.ActualWidth - 24 : 260));
+        int fit = Math.Max(80, (int)(EditorHost.ActualWidth > 1 ? EditorHost.ActualWidth - 24 : 260));
         var built = NoteImages.FromBitmap(source, fit);
         return built != null && AddPicture(built);
     }
@@ -599,12 +676,12 @@ public partial class StickyNoteWindow : Window
         if (at?.Paragraph != null) caret = at;
         else
         {
-            var para = Editor.Document.Blocks.FirstBlock as Paragraph;
-            if (para == null) { para = new Paragraph(); Editor.Document.Blocks.Add(para); }
+            var para = Document.Blocks.FirstBlock as Paragraph;
+            if (para == null) { para = new Paragraph(); Document.Blocks.Add(para); }
             caret = para.ContentEnd;
         }
         new InlineUIContainer(image, caret);
-        int index = CollectImages(Editor.Document).IndexOf(image);
+        int index = CollectImages(Document).IndexOf(image);
         if (index < 0) index = originalPicts.Count;
         var pict = new RtfPict.Pict { Group = built.Group, GoalW = built.GoalW, GoalH = built.GoalH, SourceW = built.PxW, SourceH = built.PxH };
         if (index >= originalPicts.Count) { originalPicts.Add(pict); pictViews.Add(image); }
@@ -628,7 +705,7 @@ public partial class StickyNoteWindow : Window
     public bool FitImageWidth(int index)
     {
         if (index < 0 || index >= originalPicts.Count) return false;
-        double maxDip = Math.Max(40, (Editor.ActualWidth > 1 ? Editor.ActualWidth : 280) - 28);
+        double maxDip = Math.Max(40, (EditorHost.ActualWidth > 1 ? EditorHost.ActualWidth : 280) - 28);
         var p = originalPicts[index];
         var (gw, gh) = NoteImages.FitGoals(p.GoalW, p.GoalH, maxDip);
         return ApplyGoals(index, gw, gh);
@@ -663,9 +740,9 @@ public partial class StickyNoteWindow : Window
             RenderOptions.SetBitmapScalingMode(neu, BitmapScalingMode.Linear);
             if (view.Parent is InlineUIContainer box && box.Parent is Paragraph para) para.Inlines.Remove(box);
             view.Source = null;
-            var images = CollectImages(Editor.Document);
+            var images = CollectImages(Document);
             int dest = Math.Clamp(to, 0, images.Count);
-            TextPointer where = Editor.Document.ContentEnd;
+            TextPointer where = Document.ContentEnd;
             if (dest < images.Count && images[dest].Parent is Inline inline && inline.ElementStart is { } start) where = start;
             new InlineUIContainer(neu, where);
             pictViews.Insert(Math.Min(to, pictViews.Count), neu);
@@ -804,7 +881,7 @@ public partial class StickyNoteWindow : Window
             if (dragHandle is 0 or 3 or 7) w -= dx; else if (dragHandle is 1 or 2 or 5) w += dx;
             if (dragHandle is 0 or 1 or 4) h -= dy; else if (dragHandle is 2 or 3 or 6) h += dy;
             if (!free) { if (dragHandle is 4 or 6) w = h * dragAspect; else h = w / Math.Max(0.05, dragAspect); }
-            double maxW = Math.Max(40, Editor.ActualWidth - 28);
+            double maxW = Math.Max(40, EditorHost.ActualWidth - 28);
             w = Math.Clamp(w, 24, maxW); h = Math.Max(16, h);
             if (!free) h = w / Math.Max(0.05, dragAspect);
             selectedImage.Width = w; selectedImage.Height = h;
@@ -897,8 +974,8 @@ public partial class StickyNoteWindow : Window
         index = -1;
         var p = Editor.GetPositionFromPoint(inEditor, true);
         if (p == null) return "";
-        var start = p.GetPositionAtOffset(-120, LogicalDirection.Backward) ?? Editor.Document.ContentStart;
-        var end = p.GetPositionAtOffset(160, LogicalDirection.Forward) ?? Editor.Document.ContentEnd;
+        var start = p.GetPositionAtOffset(-120, LogicalDirection.Backward) ?? Document.ContentStart;
+        var end = p.GetPositionAtOffset(160, LogicalDirection.Forward) ?? Document.ContentEnd;
         var before = new TextRange(start, p).Text;
         index = before.Length;
         return new TextRange(start, end).Text;

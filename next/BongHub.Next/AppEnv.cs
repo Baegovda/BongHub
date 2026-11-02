@@ -132,6 +132,7 @@ public static class AppEnv
     }
 
     public static readonly System.Text.StringBuilder Marks = new();
+    static readonly System.Text.StringBuilder MemLog = new();
     public static bool MainWindowCreated { get; private set; }
     public static double? TrayVisibleMs { get; private set; }
     public static double? FirstFrameMs { get; private set; }
@@ -146,6 +147,21 @@ public static class AppEnv
     public static bool SettingsHidden { get; private set; }
     /// <summary>Startup phase timestamp (ms since process start).</summary>
     public static void Mark(string what) { try { Marks.Append($"{what}={(DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds:0} "); } catch { } }
+    /// <summary>Working set and private bytes at a startup phase. Written into next_startup.txt. Does not trim.</summary>
+    public static void MarkMemory(string phase, int noteEditors = -1)
+    {
+        try
+        {
+            var p = System.Diagnostics.Process.GetCurrentProcess();
+            long ws = p.WorkingSet64 / 1048576;
+            long priv = p.PrivateMemorySize64 / 1048576;
+            string extra = noteEditors >= 0 ? $" editors={noteEditors}" : "";
+            MemLog.Append($"mem {phase} ws_mb={ws} private_mb={priv}{extra}\r\n");
+            Mark($"mem_{phase}");
+            if (OutDir != null) WriteStartup();
+        }
+        catch { }
+    }
     public static void NoteMainWindowCreated() { MainWindowCreated = true; }
     /// <summary>Call the moment the tray icon is visible. Writes next_startup.txt when --out is set.</summary>
     public static void NoteTrayVisible()
@@ -208,6 +224,7 @@ public static class AppEnv
         if (StartupNotesOpened != null) sb.Append($"startup_notes_opened={StartupNotesOpened}\r\n");
         if (SettingsHidden) sb.Append("settings_hidden=1\r\n");
         if (IdleTrimDone) sb.Append("idle_trim=1\r\n");
+        sb.Append(MemLog);
         sb.Append($"phases: {Marks}\r\n");
         File.WriteAllText(Path.Combine(OutDir, "next_startup.txt"), sb.ToString());
     }
