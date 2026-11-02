@@ -77,6 +77,41 @@ public static class NoteClip
         return sb.ToString();
     }
 
+    /// <summary>Windows CF_HTML. Offsets are UTF-8 bytes so a browser can paste the text and the pictures.</summary>
+    public static string ToHtml(IReadOnlyList<NoteClipPiece> pieces)
+    {
+        var fragment = new StringBuilder();
+        foreach (var p in pieces)
+        {
+            if (p.Text.Length > 0) fragment.Append(Html(p.Text).Replace("\n", "<br>"));
+            if (p.Png is { Length: > 0 })
+                fragment.Append("<img src=\"data:image/png;base64,").Append(Convert.ToBase64String(p.Png)).Append("\">");
+        }
+        string body = fragment.ToString();
+        const string head = "Version:0.9\r\nStartHTML:{0:0000000000}\r\nEndHTML:{1:0000000000}\r\nStartFragment:{2:0000000000}\r\nEndFragment:{3:0000000000}\r\n";
+        string prefix = string.Format(head, 0, 0, 0, 0);
+        const string pre = "<html>\r\n<body>\r\n<!--StartFragment-->";
+        const string post = "<!--EndFragment-->\r\n</body>\r\n</html>";
+        int startHtml = Encoding.UTF8.GetByteCount(prefix);
+        int startFrag = startHtml + Encoding.UTF8.GetByteCount(pre);
+        int endFrag = startFrag + Encoding.UTF8.GetByteCount(body);
+        int endHtml = endFrag + Encoding.UTF8.GetByteCount(post);
+        return string.Format(head, startHtml, endHtml, startFrag, endFrag) + pre + body + post;
+    }
+
+    static string Html(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        foreach (char c in text)
+        {
+            if (c == '&') sb.Append("&amp;");
+            else if (c == '<') sb.Append("&lt;");
+            else if (c == '>') sb.Append("&gt;");
+            else sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
     static string Escape(string text)
     {
         var sb = new StringBuilder(text.Length);

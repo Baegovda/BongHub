@@ -9,8 +9,8 @@
     <RootNamespace>BongHub</RootNamespace>
     <ApplicationIcon>res\icon_blocks.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.1.0</Version>
-    <FileVersion>1.1.0.0</FileVersion>
+    <Version>1.1.1</Version>
+    <FileVersion>1.1.1.0</FileVersion>
     <Product>BongHub</Product>
     <SatelliteResourceLanguages>ko</SatelliteResourceLanguages>
     <TieredPGO>true</TieredPGO>

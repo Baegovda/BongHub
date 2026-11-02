@@ -20,6 +20,8 @@ public sealed class NoteMeta
     public float Zoom { get; set; } = 1f;
     public string Text { get; set; } = "";
     [JsonConverter(typeof(MsDateConverter))] public DateTime Modified { get; set; } = DateTime.Now;
+    /// <summary>Optional note title. Omitted when empty so a 3.4.x reader keeps the earlier fields and ignores this one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public string Title { get; set; } = "";
 }
 
 public static class NoteStore
@@ -52,6 +54,7 @@ public static class NoteStore
     }
     public static NoteMeta? Find(string id) => All.FirstOrDefault(n => n.Id == id);
     public static string Serialize(NoteMeta m) => JsonSerializer.Serialize(m, Js);
+    public static NoteMeta? Parse(string json) => JsonSerializer.Deserialize<NoteMeta>(json, Js);
 
     public static bool SaveMeta(NoteMeta m) { m.Modified = DateTime.Now; var ok = Write(MetaPath(m.Id), new UTF8Encoding(false).GetBytes(Serialize(m))); Changed?.Invoke(); return ok; }
     public static bool SaveRtf(NoteMeta m, byte[] rtf) => Write(RtfPath(m.Id), rtf);

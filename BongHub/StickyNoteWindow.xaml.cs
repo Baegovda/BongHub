@@ -88,8 +88,11 @@ public partial class StickyNoteWindow : Window
 
         EditorHost.PreviewMouseWheel += (_, e) => { if (Keyboard.Modifiers != ModifierKeys.Control) return; e.Handled = true; Meta.Zoom = (float)Math.Clamp(Math.Round(Meta.Zoom + (e.Delta > 0 ? 0.1 : -0.1), 1), 0.6, 3.0); ApplyZoom(); MarkMeta(); };
         EditorHost.PreviewMouseLeftButtonDown += (_, _) => { if (editor == null && !AppEnv.ReadOnly) EnsureEditor().Focus(); };
-        MouseEnter += (_, _) => Fx.Fade(Bar, 1, 160);
-        MouseLeave += (_, _) => { if (!Palette.IsOpen) Fx.Fade(Bar, 0, 260); };
+        ApplyTitle();
+        TitleBox.TextChanged += (_, _) => OnTitleEdited();
+        Viewer.Loaded += (_, _) => WatchScroll(Viewer);
+        Deactivated += (_, _) => RestoreView();
+        Activated += (_, _) => RestoreView();
 
         NewBtn.Click += (_, _) => NoteManager.NewNote();
         FontBtn.Click += (_, _) => ToggleFormatBar();
@@ -212,25 +215,138 @@ public partial class StickyNoteWindow : Window
         box.PreviewMouseLeftButtonUp += OnEditorUp;
         box.PreviewMouseRightButtonUp += OnEditorRight;
         box.PreviewMouseDoubleClick += OnEditorDouble;
+        box.SelectionChanged += (_, _) => { if (!restoringView && box.IsKeyboardFocusWithin) HeldCaret = ReadCaret(); };
+        box.Loaded += (_, _) => WatchScroll(box);
         box.LostKeyboardFocus += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(ReleaseEditorIfIdle));
         editor = box;
         EditorHost.Children.Insert(0, box);
         Viewer.Visibility = Visibility.Collapsed;
         ApplyZoom();
+        RestoreView();
         return box;
     }
 
     void ReleaseEditorIfIdle()
     {
         if (editor == null || dragHandle >= 0 || Palette.IsOpen) return;
-        if (editor.IsKeyboardFocusWithin || FormatBar.IsKeyboardFocusWithin || EditorHost.IsKeyboardFocusWithin) return;
-        var doc = editor.Document;
-        editor.Document = new FlowDocument();
-        EditorHost.Children.Remove(editor);
-        editor = null;
-        Viewer.Document = doc;
-        Viewer.Visibility = Visibility.Visible;
-        ApplyZoom();
+        if (editor.IsKeyboardFocusWithin || FormatBar.IsKeyboardFocusWithin || EditorHost.IsKeyboardFocusWithin || TitleBox.IsKeyboardFocusWithin) return;
+        RememberView();
+        ParkEditor();
+    }
+
+    public double HeldScroll { get; private set; }
+    public int HeldCaret { get; private set; }
+    bool restoringView;
+
+    void WatchScroll(FrameworkElement host)
+    {
+        var sv = FindScroll(host);
+        if (sv == null || Equals(sv.Tag, "watched")) return;
+        sv.Tag = "watched";
+        sv.ScrollChanged += (_, e) =>
+        {
+            if (restoringView || e.VerticalChange == 0) return;
+            if (!host.IsKeyboardFocusWithin && sv.VerticalOffset + 1 < HeldScroll) return;
+            HeldScroll = sv.VerticalOffset;
+        };
+    }
+
+    public ScrollViewer? EditorScroll
+    {
+        get
+        {
+            var host = editor != null ? (FrameworkElement)editor : Viewer;
+            host.ApplyTemplate();
+            return FindScroll(host);
+        }
+    }
+
+    public double ReadScroll()
+    {
+        UpdateLayout();
+        return EditorScroll?.VerticalOffset ?? HeldScroll;
+    }
+
+    public int ReadCaret()
+    {
+        if (editor == null) return HeldCaret;
+        try { return Math.Max(0, editor.Document.ContentStart.GetOffsetToPosition(editor.CaretPosition)); }
+        catch { return HeldCaret; }
+    }
+
+    public void RememberView()
+    {
+        var sv = EditorScroll;
+        if (sv != null && (sv.VerticalOffset > 1 || HeldScroll < 1)) HeldScroll = sv.VerticalOffset;
+        if (editor != null && editor.IsKeyboardFocusWithin) HeldCaret = ReadCaret();
+    }
+
+    public void RestoreView()
+    {
+        void Apply()
+        {
+            restoringView = true;
+            try
+            {
+                UpdateLayout();
+                var host = editor != null ? (FrameworkElement)editor : Viewer;
+                host.ApplyTemplate();
+                host.UpdateLayout();
+                var sv = FindScroll(host);
+                if (sv != null)
+                {
+                    sv.UpdateLayout();
+                    sv.ScrollToVerticalOffset(HeldScroll);
+                }
+                if (editor != null)
+                {
+                    try
+                    {
+                        var caret = editor.Document.ContentStart.GetPositionAtOffset(HeldCaret, LogicalDirection.Forward);
+                        if (caret != null) editor.CaretPosition = caret;
+                    }
+                    catch { }
+                }
+            }
+            finally { restoringView = false; }
+        }
+        Apply();
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, Apply);
+    }
+
+    /// <summary>Leaves the editor the way a focus loss does, then puts the scroll back.</summary>
+    public void ParkEditor()
+    {
+        RememberView();
+        if (editor != null)
+        {
+            var doc = editor.Document;
+            editor.Document = new FlowDocument();
+            EditorHost.Children.Remove(editor);
+            editor = null;
+            Viewer.Document = doc;
+            Viewer.Visibility = Visibility.Visible;
+            ApplyZoom();
+        }
+        RestoreView();
+    }
+
+    public void ResumeEditor()
+    {
+        RememberView();
+        EnsureEditor();
+        RestoreView();
+    }
+
+    static ScrollViewer? FindScroll(DependencyObject root)
+    {
+        if (root is ScrollViewer sv) return sv;
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var found = FindScroll(VisualTreeHelper.GetChild(root, i));
+            if (found != null) return found;
+        }
+        return null;
     }
 
     // ---------- document ----------
@@ -367,6 +483,7 @@ public partial class StickyNoteWindow : Window
     {
         textTimer.Stop();
         if (!TextDirty) return;
+        RememberView();
         TextDirty = false;
         var range = new TextRange(Document.ContentStart, Document.ContentEnd);
         using var ms = new MemoryStream();
@@ -396,6 +513,7 @@ public partial class StickyNoteWindow : Window
             ImageGuardHits++;
             AppEnv.Log($"image guard: kept existing rtf for {Meta.Id} {dropWarn}");
             metaDirty = true; FlushMeta();
+            RestoreView();
             return;
         }
         rtf = chosen;
@@ -406,6 +524,7 @@ public partial class StickyNoteWindow : Window
         }
         if (NoteStore.SaveRtf(Meta, rtf!)) { RtfWrites++; sourcePictCount = originalPicts.Count > 0 ? originalPicts.Count : emitted; WarnIfLarge(); }
         metaDirty = true; FlushMeta();
+        RestoreView();
     }
     static byte[]? InjectPicts(byte[] wpf, List<RtfPict.Pict> picts)
     {
@@ -461,10 +580,35 @@ public partial class StickyNoteWindow : Window
         if (!NoteColors.Grad) return new SolidColorBrush(NoteColors.Body(Meta.Color));
         var b = new LinearGradientBrush(NoteColors.SurfA(Meta.Color), NoteColors.SurfB(Meta.Color), new Point(0, 0), new Point(1, 1)); b.Freeze(); return b;
     }
+    bool suppressTitle;
+    void ApplyTitle()
+    {
+        suppressTitle = true;
+        TitleBox.Text = Meta.Title ?? "";
+        TitleHint.Visibility = TitleBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        suppressTitle = false;
+    }
+    void OnTitleEdited()
+    {
+        TitleHint.Visibility = TitleBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (suppressTitle) return;
+        string next = (TitleBox.Text ?? "").Replace("\r", "").Replace("\n", " ");
+        if (next.Length > 80) next = next[..80];
+        if (next == Meta.Title) return;
+        Meta.Title = next;
+        MarkMeta();
+    }
+    public void SetTitle(string title)
+    {
+        Meta.Title = title ?? "";
+        ApplyTitle();
+        metaDirty = true;
+        FlushMeta();
+    }
+
     void ApplyColor()
     {
         Background = MakeBrush();
-        TitleText.Text = NoteColors.Name(Meta.Color);
         var h = Win32.Handle(this);
         if (h != IntPtr.Zero) { Dwm.BorderColor(h, NoteColors.Mix(NoteColors.SurfA(Meta.Color), Colors.White, 0.12)); var src = HwndSource.FromHwnd(h); if (src?.CompositionTarget != null) src.CompositionTarget.BackgroundColor = NoteColors.SurfA(Meta.Color); }
     }
@@ -790,11 +934,27 @@ public partial class StickyNoteWindow : Window
 
     public bool CopyMixed()
     {
-        var pieces = ExportPieces();
+        TextPointer? selStart = null, selEnd = null;
+        if (editor != null && !editor.Selection.IsEmpty)
+        {
+            selStart = editor.Selection.Start;
+            selEnd = editor.Selection.End;
+        }
+        else return false;
+        var pieces = ExportPieces(selStart, selEnd);
         if (!pieces.Any(p => p.Png is { Length: > 0 })) return false;
         string pack = NoteClip.Pack(pieces);
         string plain = NoteClip.Plain(pieces);
-        NoteClipSession.Publish(pack, plain, NoteClip.ToRtf(pieces), pieces.FirstOrDefault(p => p.Png is { Length: > 0 })?.Png);
+        string? xaml = null;
+        try
+        {
+            using var ms = new MemoryStream();
+            new TextRange(selStart, selEnd).Save(ms, DataFormats.Xaml);
+            xaml = Encoding.UTF8.GetString(ms.ToArray());
+        }
+        catch { }
+        var pngs = pieces.Where(p => p.Png is { Length: > 0 }).ToList();
+        NoteClipSession.Publish(pack, plain, NoteClip.ToRtf(pieces), pngs.Count == 1 ? pngs[0].Png : null, xaml, NoteClip.ToHtml(pieces));
         return true;
     }
 
@@ -843,7 +1003,7 @@ public partial class StickyNoteWindow : Window
         catch (Exception e) { AppEnv.Log("paste png: " + e.Message); }
     }
 
-    List<NoteClipPiece> ExportPieces()
+    List<NoteClipPiece> ExportPieces(TextPointer selStart, TextPointer selEnd)
     {
         var pieces = new List<NoteClipPiece>();
         var sb = new StringBuilder();
@@ -854,23 +1014,65 @@ public partial class StickyNoteWindow : Window
             pieces.Add(new NoteClipPiece { Text = sb.ToString() });
             sb.Clear();
         }
-        void Walk(IEnumerable<Inline> inlines)
+        bool Overlaps(TextPointer a, TextPointer b) => a.CompareTo(selEnd) < 0 && b.CompareTo(selStart) > 0;
+        string RunText(Run run)
+        {
+            var s = run.ContentStart.CompareTo(selStart) < 0 ? selStart : run.ContentStart;
+            var e = run.ContentEnd.CompareTo(selEnd) > 0 ? selEnd : run.ContentEnd;
+            if (s.CompareTo(e) >= 0) return "";
+            return new TextRange(s, e).Text;
+        }
+        void Walk(IEnumerable<Inline> inlines, bool take)
         {
             foreach (var i in inlines)
             {
-                if (i is Run r) sb.Append(r.Text);
-                else if (i is LineBreak) sb.Append('\n');
-                else if (i is Span s) Walk(s.Inlines);
-                else if (i is InlineUIContainer { Child: Image })
+                if (i is Run r)
                 {
-                    Flush();
-                    var png = PngAt(image++);
-                    if (png != null) pieces.Add(new NoteClipPiece { Png = png });
+                    if (take) sb.Append(RunText(r));
+                }
+                else if (i is LineBreak lb)
+                {
+                    if (take && Overlaps(lb.ElementStart, lb.ElementEnd)) sb.Append('\n');
+                }
+                else if (i is Span s) Walk(s.Inlines, take && Overlaps(s.ContentStart, s.ContentEnd));
+                else if (i is InlineUIContainer { Child: Image } box)
+                {
+                    int idx = image++;
+                    if (take && Overlaps(box.ElementStart, box.ElementEnd))
+                    {
+                        Flush();
+                        var png = PngAt(idx);
+                        if (png != null) pieces.Add(new NoteClipPiece { Png = png });
+                    }
                 }
             }
         }
-        foreach (var b in Document.Blocks)
-            if (b is Paragraph p) { Walk(p.Inlines); sb.Append('\n'); }
+        void WalkBlocks(IEnumerable<Block> blocks)
+        {
+            foreach (var b in blocks)
+            {
+                if (b is Paragraph p)
+                {
+                    bool take = Overlaps(p.ContentStart, p.ContentEnd);
+                    Walk(p.Inlines, take);
+                    if (take) sb.Append('\n');
+                }
+                else if (b is List list)
+                    foreach (var item in list.ListItems) WalkBlocks(item.Blocks);
+                else if (b is Section s) WalkBlocks(s.Blocks);
+                else if (b is BlockUIContainer { Child: Image } block)
+                {
+                    int idx = image++;
+                    if (Overlaps(block.ElementStart, block.ElementEnd))
+                    {
+                        Flush();
+                        var png = PngAt(idx);
+                        if (png != null) pieces.Add(new NoteClipPiece { Png = png });
+                    }
+                }
+            }
+        }
+        WalkBlocks(Document.Blocks);
         Flush();
         return pieces;
     }
@@ -1023,6 +1225,7 @@ public partial class StickyNoteWindow : Window
         if (index < 0) return;
         var menu = new ContextMenu { PlacementTarget = Editor };
         void Add(string label, Action act) { var item = new MenuItem { Header = label }; item.Click += (_, _) => act(); menu.Items.Add(item); }
+        Add("복사", () => { if (!CopyMixed()) CopyImage(index); });
         Add("이미지 복사", () => CopyImage(index));
         Add("이미지 보기 (원본)", () => OpenViewer(index));
         menu.Items.Add(new Separator());
@@ -1094,18 +1297,28 @@ public partial class StickyNoteWindow : Window
 public static class NoteClipSession
 {
     public static string? LastPack { get; private set; }
+    public static string? LastRtf { get; private set; }
+    public static string? LastXaml { get; private set; }
+    public static string? LastHtml { get; private set; }
+    public static bool LastHadBitmap { get; private set; }
     public static int SystemCalls { get; private set; }
     public static bool AllowsSystem => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest;
 
-    public static void Publish(string pack, string plain, string rtf, byte[]? png)
+    public static void Publish(string pack, string plain, string rtf, byte[]? png, string? xaml = null, string? html = null)
     {
         LastPack = pack;
+        LastRtf = rtf;
+        LastXaml = xaml;
+        LastHtml = html;
+        LastHadBitmap = png is { Length: > 0 };
         if (!AllowsSystem) return;
         SystemCalls++;
         var data = new DataObject();
         data.SetData(NoteClip.Format, pack);
         data.SetData(DataFormats.UnicodeText, plain ?? "");
         data.SetData(DataFormats.Rtf, rtf ?? "");
+        if (!string.IsNullOrEmpty(xaml)) data.SetData(DataFormats.Xaml, xaml);
+        if (!string.IsNullOrEmpty(html)) data.SetData(DataFormats.Html, html);
         if (png is { Length: > 0 })
         {
             try

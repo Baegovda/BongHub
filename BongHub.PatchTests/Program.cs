@@ -705,6 +705,10 @@ var clip = NoteClip.Unpack(NoteClip.Pack(new[] { new NoteClipPiece { Text = "안
 string clipPlain = NoteClip.Plain(clip);
 string clipRtf = NoteClip.ToRtf(clip);
 Check("note clip keeps text and png", clip.Count == 3 && clipPlain == "안녕 끝" && !clipPlain.Contains("Image") && clip[1].Png is { Length: 4 } && clipRtf.Contains("\\pngblip") && clipRtf.Contains("89504e47"));
+string clipHtml = NoteClip.ToHtml(clip);
+int fragAt = clipHtml.IndexOf("<!--StartFragment-->", StringComparison.Ordinal);
+int fragEnd = clipHtml.IndexOf("<!--EndFragment-->", StringComparison.Ordinal);
+Check("note html keeps text and png", fragAt > 0 && fragEnd > fragAt && clipHtml.Contains("안녕") && clipHtml.Contains("data:image/png;base64") && !clipHtml.Contains(">Image<"));
 Check("active preset is not applied again", !PresetApplyPolicy.IsCurrent("", "작업") && PresetApplyPolicy.IsCurrent("작업", "작업") && PresetApplyPolicy.Toast("작업") == "이미 작업 상태입니다!" && !PresetApplyPolicy.IsCurrent("작업", "자리비움"));
 var snapped = ProfileLayout.Snap(new ProfileBox(13, 17, 200, 100), new ProfileBox(0, 0, 800, 600), 8);
 Check("profile drag snaps inside the monitor", snapped.X == 16 && snapped.Y == 16 && snapped.Right <= 800 && snapped.Bottom <= 600);
@@ -743,6 +747,21 @@ try
     }, remoteProfiles, true);
     var tree = remoteProfiles.Snapshot();
     Check("profiles.json is additive", ran.Length == 0 && tree.ContainsKey("data/profiles.json") && tree.ContainsKey("data/config.json") && Encoding.UTF8.GetString(tree["data/profiles.json"].Bytes) == profileJson);
+    string titledNote = "{\"Id\":\"n9\",\"Color\":\"yellow\",\"X\":0,\"Y\":0,\"W\":10,\"H\":10,\"TopMost\":false,\"Open\":true,\"Zoom\":1,\"Text\":\"본문\",\"Modified\":\"\\/Date(0)\\/\",\"Title\":\"회의\"}";
+    File.WriteAllText(Path.Combine(profileRoot, "notes", "n9.json"), titledNote);
+    var titledRemote = new MemoryCloud();
+    string titledRun = CloudEngine.Run(new CloudWorkspace
+    {
+        ConfigFile = Path.Combine(profileRoot, "config.json"),
+        NotesDir = Path.Combine(profileRoot, "notes"),
+        DeskDir = Path.Combine(profileRoot, "desktop"),
+        Device = "PC-A",
+        AppVersion = "1.1.1",
+        UtcNow = new DateTime(2026, 1, 2, 0, 5, 0, DateTimeKind.Utc),
+        LocalNow = new DateTime(2026, 1, 2, 9, 5, 0)
+    }, titledRemote, true);
+    var titledTree = titledRemote.Snapshot();
+    Check("note title syncs beside the 3.4.x fields", titledRun.Length == 0 && titledTree.ContainsKey("data/notes/n9.json") && Encoding.UTF8.GetString(titledTree["data/notes/n9.json"].Bytes).Contains("\"Title\":\"회의\"") && titledTree.ContainsKey("data/config.json"));
 }
 finally { try { Directory.Delete(profileRoot, true); } catch { } }
     }
