@@ -26,6 +26,26 @@ public sealed class DeskLayoutFile
     [JsonPropertyOrder(6)] public List<DeskIcon> Items { get; set; } = new();
 }
 
+/// <summary>Reads/writes the JavaScriptSerializer date form "\/Date(ms)\/" so 3.4.x keeps reading our files.</summary>
+public sealed class MsDateConverter : JsonConverter<DateTime>
+{
+    public override DateTime Read(ref Utf8JsonReader reader, Type t, JsonSerializerOptions o)
+    {
+        var s = reader.GetString() ?? "";
+        if (s.StartsWith("/Date(", StringComparison.Ordinal))
+        {
+            var body = s.Substring(6, s.IndexOf(')') - 6); int cut = body.IndexOfAny(['+', '-'], 1); if (cut > 0) body = body[..cut];
+            return DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(body)).LocalDateTime;
+        }
+        return DateTime.TryParse(s, out var d) ? d : DateTime.Now;
+    }
+    public override void Write(Utf8JsonWriter w, DateTime v, JsonSerializerOptions o)
+    {
+        long ms = new DateTimeOffset(v.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(v, DateTimeKind.Local) : v).ToUnixTimeMilliseconds();
+        w.WriteRawValue("\"\\/Date(" + ms + ")\\/\"", skipInputValidation: true);
+    }
+}
+
 public sealed class DeskResult
 {
     public bool Ok;
@@ -45,10 +65,12 @@ public readonly record struct MonitorSpec(int W, int H, int X, int Y, bool Prima
 public static class DesktopGate
 {
     public static bool Armed { get; private set; }
-    public static bool RealAllowed => Armed && !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden;
+    /// <summary>The app sets this from <c>AppEnv</c>. Unset means blocked, so a test host that only compiles this file cannot open the desktop.</summary>
+    public static Func<bool>? Allow;
+    public static bool RealAllowed => Armed && Allow?.Invoke() == true;
     public static void Arm()
     {
-        if (AppEnv.Off || AppEnv.Smoke || AppEnv.NoteTest || AppEnv.IdleHidden) return;
+        if (Allow?.Invoke() != true) return;
         Armed = true;
     }
     public static void Demand()
@@ -60,12 +82,14 @@ public static class DesktopGate
 public static class ScreenMap
 {
     public static Func<IReadOnlyList<MonitorSpec>>? Source;
+    /// <summary>Normal app points this at the monitor enumeration. It is not the desktop icon list view, and tests leave it unset.</summary>
+    public static Func<IReadOnlyList<MonitorSpec>>? Live;
 
     public static IReadOnlyList<MonitorSpec> Current()
     {
         if (Source != null) return Source();
-        if (!DesktopGate.RealAllowed) return Array.Empty<MonitorSpec>();
-        return Win32.Monitors().Select(m => new MonitorSpec(m.W, m.H, m.X, m.Y, m.Primary)).ToList();
+        if (!DesktopGate.RealAllowed || Live == null) return Array.Empty<MonitorSpec>();
+        return Live();
     }
 
     public static string Key(IEnumerable<MonitorSpec> monitors)
@@ -174,7 +198,9 @@ public sealed class LayoutStore
     };
     public string FilePath { get; }
     public LayoutStore(string folder) { FilePath = Path.Combine(folder, "layouts.json"); }
-    public static LayoutStore Default => new(Path.Combine(AppEnv.DataDir, "desktop"));
+    /// <summary>The app points this at <c>AppEnv.DataDir</c>. This file does not reference that type, so the patch tests can compile it alone.</summary>
+    public static Func<string>? DataFolder;
+    public static LayoutStore Default => new(Path.Combine(DataFolder?.Invoke() ?? Path.GetTempPath(), "desktop"));
 
     public List<DeskLayoutFile> Load()
     {

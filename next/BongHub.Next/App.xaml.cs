@@ -25,6 +25,9 @@ public partial class App : Application
         AppEnv.RenderModeLabel = "software";
         base.OnStartup(e);
         AppEnv.Init(e.Args);
+        LayoutStore.DataFolder = () => AppEnv.DataDir;
+        DesktopGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden;
+        ScreenMap.Live = () => Win32.Monitors().Select(m => new MonitorSpec(m.W, m.H, m.X, m.Y, m.Primary)).ToList();
         AppEnv.Mark("onstartup");
         DispatcherUnhandledException += (_, ex) => { AppEnv.Log("unhandled: " + ex.Exception); ex.Handled = true; };
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => AppEnv.Log("fatal: " + ex.ExceptionObject);

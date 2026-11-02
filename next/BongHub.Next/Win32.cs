@@ -172,7 +172,14 @@ internal static class Win32
         return list.ToArray();
     }
 
-    public readonly struct MonitorBox { public int W, H, X, Y; public bool Primary; }
+    public readonly struct MonitorBox
+    {
+        public int W { get; init; }
+        public int H { get; init; }
+        public int X { get; init; }
+        public int Y { get; init; }
+        public bool Primary { get; init; }
+    }
     /// <summary>Monitor rectangles for the screen-configuration key. This is not the desktop icon list view.</summary>
     public static MonitorBox[] Monitors()
     {

@@ -22,26 +22,6 @@ public sealed class NoteMeta
     [JsonConverter(typeof(MsDateConverter))] public DateTime Modified { get; set; } = DateTime.Now;
 }
 
-/// <summary>Reads/writes the JavaScriptSerializer date form "\/Date(ms)\/" so 3.4.7 keeps reading our files.</summary>
-public sealed class MsDateConverter : JsonConverter<DateTime>
-{
-    public override DateTime Read(ref Utf8JsonReader reader, Type t, JsonSerializerOptions o)
-    {
-        var s = reader.GetString() ?? "";
-        if (s.StartsWith("/Date(", StringComparison.Ordinal))
-        {
-            var body = s.Substring(6, s.IndexOf(')') - 6); int cut = body.IndexOfAny(['+', '-'], 1); if (cut > 0) body = body[..cut];
-            return DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(body)).LocalDateTime;
-        }
-        return DateTime.TryParse(s, out var d) ? d : DateTime.Now;
-    }
-    public override void Write(Utf8JsonWriter w, DateTime v, JsonSerializerOptions o)
-    {
-        long ms = new DateTimeOffset(v.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(v, DateTimeKind.Local) : v).ToUnixTimeMilliseconds();
-        w.WriteRawValue("\"\\/Date(" + ms + ")\\/\"", skipInputValidation: true);
-    }
-}
-
 public static class NoteStore
 {
     public static readonly List<NoteMeta> All = new();
