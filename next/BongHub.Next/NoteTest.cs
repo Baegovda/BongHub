@@ -16,7 +16,7 @@ public static class NoteTest
         try
         {
             if (AppEnv.IsDefaultData) { t.Check("refuses real data folder", false, "pass --data <copy>"); }
-            else await Body(t);
+            else { AppEnv.Log("notetest start"); await Body(t); }
         }
         catch (Exception e) { t.Check("no exception", false, e.ToString()); }
         t.Save("next_notetest.txt");
@@ -52,7 +52,8 @@ public static class NoteTest
         foreach (var (m, w) in wins)
         {
             var r = Win32.Rect(w);
-            if (r.Left - AppEnv.OffsetX == m.X && r.Top - AppEnv.OffsetY == m.Y && r.Width == m.W && r.Height == m.H) placed++; else bad.Add($"{m.Id}: want {m.X},{m.Y} {m.W}x{m.H} got {r.Left - AppEnv.OffsetX},{r.Top - AppEnv.OffsetY} {r.Width}x{r.Height}");
+            bool onScreen = Win32.OnAnyMonitor(r.Left, r.Top, r.Width, r.Height);
+            if (!onScreen && r.Left - AppEnv.OffsetX == m.X && r.Top - AppEnv.OffsetY == m.Y && r.Width == m.W && r.Height == m.H) placed++; else bad.Add($"{m.Id}: want {m.X},{m.Y} {m.W}x{m.H} got {r.Left - AppEnv.OffsetX},{r.Top - AppEnv.OffsetY} {r.Width}x{r.Height}{(onScreen ? " ON SCREEN" : "")}");
         }
         t.Check("exact position/size restore (physical px)", placed == wins.Count, bad.Count == 0 ? $"{placed}/{wins.Count}" : string.Join("; ", bad));
         foreach (var (m, w) in wins) t.Info($"note {m.Id}: load={w.LoadStatus}, pict={Pict(NoteStore.RtfPath(m.Id))}, color={m.Color}, text={m.Text.Length} chars");

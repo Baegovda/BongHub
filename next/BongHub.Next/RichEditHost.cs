@@ -30,6 +30,7 @@ public sealed class RichEditHost : HwndHost
         int style = WsChild | WsVisible | WsVScroll | EsMultiline | EsAutoVScroll | EsWantReturn;
         hwnd = CreateWindowExW(0, "RICHEDIT50W", "", style, 0, 0, 80, 80, hwndParent.Handle, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
         if (hwnd == IntPtr.Zero) throw new InvalidOperationException("RICHEDIT50W");
+        AppEnv.Log("richedit hwnd created");
         if (initial.Length > 0) LoadedRtf = Stream(hwnd, EmStreamIn, initial, out _);
         initial = [];
         return new HandleRef(this, hwnd);
@@ -91,51 +92,97 @@ public sealed class RichEditHost : HwndHost
         return n < 0 ? 0 : n;
     }
 
+    // Static, blittable, stdcall. A `ref` parameter makes the CLR emit a marshal stub that CFG
+    // (FAST_FAIL_GUARD_ICALL_CHECK_FAILURE, fast-fail code 10, exit 0xC0000409) rejects when
+    // msftedit indirect-calls it. GetFunctionPointerForDelegate on a blittable delegate is a valid target.
+    static readonly EditStreamProc ReadKeep = Read;
+    static readonly EditStreamProc WriteKeep = Write;
+    static readonly IntPtr ReadPtr = Marshal.GetFunctionPointerForDelegate(ReadKeep);
+    static readonly IntPtr WritePtr = Marshal.GetFunctionPointerForDelegate(WriteKeep);
+
     static bool Stream(IntPtr hwnd, int msg, byte[]? input, out byte[] output)
     {
         output = [];
-        var state = new StreamBox { Input = input ?? [], Out = msg == EmStreamOut ? new MemoryStream() : null };
-        var cb = msg == EmStreamIn ? (EditStreamProc)Read : Write;
+        bool inbound = msg == EmStreamIn;
+        var state = new StreamBox { Input = input ?? [], Out = inbound ? null : new MemoryStream() };
         var pin = GCHandle.Alloc(state);
+        string which = inbound ? "in" : "out";
+        AppEnv.Log($"richedit stream {which} begin bytes={state.Input.Length}");
         try
         {
-            var es = new EDITSTREAM { dwCookie = GCHandle.ToIntPtr(pin), pfnCallback = cb };
+            var es = new EDITSTREAM
+            {
+                dwCookie = GCHandle.ToIntPtr(pin),
+                pfnCallback = inbound ? ReadPtr : WritePtr,
+            };
             SendStream(hwnd, msg, new IntPtr(SfRtf), ref es);
+            AppEnv.Log($"richedit stream {which} end err={es.dwError}");
             if (es.dwError != 0) return false;
             if (state.Out != null) output = state.Out.ToArray();
             return true;
         }
-        finally { if (pin.IsAllocated) pin.Free(); }
+        catch (Exception e)
+        {
+            AppEnv.Log("richedit stream " + which + ": " + e);
+            return false;
+        }
+        finally
+        {
+            if (pin.IsAllocated) pin.Free();
+            GC.KeepAlive(ReadKeep);
+            GC.KeepAlive(WriteKeep);
+        }
     }
 
-    static uint Read(IntPtr cookie, IntPtr buf, int cb, ref int pcb)
+    static uint Read(IntPtr cookie, IntPtr buf, int cb, IntPtr pcb)
     {
-        var st = (StreamBox)GCHandle.FromIntPtr(cookie).Target!;
-        int n = Math.Min(cb, st.Input.Length - st.Pos);
-        if (n > 0) Marshal.Copy(st.Input, st.Pos, buf, n);
-        st.Pos += n;
-        pcb = n;
-        return 0;
+        try
+        {
+            if (GCHandle.FromIntPtr(cookie).Target is not StreamBox st) { WriteCount(pcb, 0); return 1; }
+            int n = 0;
+            if (cb > 0 && buf != IntPtr.Zero && st.Pos < st.Input.Length)
+            {
+                n = Math.Min(cb, st.Input.Length - st.Pos);
+                Marshal.Copy(st.Input, st.Pos, buf, n);
+                st.Pos += n;
+            }
+            WriteCount(pcb, n);
+            return 0;
+        }
+        catch { WriteCount(pcb, 0); return 1; }
     }
 
-    static uint Write(IntPtr cookie, IntPtr buf, int cb, ref int pcb)
+    static uint Write(IntPtr cookie, IntPtr buf, int cb, IntPtr pcb)
     {
-        var st = (StreamBox)GCHandle.FromIntPtr(cookie).Target!;
-        var tmp = new byte[cb];
-        Marshal.Copy(buf, tmp, 0, cb);
-        st.Out!.Write(tmp, 0, cb);
-        pcb = cb;
-        return 0;
+        try
+        {
+            if (GCHandle.FromIntPtr(cookie).Target is not StreamBox st || st.Out == null) { WriteCount(pcb, 0); return 1; }
+            if (cb > 0 && buf != IntPtr.Zero)
+            {
+                var tmp = new byte[cb];
+                Marshal.Copy(buf, tmp, 0, cb);
+                st.Out.Write(tmp, 0, cb);
+            }
+            WriteCount(pcb, Math.Max(0, cb));
+            return 0;
+        }
+        catch { WriteCount(pcb, 0); return 1; }
+    }
+
+    static void WriteCount(IntPtr pcb, int n)
+    {
+        if (pcb != IntPtr.Zero) Marshal.WriteInt32(pcb, n);
     }
 
     sealed class StreamBox { public byte[] Input = []; public int Pos; public MemoryStream? Out; }
 
+    // Natural alignment matches the native EDITSTREAM: pointer, DWORD, pad, pointer. 24 bytes on x64, 12 on x86.
     [StructLayout(LayoutKind.Sequential)]
     struct EDITSTREAM
     {
         public IntPtr dwCookie;
         public uint dwError;
-        public EditStreamProc pfnCallback;
+        public IntPtr pfnCallback;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -152,7 +199,7 @@ public sealed class RichEditHost : HwndHost
     }
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    delegate uint EditStreamProc(IntPtr cookie, IntPtr buf, int cb, ref int pcb);
+    delegate uint EditStreamProc(IntPtr cookie, IntPtr buf, int cb, IntPtr pcb);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     static extern IntPtr LoadLibrary(string lpFileName);

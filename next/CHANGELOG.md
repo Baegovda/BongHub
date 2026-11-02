@@ -9,7 +9,8 @@
 - 글자 크기는 7–48pt예요. 메모 안에서는 텍스트 11, 제목1 24, 제목2 20, 제목3 16, 제목4 13과 Ctrl++/− 가 있어요. 색 팔레트는 호버로 미리 보고, 클릭해야 저장해요. 맞춤 색은 `c:RRGGBB:RRGGBB`예요.
 - 링크 클릭, 이미지 파일 드롭·붙여넣기·파일 선택. 새 그림은 `\pngblip` 또는 `\jpegblip`이고, 이미 1600px 이하인 PNG/JPEG 파일 바이트는 다시 인코딩하지 않아요. 크기 변경은 `\picwgoal`/`\pichgoal`만 바꿔요. 25/50/75/100, 폭 맞춤, 이동, 복사, 더블클릭 뷰어가 있어요.
 - WPF가 pict를 떨어뜨리면 그 메모만 msftedit(`RICHEDIT50W`)를 `HwndHost`로 붙여요. WinForms는 넣지 않아요. 디스크에 있던 그림 바이트를 스트림으로 다시 읽어요.
-- 표시 직후 `WS_EX_NOACTIVATE`를 풀어요. 모달 중에는 메모 창을 다시 활성화해요. 화면 밖은 작업 영역으로 클램프해요. `--off`에서는 클램프하지 않아서 기존 좌표 테스트가 그대로예요.
+- 표시 직후 `WS_EX_NOACTIVATE`를 풀어요. 모달 중에는 메모 창을 다시 활성화해요. 화면 밖은 작업 영역으로 클램프해요. `--off`에서는 클램프하지 않고, WPF가 창을 실제 모니터로 끌어오면 `WM_WINDOWPOSCHANGING`에서 마지막 화면 밖 좌표로 되돌려요. 전역 후킹은 아니에요.
+- RichEdit에 RTF를 넣을 때 콜백은 `ref` 없는 stdcall이고, 함수 포인터는 `GetFunctionPointerForDelegate`로 잡아요. `ref` 대리자는 CFG가 `FAST_FAIL_GUARD_ICALL_CHECK_FAILURE`(fast-fail 10, 종료 `0xC0000409`)로 프로세스를 끊어요. 스트림 전후에 `next_error.log`를 남겨요.
 - 8MB를 넘으면 메모 안에 경고를 보여요. 대화상자로 테스트를 막지 않아요.
 - 스모크 **65**, 노트 **89**(`data/notes` 7개에 그림이 있을 때). 0.4.0의 58과 26은 그 안에 들어 있어요.
 

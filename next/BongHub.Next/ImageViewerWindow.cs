@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -29,7 +30,21 @@ public sealed class ImageViewerWindow : Window
         Height = 480;
         Background = new SolidColorBrush(Color.FromRgb(0x0E, 0x0E, 0x1A));
         WindowStartupLocation = WindowStartupLocation.Manual;
-        if (AppEnv.Off) { Left = AppEnv.OffsetX + 80; Top = AppEnv.OffsetY + 80; }
+        if (AppEnv.Off)
+        {
+            double s = Win32.SystemScale; if (s < 0.5) s = 1;
+            Left = (AppEnv.OffsetX + 80) / s;
+            Top = (AppEnv.OffsetY + 80) / s;
+        }
+        SourceInitialized += (_, _) =>
+        {
+            if (!AppEnv.Off) return;
+            int x = AppEnv.OffsetX + 80, y = AppEnv.OffsetY + 80;
+            Win32.RememberOffScreen(Win32.Handle(this), x, y);
+            HwndSource.FromHwnd(Win32.Handle(this))?.AddHook(Win32.OffScreenHook);
+            Win32.Place(this, x, y, Math.Max(1, (int)ActualWidth), Math.Max(1, (int)ActualHeight));
+        };
+        Closed += (_, _) => Win32.ForgetOffScreen(Win32.Handle(this));
         var frozen = source;
         if (!frozen.IsFrozen) { var c = source.Clone(); c.Freeze(); frozen = c; }
         image = new Image { Source = frozen, Stretch = Stretch.Fill, Width = Math.Max(1, frozen.PixelWidth), Height = Math.Max(1, frozen.PixelHeight) };

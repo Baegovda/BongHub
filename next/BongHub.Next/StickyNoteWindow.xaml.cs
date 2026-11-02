@@ -48,6 +48,12 @@ public partial class StickyNoteWindow : Window
         textTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(900), DispatcherPriority.Background, (_, _) => FlushText(), Dispatcher) { IsEnabled = false };
         metaTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(700), DispatcherPriority.Background, (_, _) => FlushMeta(), Dispatcher) { IsEnabled = false };
         Topmost = meta.TopMost;
+        if (AppEnv.Off)
+        {
+            double s = Win32.SystemScale; if (s < 0.5) s = 1;
+            Left = (meta.X + AppEnv.OffsetX) / s;
+            Top = (meta.Y + AppEnv.OffsetY) / s;
+        }
         ShownColorKey = meta.Color;
         ApplyColor();
         ApplyOpacity();
@@ -111,10 +117,14 @@ public partial class StickyNoteWindow : Window
             }
             else if (!Win32.OnAnyMonitor(x, y, w, h)) { var a = Win32.WorkAreaAtCursor(); x = a.Left + 60; y = a.Top + 60; }
         }
-        Win32.Place(this, x + AppEnv.OffsetX, y + AppEnv.OffsetY, w, h);
+        int px = x + AppEnv.OffsetX, py = y + AppEnv.OffsetY;
+        // Record the physical target before WPF applies Left/Top, so a monitor pull is undone exactly.
+        Win32.RememberOffScreen(Win32.Handle(this), px, py);
+        Win32.Place(this, px, py, w, h);
     }
     IntPtr Hook(IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled)
     {
+        Win32.OffScreenHook(h, msg, wp, lp, ref handled);
         if (msg == Win32.WM_ENTERSIZEMOVE) { sizing = true; textTimer.Stop(); metaTimer.Stop(); }
         else if (msg == Win32.WM_EXITSIZEMOVE) { sizing = false; CaptureRect(); FlushMeta(); if (TextDirty) textTimer.Start(); }
         else if (msg == Win32.WM_MOUSEACTIVATE) Win32.AllowActivate(h);
@@ -324,7 +334,7 @@ public partial class StickyNoteWindow : Window
         if (dropped)
         {
             // WPF could not keep every pict. Leave the file bytes, then host RichEdit so the next edit does not drop them again.
-            ImageGuardHits++; AppEnv.Log($"image guard: kept existing rtf for {Meta.Id}");
+            ImageGuardHits++; AppEnv.Log($"image guard: kept existing rtf for {Meta.Id} want={wantImages} emitted={emitted} doc={DocImageCount()}");
             metaDirty = true; FlushMeta();
             TryHostRichEdit();
             return;
@@ -370,10 +380,18 @@ public partial class StickyNoteWindow : Window
         try { file = File.Exists(NoteStore.RtfPath(Meta.Id)) ? File.ReadAllBytes(NoteStore.RtfPath(Meta.Id)) : []; }
         catch { return false; }
         if (file.Length == 0) return false;
+        AppEnv.Log($"richedit host begin {Meta.Id} bytes={file.Length}");
         try
         {
             var host = new RichEditHost(file);
             EditorHost.Children.Add(host);
+            AppEnv.Log($"richedit host window {Meta.Id} loaded={host.LoadedRtf}");
+            if (!host.LoadedRtf)
+            {
+                EditorHost.Children.Remove(host);
+                AppEnv.Log($"richedit stream failed {Meta.Id}; kept WPF editor and the file");
+                return false;
+            }
             rich = host;
             UsesRichEdit = true;
             try { host.SetPaper(NoteColors.SurfA(Meta.Color)); } catch { }
@@ -955,5 +973,5 @@ public partial class StickyNoteWindow : Window
         NoteManager.Forget(this);
         Fx.Disappear(Root, () => Close());
     }
-    protected override void OnClosed(EventArgs e) { textTimer.Stop(); metaTimer.Stop(); NoteManager.Forget(this); base.OnClosed(e); }
+    protected override void OnClosed(EventArgs e) { textTimer.Stop(); metaTimer.Stop(); Win32.ForgetOffScreen(Win32.Handle(this)); NoteManager.Forget(this); base.OnClosed(e); }
 }
