@@ -772,6 +772,24 @@ var screens = new List<MonitorSpec> { new(3840, 2160, 0, 0, true), new(1920, 108
 var seeded = ProfileDoc.Migrate(new[] { new MonitorPreset { Name = "작업", Primary = "SAM1", Enable = new List<string> { "SAM1" } } }, Array.Empty<WindowRule>(), null, screens);
 var seedPrimary = seeded[0].Monitors.First(m => m.Primary);
 Check("profile monitors follow the screen list", seeded[0].Monitors.Count == 5 && seedPrimary.W == 3840 && seedPrimary.H == 2160 && seedPrimary.X == 0 && seedPrimary.Id == "SAM1" && seeded[0].Monitors.Any(m => m.W == 960 && m.H == 640) && ProfileSnap.ContentHeight(seeded[0].Monitors.Select(m => m.Box).ToList(), 560, 16) < 200);
+Check("windows identify number comes from the display name", ScreenBind.WindowsNumber(@"\\.\DISPLAY1") == 1 && ScreenBind.WindowsNumber(@"\\.\DISPLAY12") == 12);
+var adopted = new MonitorProfile();
+adopted.Monitors.Add(new ProfileMonitor { Number = 1, X = 0, Y = 0, W = 1920, H = 1080 });
+adopted.Monitors.Add(new ProfileMonitor { Number = 1, X = 1920, Y = 0, W = 3840, H = 2160 });
+adopted.Apps.Add(new ProfileApp { Title = "메모", Monitor = 1 });
+ScreenBind.Adopt(adopted, new[]
+{
+    new ScreenInfo { Number = 1, Device = @"\\.\DISPLAY1", Path = "P3840", W = 3840, H = 2160, X = 1920, Y = 0, Primary = true },
+    new ScreenInfo { Number = 2, Device = @"\\.\DISPLAY2", Path = "P1080", W = 1920, H = 1080, X = 0, Y = 0 }
+});
+var orphan = new MonitorProfile();
+orphan.Monitors.Add(new ProfileMonitor { Number = 3, W = 800, H = 600, Path = "GONE" });
+orphan.Apps.Add(new ProfileApp { Title = "남음", Monitor = 3, W = 100, H = 100 });
+var only = new[] { new ScreenInfo { Number = 4, Device = @"\\.\DISPLAY4", Path = "P1080", W = 1920, H = 1080, X = 0, Y = 0 } };
+ScreenBind.Adopt(orphan, only);
+bool mismatch = ScreenBind.Mismatch(orphan, only);
+ScreenBind.MatchCurrent(orphan, only);
+Check("saved monitors take windows numbers and keep a disconnected screen", adopted.Monitors.First(m => m.W == 1920).Number == 2 && adopted.Monitors.First(m => m.W == 3840).Number == 1 && adopted.Apps[0].Monitor == 2 && orphan.Apps[0].Monitor == 4 && mismatch && !ScreenBind.Mismatch(orphan, only));
 string profileRoot = Path.Combine(Path.GetTempPath(), "bonghub_profile_" + Environment.ProcessId);
 try
 {

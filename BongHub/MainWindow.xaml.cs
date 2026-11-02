@@ -215,17 +215,19 @@ public partial class MainWindow : Window
         PageHost.Children.Add(new Border { Style = (Style)FindResource("Group"), Child = sp });
         return sp;
     }
-    Border Row(StackPanel group, string? glyph, string? hex, string title, string? sub, UIElement? trailing, Action? click = null)
+    Border Row(StackPanel group, string? glyph, string? hex, string title, string? sub, UIElement? trailing, Action? click = null, bool wrap = false, ImageSource? icon = null)
     {
+        bool lead = icon != null || glyph != null;
         if (group.Children.Count > 0)
-            group.Children.Add(new Border { Height = 1, Background = (Brush)FindResource("Separator"), Margin = new Thickness(glyph != null ? 58 : 16, 0, 0, 0) });
+            group.Children.Add(new Border { Height = 1, Background = (Brush)FindResource("Separator"), Margin = new Thickness(lead ? 58 : 16, 0, 0, 0) });
         var g = new Grid { MinHeight = 50 };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 140 });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        if (glyph != null) g.Children.Add(new Border { Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Child = Tile(glyph, hex ?? "8E8E93", 30, 8, 15) });
-        var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(glyph != null ? 14 : 16, 9, 10, 9) };
-        var tt = new TextBlock { Text = title, FontSize = 14.5, TextTrimming = TextTrimming.CharacterEllipsis };
+        if (icon != null) g.Children.Add(new Border { Width = 30, Height = 30, CornerRadius = new CornerRadius(8), Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, ClipToBounds = true, Child = new Image { Source = icon, Width = 30, Height = 30, Stretch = Stretch.Uniform } });
+        else if (glyph != null) g.Children.Add(new Border { Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Child = Tile(glyph, hex ?? "8E8E93", 30, 8, 15) });
+        var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(lead ? 14 : 16, 9, 10, 9) };
+        var tt = new TextBlock { Text = title, FontSize = 14.5, TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap, TextTrimming = wrap ? TextTrimming.None : TextTrimming.CharacterEllipsis };
         texts.Children.Add(tt); FirstRowTitle ??= tt;
         if (sub != null) { var st = new TextBlock { Text = sub, FontSize = 12.5, Margin = new Thickness(0, 2, 0, 0), Foreground = (Brush)FindResource("Secondary"), TextWrapping = TextWrapping.Wrap }; texts.Children.Add(st); FirstSecondary ??= st; }
         Grid.SetColumn(texts, 1); g.Children.Add(texts);
@@ -624,15 +626,9 @@ public partial class MainWindow : Window
         opTrail.Children.Add(opLabel);
         Row(g, "\uE81E", "5AC8FA", "불투명도", "메모 창 전체예요. 40~100%.", opTrail);
         var dc = ConfigStore.Notes.DefaultColor;
-        var sw = new StackPanel { Orientation = Orientation.Horizontal };
-        sw.Children.Add(new Ellipse { Width = 16, Height = 16, Margin = new Thickness(0, 0, 8, 0), Fill = new LinearGradientBrush(NoteColors.Swatch(dc), NoteColors.SwatchB(dc), 45) });
-        sw.Children.Add(Value(NoteColors.Name(dc)));
-        var custom = new Button { Content = "맞춤 색", Padding = new Thickness(10, 4, 10, 4), IsEnabled = !ro };
+        var custom = new Button { Content = "맞춤 색", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(8, 0, 0, 0), IsEnabled = !ro };
         custom.Click += (_, _) => PickDefaultColor(custom);
-        var colorTrail = new StackPanel { Orientation = Orientation.Horizontal };
-        colorTrail.Children.Add(sw);
-        colorTrail.Children.Add(custom);
-        Row(g, "\uE771", "FF2D55", "기본 색", "새 메모는 이 색을 피해 무작위로 골라요 (3.4.9와 같음)", colorTrail);
+        Row(g, "\uE771", "FF2D55", "기본 색", NoteColors.Name(dc) + " · 새 메모는 이 색을 피해 무작위로 골라요", custom);
 
         Header($"메모 {NoteStore.All.Count}개");
         var cmds = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 0, 0, 8) };
@@ -767,23 +763,18 @@ public partial class MainWindow : Window
 
     static string PromptCustom(string current)
     {
-        NoteColors.Raw(current, out var a, out var b);
-        string hex(Color c) => c.R.ToString("X2") + c.G.ToString("X2") + c.B.ToString("X2");
         var w = new Window
         {
-            Title = "맞춤 색", Width = 320, Height = 160, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
-            ShowInTaskbar = false, ShowActivated = !AppEnv.Off, Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x1D, 0x26)),
+            Title = "맞춤 색", Width = 460, Height = 96, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false, ShowActivated = !AppEnv.Off,
             WindowStartupLocation = AppEnv.Off ? WindowStartupLocation.Manual : WindowStartupLocation.CenterScreen,
         };
         if (AppEnv.Off) { w.Left = AppEnv.OffsetX + 260; w.Top = AppEnv.OffsetY + 260; }
         string result = current;
-        var aBox = new TextBox { Text = hex(a), Width = 90, MaxLength = 6, Margin = new Thickness(0, 0, 8, 0) };
-        var bBox = new TextBox { Text = hex(b), Width = 90, MaxLength = 6 };
-        var ok = new Button { Content = "적용", Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(8, 0, 0, 0) };
-        ok.Click += (_, _) => { if (NoteColors.TryCustom(aBox.Text.Trim(), bBox.Text.Trim(), out var k)) result = k; w.Close(); };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(16) };
-        row.Children.Add(aBox); row.Children.Add(bBox); row.Children.Add(ok);
-        w.Content = row;
+        var bar = new CustomColorBar { Margin = new Thickness(14, 18, 14, 12) };
+        bar.Load(current);
+        bar.Commit += key => { result = key; w.Close(); };
+        w.Content = bar;
         w.ShowDialog();
         return result;
     }
@@ -865,47 +856,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) { WindowAction = ex.Message; }
     }
-    void RememberProfileFile(IReadOnlyList<ProfileWindow> windows)
-    {
-        if (AppEnv.Off || AppEnv.Smoke || AppEnv.NoteTest || AppEnv.ReadOnly) return;
-        try
-        {
-            string name = ActivePreset.Length > 0 ? ActivePreset : (ConfigStore.Presets.FirstOrDefault()?.Name ?? "프로필");
-            string icons = ConfigStore.Presets.FirstOrDefault(p => p.DeskLayout.Length > 0)?.DeskLayout ?? "";
-            string json = ProfileCodec.ToJson(new[] { new ProfileRecord { Name = name, Icons = icons, Windows = windows.ToList() } });
-            Directory.CreateDirectory(AppEnv.DataDir);
-            File.WriteAllText(System.IO.Path.Combine(AppEnv.DataDir, "profiles.json"), json);
-        }
-        catch { }
-    }
 
-    void PageWindows()
-    {
-        Header("창 규칙");
-        var g = Group();
-        if (ConfigStore.WindowRules.Count == 0)
-            Row(g, "\uE737", "5AC8FA", "저장된 규칙 없음", "창은 움직이지 않아요.", null);
-        else
-        {
-            int i = 0;
-            foreach (var r in ConfigStore.WindowRules.Take(8))
-            {
-                int index = i++;
-                string sub = (r.Process.Length > 0 ? r.Process + " · " : "") + r.Action + " · 위에서부터 첫 규칙만";
-                Row(g, "\uE737", "5AC8FA", r.Name.Length > 0 ? r.Name : "(이름 없음)", sub, Switch(r.Enabled, v => ConfigStore.SetRuleEnabled(index, v), !AppEnv.ReadOnly));
-            }
-        }
-        Header("작업 영역");
-        var work = Group();
-        if (ConfigStore.Workspaces.Count == 0)
-            Row(work, "\uE737", "5AC8FA", "저장된 작업 영역 없음", "앱을 새로 열지 않아요.", null);
-        else
-            foreach (var ws in ConfigStore.Workspaces.Take(4))
-            {
-                var item = ws;
-                Row(work, "\uE8A5", "34C759", item.Name.Length > 0 ? item.Name : "(이름 없음)", "열린 창만 옮겨요. 실행은 하지 않아요.", null, () => RequestApplyWorkspace(item));
-            }
-    }
 
     public string CloudAction { get; private set; } = "";
     public int CloudBlocks { get; private set; }
@@ -1003,48 +954,6 @@ public partial class MainWindow : Window
             DesktopAction = result.Ok ? result.Summary() : result.Error;
         }
         catch (Exception ex) { DesktopAction = ex.Message; }
-    }
-    void DeskSwitch(StackPanel group, string glyph, string hex, string title, string sub, string key, bool on)
-    {
-        Row(group, glyph, hex, title, sub, Switch(on, v =>
-        {
-            if (!ConfigStore.SetSectionValue("Desk", key, JsonValue.Create(v))) return;
-            ConfigStore.SetDeskFlag(key, v);
-        }, !AppEnv.ReadOnly));
-    }
-    void PageDesktop()
-    {
-        string key = ScreenMap.Key(ScreenMap.Current());
-        Header("바탕화면 아이콘");
-        var act = Group();
-        string linked = ConfigStore.Presets.FirstOrDefault(p => p.DeskLayout.Length > 0)?.DeskLayout ?? "";
-        Row(act, "\uE8A9", "34C759", "이 프로필 배치", linked.Length == 0 ? "아직 연결되지 않았어요. 시험에서는 탐색기를 열지 않아요." : linked, null);
-        Row(act, "\uE8A9", "34C759", "현재 화면", ScreenMap.Describe(key), null);
-        var layouts = LayoutStore.Default.Load();
-        Row(act, "\uE8A5", "5AC8FA", "저장된 배치", layouts.Count == 0 ? "없음" : layouts.Count + "개", null);
-        Header("자동 저장 정책");
-        var pol = Group();
-        DeskSwitch(pol, "\uE823", "34C759", "주기적 자동 저장", "값은 저장만 하고, 타이머는 돌리지 않아요.", "AutoSave", ConfigStore.DeskAutoSave);
-        var minutes = new Slider { Minimum = 1, Maximum = 240, Width = 140, IsEnabled = !AppEnv.ReadOnly, IsSnapToTickEnabled = true, TickFrequency = 1, Value = ConfigStore.DeskAutoSaveMinutes };
-        var minuteLabel = Value(((int)minutes.Value) + "분");
-        minutes.ValueChanged += (_, _) =>
-        {
-            int v = (int)Math.Round(minutes.Value);
-            minuteLabel.Text = v + "분";
-            if (v == ConfigStore.DeskAutoSaveMinutes) return;
-            if (!ConfigStore.SetSectionValue("Desk", "AutoSaveMinutes", JsonValue.Create(v))) return;
-            ConfigStore.SetDeskMinutes(v);
-        };
-        var minuteTrail = new StackPanel { Orientation = Orientation.Horizontal };
-        minuteTrail.Children.Add(minutes);
-        minuteTrail.Children.Add(minuteLabel);
-        Row(pol, "\uE823", "8E8E93", "자동 저장 간격", "1–240분. 지금 당장은 세지 않아요.", minuteTrail);
-        DeskSwitch(pol, "\uE7E8", "5AC8FA", "종료 시 저장", "값은 저장만 해요.", "SaveOnExit", ConfigStore.DeskSaveOnExit);
-        DeskSwitch(pol, "\uE7F4", "FF9500", "프리셋 전환 직전 저장", "값은 저장만 해요.", "SaveBeforeSwitch", ConfigStore.DeskSaveBeforeSwitch);
-        DeskSwitch(pol, "\uE7F8", "AF52DE", "화면 구성이 바뀌면 복원", "값은 저장만 해요.", "RestoreOnChange", ConfigStore.DeskRestoreOnChange);
-        DeskSwitch(pol, "\uE7F4", "8E8E93", "시작 시 복원", "값은 저장만 해요.", "RestoreOnStartup", ConfigStore.DeskRestoreOnStartup);
-        Row(pol, "\uE70F", "4C8AFE", "저장 단축키", ConfigStore.DeskHotkeySave.Length > 0 ? ConfigStore.DeskHotkeySave : "없음. 등록하지 않아요.", null);
-        Row(pol, "\uE8A5", "5AC8FA", "복원 단축키", ConfigStore.DeskHotkeyRestore.Length > 0 ? ConfigStore.DeskHotkeyRestore : "없음. 등록하지 않아요.", null);
     }
 
     void PagePowerToys()

@@ -33,6 +33,8 @@ public static class NoteStore
     static string Dir => AppEnv.NotesDir;
     public static string MetaPath(string id) => Path.Combine(Dir, id + ".json");
     public static string RtfPath(string id) => Path.Combine(Dir, id + ".rtf");
+    public static string PendingRtfPath(string id, string stamp) => Path.Combine(Dir, id + ".rtf.pending-" + stamp);
+    public static string[] PendingRtfs(string id) => Directory.Exists(Dir) ? Directory.GetFiles(Dir, id + ".rtf.pending-*") : [];
 
     public static void Load()
     {
@@ -58,6 +60,27 @@ public static class NoteStore
 
     public static bool SaveMeta(NoteMeta m) { m.Modified = DateTime.Now; var ok = Write(MetaPath(m.Id), new UTF8Encoding(false).GetBytes(Serialize(m))); Changed?.Invoke(); return ok; }
     public static bool SaveRtf(NoteMeta m, byte[] rtf) => Write(RtfPath(m.Id), rtf);
+    /// <summary>The edit the image guard would not put over the existing file. The old <c>.rtf</c> stays.</summary>
+    public static bool SavePendingRtf(NoteMeta m, byte[] rtf)
+        => Write(PendingRtfPath(m.Id, DateTime.Now.ToString("yyyyMMddHHmmssfff")), rtf);
+    public static string? NewestPendingRtf(string id)
+    {
+        string? best = null;
+        DateTime bestTime = DateTime.MinValue;
+        foreach (var file in PendingRtfs(id))
+        {
+            DateTime t;
+            try { t = File.GetLastWriteTimeUtc(file); }
+            catch { continue; }
+            if (best == null || t >= bestTime) { best = file; bestTime = t; }
+        }
+        return best;
+    }
+    public static void ClearPendingRtf(string id)
+    {
+        foreach (var file in PendingRtfs(id))
+            try { File.Delete(file); } catch (Exception e) { AppEnv.Log($"pending delete {file}: {e.Message}"); }
+    }
     public static string? LoadRtf(string id) { try { return File.ReadAllText(RtfPath(id), Encoding.UTF8); } catch { return null; } }
 
     public static NoteMeta Create(string defaultColor, int x, int y, int w, int h)
@@ -75,6 +98,7 @@ public static class NoteStore
             All.Remove(m);
             if (File.Exists(MetaPath(m.Id))) File.Delete(MetaPath(m.Id));
             if (File.Exists(RtfPath(m.Id))) File.Delete(RtfPath(m.Id));
+            ClearPendingRtf(m.Id);
             Changed?.Invoke();
             return true;
         }
@@ -133,7 +157,41 @@ public static class NoteColors
         new[] { "g:mist", "미스트", "A5A5A0", "7D7D78" }, new[] { "g:mustard", "머스터드", "AC9B63", "817446" }, new[] { "g:deepteal", "딥 틸", "5C7E79", "48615D" },
         new[] { "g:plumgray", "플럼 그레이", "8D8294", "665D6B" }, new[] { "g:smoke", "스모크", "9A9DA1", "72767A" }, new[] { "g:terracotta", "테라코타", "AA806B", "805F50" } };
     public static readonly Color Text = C(240, 240, 246);
-    static readonly Color Base = C(20, 19, 34);
+    public static readonly Color DarkText = C(28, 28, 30);
+    /// <summary>Foreground stored by 1.2 notes beside <see cref="Text"/>. It is not a chosen color.</summary>
+    public static readonly Color LegacyText = C(236, 236, 240);
+    /// <summary>True for the automatic inks. A run in one of these colors follows the note instead of keeping the stored value.</summary>
+    public static bool IsAutomaticInk(Color c)
+        => Rgb(c, Text) || Rgb(c, DarkText) || Rgb(c, LegacyText);
+    static bool Rgb(Color a, Color b) => a.R == b.R && a.G == b.G && a.B == b.B;
+    /// <summary>Same ink as the body, nudged toward white so the bold title reads a little stronger.</summary>
+    public static Color TitleInk => Mix(Text, Colors.White, 0.42);
+    /// <summary>Dark ink on a light note, light ink on a dark note. Title and body share it.</summary>
+    public static Color Ink(string? key)
+    {
+        string k = string.IsNullOrEmpty(key) ? "g:blocks" : key!;
+        var a = SurfA(k);
+        var b = SurfB(k);
+        return Cover(DarkText, a, b) >= Cover(Text, a, b) ? DarkText : Text;
+    }
+    /// <summary>iOS blue, darkened on light notes and lightened on dark notes.</summary>
+    public static Color LinkInk(string? key)
+    {
+        string k = string.IsNullOrEmpty(key) ? "g:blocks" : key!;
+        bool onLight = Lum(Ink(k)) < 0.4;
+        Color ink = onLight ? C(0x0A, 0x4E, 0xC4) : C(0x64, 0xD2, 0xFF);
+        Color toward = onLight ? C(0x00, 0x2A, 0x6E) : Colors.White;
+        var bgA = SurfA(k);
+        var bgB = SurfB(k);
+        for (int n = 0; n < 24 && Cover(ink, bgA, bgB) < 4.5; n++)
+            ink = Mix(ink, toward, 0.14);
+        return ink;
+    }
+    public static double Contrast(Color a, Color b)
+    {
+        double la = Lum(a), lb = Lum(b);
+        return (Math.Max(la, lb) + 0.05) / (Math.Min(la, lb) + 0.05);
+    }
     public static bool Grad => ConfigStore.Notes.Gradient;
     static Color C(byte r, byte g, byte b) => Color.FromRgb(r, g, b);
     public static IEnumerable<string> PaletteKeys => Gradients.Select(g => g[0]).Concat(Keys);
@@ -157,12 +215,47 @@ public static class NoteColors
     }
     public static Color Mix(Color x, Color y, double t) => C((byte)(x.R + (y.R - x.R) * t), (byte)(x.G + (y.G - x.G) * t), (byte)(x.B + (y.B - x.B) * t));
     public static double Lum(Color c) { static double f(double v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4); } return 0.2126 * f(c.R) + 0.7152 * f(c.G) + 0.0722 * f(c.B); }
-    static Color ForText(Color c, double ratio) { double lt = Lum(Text); for (int n = 0; n < 40 && (lt + 0.05) / (Lum(c) + 0.05) < ratio; n++) c = Mix(c, Colors.Black, 0.08); return c; }
-    public static Color Body(string k) { if (!Grad && I(k) >= 0) return body[I(k)]; Raw(k, out var a, out var b); return ForText(Mix(Base, Mix(a, b, .5), Grad ? .2 : .24), 9); }
-    public static Color SurfA(string k) { if (!Grad) return Body(k); Raw(k, out var a, out _); return ForText(Mix(Base, a, .40), 7); }
-    public static Color SurfB(string k) { if (!Grad) return Body(k); Raw(k, out _, out var b); return ForText(Mix(Base, b, .34), 7); }
-    public static Color Swatch(string k) { Raw(k, out var a, out _); return a; }
-    public static Color SwatchB(string k) { Raw(k, out _, out var b); return b; }
+    public static Color Body(string k) => Mix(SurfA(k), SurfB(k), 0.5);
+    public static Color SurfA(string k) { Raw(k, out var a, out var b); return Face(a, b).a; }
+    public static Color SurfB(string k) { Raw(k, out var a, out var b); return Face(a, b).b; }
+    public static Color Swatch(string k) { Raw(k, out var a, out var b); return Face(a, b).a; }
+    public static Color SwatchB(string k) { Raw(k, out var a, out var b); return Face(a, b).b; }
+    /// <summary>Solid ratio the pixel sampler still clears. Rendered text reads a little under this.</summary>
+    const double InkNeed = 7.35;
+    static readonly Dictionary<(int, int), (Color a, Color b)> faces = new();
+    static double Cover(Color ink, Color a, Color b)
+        => Math.Min(Contrast(ink, a), Math.Min(Contrast(ink, b), Contrast(ink, Mix(a, b, 0.5))));
+    /// <summary>
+    /// A mid stop where neither black nor the light ink reaches 7:1 is mixed toward white
+    /// until dark text does. A dark note mixes the light end toward black so light text does.
+    /// The mix stays on the line to white or black, so the hue holds.
+    /// </summary>
+    static (Color a, Color b) Face(Color a, Color b)
+    {
+        var key = ((a.R << 16) | (a.G << 8) | a.B, (b.R << 16) | (b.G << 8) | b.B);
+        if (faces.TryGetValue(key, out var hit)) return hit;
+        double dark = Cover(DarkText, a, b), light = Cover(Text, a, b);
+        if (dark < InkNeed && light < InkNeed)
+        {
+            bool useDark = dark >= light;
+            Color ink = useDark ? DarkText : Text;
+            Color toward = useDark ? Colors.White : Colors.Black;
+            for (int n = 0; n < 48 && Cover(ink, a, b) < InkNeed; n++)
+            {
+                if (Contrast(ink, a) <= Contrast(ink, b)) a = Nudge(a, toward);
+                else b = Nudge(b, toward);
+            }
+        }
+        var made = (a, b);
+        faces[key] = made;
+        return made;
+    }
+    static Color Nudge(Color x, Color toward)
+    {
+        var n = Mix(x, toward, 0.04);
+        return n != x ? n : C(Step(x.R, toward.R), Step(x.G, toward.G), Step(x.B, toward.B));
+    }
+    static byte Step(byte v, byte dest) => v == dest ? v : (byte)(v + (dest > v ? 1 : -1));
     public static string Name(string k) { int i = I(k); if (i >= 0) return Names[i]; var g = Gradients.FirstOrDefault(x => x[0] == k); return g != null ? g[1] : k.StartsWith("c:") ? "맞춤" : "블록"; }
     public static string Custom(Color a, Color b) => "c:" + a.R.ToString("X2") + a.G.ToString("X2") + a.B.ToString("X2") + ":" + b.R.ToString("X2") + b.G.ToString("X2") + b.B.ToString("X2");
     public static bool TryCustom(string textA, string textB, out string key)

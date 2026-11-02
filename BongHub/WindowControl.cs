@@ -23,6 +23,7 @@ public sealed class WindowRule
 public sealed class WindowPick
 {
     public string Process = "";
+    public string Path = "";
     public string Title = "";
     public string Class = "";
     public int X, Y, W, H;
@@ -34,6 +35,7 @@ public static class WindowPicker
     public static WindowPick From(TrackedWindow window) => new()
     {
         Process = window.Process ?? "",
+        Path = window.Path ?? "",
         Title = window.Title ?? "",
         Class = window.Class ?? "",
         X = window.X,

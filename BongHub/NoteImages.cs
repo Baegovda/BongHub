@@ -55,9 +55,15 @@ public static class NoteImages
     {
         if (!File.Exists(path) || !IsImagePath(path)) return null;
         var raw = File.ReadAllBytes(path);
-        if (raw.Length < 8) return null;
-        bool jpegFile = raw.Length > 2 && raw[0] == 0xFF && raw[1] == 0xD8;
-        bool pngFile = raw.Length > 8 && raw[0] == 0x89 && raw[1] == (byte)'P';
+        return FromEncoded(raw, fitDip);
+    }
+
+    /// <summary>Keeps a small png or jpeg byte-for-byte. Larger files are scaled once.</summary>
+    public static Built? FromEncoded(byte[]? raw, int fitDip)
+    {
+        if (raw == null || raw.Length < 8) return null;
+        bool jpegFile = raw[0] == 0xFF && raw[1] == 0xD8;
+        bool pngFile = raw[0] == 0x89 && raw[1] == (byte)'P';
         var (sw, sh) = Peek(raw);
         if ((jpegFile || pngFile) && sw > 0 && sh > 0 && Math.Max(sw, sh) <= MaxEdge)
         {
@@ -69,7 +75,7 @@ public static class NoteImages
             var bmp = Load(raw, MaxEdge);
             return bmp == null ? null : FromBitmap(bmp, fitDip);
         }
-        catch (Exception e) { AppEnv.Log("image file: " + e.Message); return null; }
+        catch (Exception e) { AppEnv.Log("image bytes: " + e.Message); return null; }
     }
 
     public static Built? FromBitmap(BitmapSource src, int fitDip)

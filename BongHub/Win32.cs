@@ -199,6 +199,111 @@ internal static class Win32
         GC.KeepAlive(cb);
         return list.ToArray();
     }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct MONITORINFOEX
+    {
+        public int cbSize;
+        public RECT rcMonitor, rcWork;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string szDevice;
+    }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFOEX mi);
+
+    [StructLayout(LayoutKind.Sequential)] struct LUID { public uint Low; public int High; }
+    [StructLayout(LayoutKind.Sequential)] struct DISPLAYCONFIG_RATIONAL { public uint Num, Den; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct DISPLAYCONFIG_PATH_SOURCE_INFO { public LUID adapterId; public uint id, modeInfoIdx, statusFlags; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct DISPLAYCONFIG_PATH_TARGET_INFO
+    {
+        public LUID adapterId; public uint id, modeInfoIdx, outputTechnology, rotation, scaling;
+        public DISPLAYCONFIG_RATIONAL refreshRate; public uint scanLineOrdering, targetAvailable, statusFlags;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct DISPLAYCONFIG_PATH_INFO { public DISPLAYCONFIG_PATH_SOURCE_INFO sourceInfo; public DISPLAYCONFIG_PATH_TARGET_INFO targetInfo; public uint flags; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct DISPLAYCONFIG_MODE_INFO { public uint infoType, id; public LUID adapterId; public uint a, b, c, d, e, f, g, h, i, j, k, l; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct DISPLAYCONFIG_DEVICE_INFO_HEADER { public uint type, size; public LUID adapterId; public uint id; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct DISPLAYCONFIG_SOURCE_DEVICE_NAME
+    {
+        public DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string viewGdiDeviceName;
+    }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct DISPLAYCONFIG_TARGET_DEVICE_NAME
+    {
+        public DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+        public uint flags;
+        public ushort outputTechnology, edidManufactureId, edidProductCodeId, connectorInstance;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string monitorFriendlyDeviceName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string monitorDevicePath;
+    }
+    [DllImport("user32.dll")] static extern int GetDisplayConfigBufferSizes(uint flags, out uint paths, out uint modes);
+    [DllImport("user32.dll")] static extern int QueryDisplayConfig(uint flags, ref uint paths, [Out] DISPLAYCONFIG_PATH_INFO[] pathArray, ref uint modes, [Out] DISPLAYCONFIG_MODE_INFO[] modeArray, IntPtr topology);
+    [DllImport("user32.dll")] static extern int DisplayConfigGetDeviceInfo(ref DISPLAYCONFIG_SOURCE_DEVICE_NAME packet);
+    [DllImport("user32.dll")] static extern int DisplayConfigGetDeviceInfo(ref DISPLAYCONFIG_TARGET_DEVICE_NAME packet);
+
+    /// <summary>Active displays with the Windows Identify number. Call only after the display gate opens.</summary>
+    public static List<ScreenInfo> DisplayIdentities()
+    {
+        var list = new List<ScreenInfo>();
+        var byDevice = new Dictionary<string, ScreenInfo>(StringComparer.OrdinalIgnoreCase);
+        MonitorEnumProc cb = (m, _, ref rc, _) =>
+        {
+            var mi = new MONITORINFOEX { cbSize = Marshal.SizeOf<MONITORINFOEX>(), szDevice = "" };
+            if (GetMonitorInfo(m, ref mi))
+            {
+                string device = mi.szDevice ?? "";
+                var info = new ScreenInfo
+                {
+                    Number = ScreenBind.WindowsNumber(device),
+                    W = mi.rcMonitor.Width, H = mi.rcMonitor.Height,
+                    X = mi.rcMonitor.Left, Y = mi.rcMonitor.Top,
+                    Primary = (mi.dwFlags & 1) != 0,
+                    Device = device
+                };
+                list.Add(info);
+                if (device.Length > 0) byDevice[device] = info;
+            }
+            return true;
+        };
+        try { EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, cb, IntPtr.Zero); } catch { }
+        GC.KeepAlive(cb);
+        try
+        {
+            if (GetDisplayConfigBufferSizes(2, out uint pathCount, out uint modeCount) == 0 && pathCount > 0)
+            {
+                var paths = new DISPLAYCONFIG_PATH_INFO[pathCount];
+                var modes = new DISPLAYCONFIG_MODE_INFO[Math.Max(1, modeCount)];
+                if (QueryDisplayConfig(2, ref pathCount, paths, ref modeCount, modes, IntPtr.Zero) == 0)
+                {
+                    for (int i = 0; i < pathCount; i++)
+                    {
+                        var src = new DISPLAYCONFIG_SOURCE_DEVICE_NAME { header = new DISPLAYCONFIG_DEVICE_INFO_HEADER { type = 1, size = (uint)Marshal.SizeOf<DISPLAYCONFIG_SOURCE_DEVICE_NAME>(), adapterId = paths[i].sourceInfo.adapterId, id = paths[i].sourceInfo.id } };
+                        if (DisplayConfigGetDeviceInfo(ref src) != 0) continue;
+                        string device = src.viewGdiDeviceName ?? "";
+                        if (!byDevice.TryGetValue(device, out var info)) continue;
+                        var target = new DISPLAYCONFIG_TARGET_DEVICE_NAME { header = new DISPLAYCONFIG_DEVICE_INFO_HEADER { type = 2, size = (uint)Marshal.SizeOf<DISPLAYCONFIG_TARGET_DEVICE_NAME>(), adapterId = paths[i].targetInfo.adapterId, id = paths[i].targetInfo.id } };
+                        if (DisplayConfigGetDeviceInfo(ref target) == 0)
+                        {
+                            info.Path = target.monitorDevicePath ?? "";
+                            info.Edid = target.edidManufactureId.ToString("X4") + ":" + target.edidProductCodeId.ToString("X4") + ":" + (target.monitorFriendlyDeviceName ?? "");
+                        }
+                        int n = ScreenBind.WindowsNumber(device);
+                        if (n > 0) info.Number = n;
+                    }
+                }
+            }
+        }
+        catch { }
+        int fallback = 1;
+        foreach (var info in list)
+            if (info.Number <= 0) info.Number = 1000 + fallback++;
+        return list;
+    }
 }
 
 internal static class Dwm

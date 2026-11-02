@@ -33,6 +33,7 @@ public partial class App : Application
         KakaoGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden;
         CloudGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden && !AppEnv.ReadOnly;
         ScreenMap.Live = () => Win32.Monitors().Select(m => new MonitorSpec(m.W, m.H, m.X, m.Y, m.Primary)).ToList();
+        ScreenCatalog.Live = Win32.DisplayIdentities;
         AppEnv.Mark("onstartup");
         DispatcherUnhandledException += (_, ex) => { AppEnv.Log("unhandled: " + ex.Exception); ex.Handled = true; };
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => AppEnv.Log("fatal: " + ex.ExceptionObject);
@@ -175,13 +176,17 @@ public partial class App : Application
         }, null, 5000, minutes * 60000);
     }
 
-    public void RequestShutdown()
+    public void RequestShutdown() => RequestShutdown(Environment.ExitCode);
+
+    public void RequestShutdown(int exitCode)
     {
         if (ShuttingDown) return;
         ShuttingDown = true;
+        Environment.ExitCode = exitCode;
+        // Tray 종료 and --quit both land here. Flush uses the image-guard path, including a pending sidecar.
         NoteManager.FlushAll();
         tray?.Dispose(); tray = null;
-        Shutdown();
+        Shutdown(exitCode);
     }
 
     protected override void OnExit(ExitEventArgs e)

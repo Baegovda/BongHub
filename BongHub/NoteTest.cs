@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Documents;
+using System.Windows.Input;
 
 namespace BongHub;
 
@@ -20,7 +21,7 @@ public static class NoteTest
         }
         catch (Exception e) { t.Check("no exception", false, e.ToString()); }
         t.Save("notetest.txt");
-        app.RequestShutdown();
+        app.RequestShutdown(t.Fails > 0 ? 1 : 0);
     }
 
     static Dictionary<string, string> Hashes() => Directory.GetFiles(AppEnv.NotesDir).ToDictionary(f => Path.GetFileName(f)!, f => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(f))));
@@ -268,6 +269,9 @@ public static class NoteTest
         var (gw, gh) = NoteImages.ScaleGoals(100, 50, 0.5);
         t.Check("50% goals are half the 96dpi twips", gw == 750 && gh == 375, $"{gw}x{gh}");
         t.Check("8MB warning threshold", NoteImages.OverWarn(NoteImages.WarnBytes + 1) && !NoteImages.OverWarn(NoteImages.WarnBytes));
+        var gif = Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7");
+        var gifBuilt = NoteImages.FromEncoded(gif, 120);
+        t.Check("gif bytes become a png", gifBuilt != null && !gifBuilt.Jpeg && gifBuilt.Bytes.Length > 8 && gifBuilt.Bytes[0] == 0x89 && gifBuilt.Bytes[1] == (byte)'P' && gifBuilt.Group.Contains("\\pngblip"));
         t.Check("link hit", NoteLinks.TryHit("see https://example.com/a now", 6, out var url) && url == "https://example.com/a");
         t.Check("link miss", !NoteLinks.TryHit("see https://example.com/a now", 0, out _));
         t.Check("www link gains https", NoteLinks.TryHit("www.example.com", 0, out var www) && www == "https://www.example.com");
@@ -329,6 +333,49 @@ public static class NoteTest
         var afterEdit = File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id));
         t.Check("later edit keeps pngblip bytes", RtfPict.PayloadBytes(afterEdit) == beforeDrop && Encoding.ASCII.GetString(afterEdit).Contains(@"\pngblip"), $"payload {RtfPict.PayloadBytes(afterEdit)}");
         t.Check("editor shows the edit", picNote.PlainText().Contains("리치") || picNote.PlainText().Contains("떨어짐"), picNote.PlainText());
+
+        var guardNote = NoteManager.NewNote();
+        t.Check("guard note opened", guardNote != null);
+        if (guardNote != null)
+        {
+            await TestKit.Until(() => guardNote.Ready, 5000);
+            guardNote.InsertImageFile(pngPath);
+            guardNote.FlushText();
+            int pictsBeforeLoose = RtfPict.Parse(File.ReadAllBytes(NoteStore.RtfPath(guardNote.Meta.Id))).Count;
+            int guardsBeforeLoose = guardNote.ImageGuardHits;
+            guardNote.InsertLooseImageForTest();
+            guardNote.FlushText();
+            var looseParsed = RtfPict.Parse(File.ReadAllBytes(NoteStore.RtfPath(guardNote.Meta.Id)));
+            string tinyHex = Convert.ToHexString(RtfPict.TinyPngBytes).ToLowerInvariant();
+            t.Check("loose image is stored as png", guardNote.ImageGuardHits == guardsBeforeLoose && looseParsed.Count == pictsBeforeLoose + 1 && looseParsed.All(p => p.Group.Contains("\\pngblip")) && looseParsed.Any(p => RtfPict.BlipHex(p.Group) == tinyHex), $"picts {looseParsed.Count} guard {guardNote.ImageGuardHits}");
+            long richPayload = RtfPict.PayloadBytes(File.ReadAllBytes(NoteStore.RtfPath(guardNote.Meta.Id)));
+            guardNote.ForcePictMismatchForTest();
+            NoteManager.FlushAll();
+            long afterQuit = RtfPict.PayloadBytes(File.ReadAllBytes(NoteStore.RtfPath(guardNote.Meta.Id)));
+            string? pending = NoteStore.NewestPendingRtf(guardNote.Meta.Id);
+            t.Check("quit flush keeps the rtf and writes a pending copy", guardNote.ImageGuardHits > guardsBeforeLoose && afterQuit == richPayload && pending != null && new FileInfo(pending).Length > 20, $"payload {richPayload} → {afterQuit} pending {pending ?? "none"}");
+            string guardId = guardNote.Meta.Id;
+            guardNote.CloseNote();
+            await TestKit.Delay(300);
+            var reopened = NoteManager.Open(guardId, activate: false);
+            t.Check("pending rtf loads when it is newer", reopened != null);
+            if (reopened != null)
+            {
+                await TestKit.Until(() => reopened.Ready, 5000);
+                reopened.Editor.Document.Blocks.Add(new Paragraph(new Run("이어쓰기")));
+                reopened.FlushText();
+                long still = RtfPict.PayloadBytes(File.ReadAllBytes(NoteStore.RtfPath(guardId)));
+                t.Check("pending edit does not replace a richer rtf", reopened.PlainText().Contains("떨어짐") && reopened.PlainText().Contains("이어쓰기") && still == richPayload, $"text '{reopened.PlainText()}' payload {still}/{richPayload}");
+            }
+            else t.Check("pending edit does not replace a richer rtf", false, "no reopen");
+        }
+        else
+        {
+            t.Check("loose image is stored as png", false, "no note");
+            t.Check("quit flush keeps the rtf and writes a pending copy", false, "no note");
+            t.Check("pending rtf loads when it is newer", false, "no note");
+            t.Check("pending edit does not replace a richer rtf", false, "no note");
+        }
 
         var viewNote = NoteManager.NewNote();
         ImageViewerWindow? viewer = null;
@@ -399,6 +446,227 @@ public static class NoteTest
             t.Check("selection copy keeps text and image", false, "no note");
         }
         t.Check("link open does not launch during notetest", host != null && host.TryOpenLink("go https://example.com/x", 3, launch: true) && host.LastLink.StartsWith("https://") && !host.LinkLaunched);
+        var wwwHit = NoteLinks.Find("go www.example.com, now");
+        t.Check("www link trims the trailing comma", wwwHit.Count == 1 && wwwHit[0].Url == "https://www.example.com" && wwwHit[0].Length == "www.example.com".Length);
+        bool linkReadable = true;
+        string linkBad = "";
+        foreach (var key in NoteColors.PaletteKeys)
+        {
+            var ink = NoteColors.LinkInk(key);
+            double linkRatio = Math.Min(NoteColors.Contrast(ink, NoteColors.SurfA(key)), Math.Min(NoteColors.Contrast(ink, NoteColors.SurfB(key)), NoteColors.Contrast(ink, NoteColors.Body(key))));
+            if (linkRatio < 4.5)
+            {
+                linkReadable = false;
+                linkBad = key + " " + linkRatio.ToString("0.00");
+                break;
+            }
+        }
+        t.Check("link ink is readable on every note color", linkReadable, linkBad);
+        bool inkOk = true;
+        string inkBad = "";
+        foreach (var key in NoteColors.PaletteKeys)
+        {
+            var fg = NoteColors.Ink(key);
+            if (fg != NoteColors.DarkText && fg != NoteColors.Text)
+            {
+                inkOk = false;
+                inkBad = key + " ink";
+                break;
+            }
+            NoteColors.Raw(key, out var rawA, out var rawB);
+            var samples = new[] { (NoteColors.SurfA(key), rawA), (NoteColors.SurfB(key), rawB) };
+            foreach (var (surf, raw) in samples)
+            {
+                bool towardWhite = NoteColors.Lum(surf) + 1e-9 >= NoteColors.Lum(raw);
+                bool hue = towardWhite
+                    ? surf.R >= raw.R && surf.G >= raw.G && surf.B >= raw.B
+                    : surf.R <= raw.R && surf.G <= raw.G && surf.B <= raw.B;
+                if (!hue)
+                {
+                    inkOk = false;
+                    inkBad = key + " hue";
+                    break;
+                }
+            }
+            if (!inkOk) break;
+            double ratio = Math.Min(NoteColors.Contrast(fg, NoteColors.SurfA(key)), Math.Min(NoteColors.Contrast(fg, NoteColors.SurfB(key)), NoteColors.Contrast(fg, NoteColors.Body(key))));
+            if (ratio < 7)
+            {
+                inkOk = false;
+                inkBad = key + " " + ratio.ToString("0.00");
+                break;
+            }
+        }
+        NoteColors.Raw("g:lemon", out var lemonA, out var lemonB);
+        NoteColors.Raw("yellow", out var yellowA, out var yellowB);
+        NoteColors.Raw("g:mist", out var mistA, out var mistB);
+        if (inkOk && (NoteColors.SurfA("g:lemon") != lemonA || NoteColors.SurfB("g:lemon") != lemonB || NoteColors.SurfA("yellow") != yellowA || NoteColors.SurfB("yellow") != yellowB))
+        {
+            inkOk = false;
+            inkBad = "vivid";
+        }
+        if (inkOk && (NoteColors.Lum(NoteColors.SurfA("g:mist")) <= NoteColors.Lum(mistA) || NoteColors.Lum(NoteColors.SurfB("g:mist")) <= NoteColors.Lum(mistB)))
+        {
+            inkOk = false;
+            inkBad = "mist";
+        }
+        t.Check("note ink clears 7 on light and dark colors", inkOk, inkBad);
+        var legacy = NoteStore.Create("g:lemon", 120, 120, 280, 240);
+        legacy.Color = "g:lemon";
+        NoteStore.SaveMeta(legacy);
+        string legacyRtf = "{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl{\\f0\\fswiss\\fcharset0 Calibri;}}{\\colortbl ;\\red240\\green240\\blue246;\\red236\\green236\\blue240;\\red0\\green0\\blue255;}\\pard\\cf1\\f0\\fs22 base\\par\\cf2 old\\par\\cf3 blue\\par}";
+        File.WriteAllBytes(NoteStore.RtfPath(legacy.Id), Encoding.ASCII.GetBytes(legacyRtf));
+        var legacyNote = NoteManager.Open(legacy.Id, activate: false);
+        t.Check("legacy note opened", legacyNote != null);
+        if (legacyNote != null)
+        {
+            await TestKit.Until(() => legacyNote.Ready, 5000);
+            var lemonInk = NoteColors.Ink("g:lemon");
+            t.Check("legacy default ink follows the note", legacyNote.TextInheritsInk("base") && legacyNote.TextInheritsInk("old") && legacyNote.PlainText().Contains("base") && lemonInk != NoteColors.Text && NoteColors.Contrast(lemonInk, NoteColors.Body("g:lemon")) >= 7);
+            t.Check("legacy custom color stays", legacyNote.TextKeepsColor("blue", 0, 0, 255));
+            legacyNote.Editor.Document.Blocks.Add(new Paragraph(new Run(" added")));
+            legacyNote.FlushText();
+            var savedLegacy = File.ReadAllBytes(NoteStore.RtfPath(legacyNote.Meta.Id));
+            string savedText = RtfPict.Latin1.GetString(savedLegacy);
+            bool applied = NoteRtf.AppliesAutomaticInk(savedLegacy);
+            t.Check("legacy default color is not written back", !applied && savedText.Contains("blue") && savedText.Contains("added") && savedText.Contains("\\red0\\green0\\blue255"), applied ? "automatic cf remains" : savedText.Length > 180 ? savedText[..180] : savedText);
+        }
+        else
+        {
+            t.Check("legacy default ink follows the note", false, "no note");
+            t.Check("legacy custom color stays", false, "no note");
+            t.Check("legacy default color is not written back", false, "no note");
+        }
+        if (host != null)
+        {
+            host.Editor.Document.Blocks.Clear();
+            var linkPara = new Paragraph();
+            host.Editor.Document.Blocks.Add(linkPara);
+            host.Editor.CaretPosition = linkPara.ContentEnd;
+            host.Editor.CaretPosition.InsertTextInRun("see https://bong.dev/a. and www.bong.dev");
+            var shown = host.DisplayLinks();
+            t.Check("typing paints http and www without eating punctuation", shown.Count == 2 && shown.Contains("https://bong.dev/a") && shown.Contains("www.bong.dev") && host.PlainText().Contains("https://bong.dev/a."));
+            int beforeSpace = host.ReadCaret();
+            host.Editor.CaretPosition.InsertTextInRun("!");
+            t.Check("link styling keeps the caret on the line", host.ReadCaret() == beforeSpace + 1 && host.PlainText().EndsWith("!"));
+            t.Check("link hover underlines and shows the tip", host.HoverFirstLink());
+            t.Check("plain click does not open a link", !host.OpenDisplayedLink(false) && !host.LinkLaunched);
+            t.Check("ctrl click opens the link without a process", host.OpenDisplayedLink(true) && host.LastLink == "https://bong.dev/a" && !host.LinkLaunched);
+            var linkNote = NoteManager.NewNote();
+            t.Check("link note opened", linkNote != null);
+            if (linkNote != null)
+            {
+                await TestKit.Until(() => linkNote.Ready, 5000);
+                linkNote.Editor.Document.Blocks.Clear();
+                var fresh = new Paragraph(new Run("see https://bong.dev/a. and www.bong.dev"));
+                linkNote.Editor.Document.Blocks.Add(fresh);
+                linkNote.RefreshLinks();
+                linkNote.FlushText();
+                string linkRtf = Encoding.ASCII.GetString(File.ReadAllBytes(NoteStore.RtfPath(linkNote.Meta.Id)));
+                t.Check("link color stays out of the rtf", !linkRtf.Contains("HYPERLINK", StringComparison.OrdinalIgnoreCase) && linkRtf.Contains("https://bong.dev/a") && linkRtf.Contains("www.bong.dev"));
+            }
+            else t.Check("link color stays out of the rtf", false, "no link note");
+            host.SetColor("g:lemon");
+            t.Check("link ink follows the note color", host.LinkInkMatchesNote());
+        }
+        else
+        {
+            t.Check("typing paints http and www without eating punctuation", false, "no note");
+            t.Check("link styling keeps the caret on the line", false, "no note");
+            t.Check("link hover underlines and shows the tip", false, "no note");
+            t.Check("plain click does not open a link", false, "no note");
+            t.Check("ctrl click opens the link without a process", false, "no note");
+            t.Check("link color stays out of the rtf", false, "no note");
+            t.Check("link ink follows the note color", false, "no note");
+        }
         t.Check("shortcut ctrl+t is handled", host != null && host.HandleShortcut(System.Windows.Input.Key.T, System.Windows.Input.ModifierKeys.Control));
+        if (host != null)
+        {
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("안녕복사")));
+            host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+            NoteClipSession.RichThrows = 0;
+            bool textCopied = host.CopySelection(false);
+            t.Check("text-only copy reaches the clipboard", textCopied && NoteClipSession.LastPlain.Contains("안녕복사"));
+            NoteClipSession.RichThrows = 40;
+            host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+            bool fellBack = host.CopySelection(false);
+            t.Check("copy keeps plain text when rich clipboard data throws", fellBack && NoteClipSession.LastPlain.Contains("안녕복사") && NoteClipSession.LastError != null);
+            NoteClipSession.RichThrows = 0;
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("자를글")));
+            host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+            bool cut = host.HandleShortcut(System.Windows.Input.Key.X, System.Windows.Input.ModifierKeys.Control);
+            t.Check("ctrl+x copies then clears the selection", cut && NoteClipSession.LastPlain.Contains("자를글") && host.PlainText().Length == 0);
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("인서트")));
+            host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+            bool insert = host.HandleShortcut(System.Windows.Input.Key.Insert, System.Windows.Input.ModifierKeys.Control);
+            t.Check("ctrl+insert copies", insert && NoteClipSession.LastPlain.Contains("인서트"));
+            host.TitleBox.Text = "제목만";
+            host.TitleBox.SelectAll();
+            bool titleCopied = host.CopyTitleText(false);
+            t.Check("title copy is plain text", titleCopied && NoteClipSession.LastPlain == "제목만" && string.IsNullOrEmpty(NoteClipSession.LastXaml));
+            System.Windows.Input.ApplicationCommands.Copy.Execute(null, host.Editor);
+            t.Check("editor context menu can copy", host.Editor.ContextMenu != null && host.Editor.ContextMenu.Items.Count >= 4 && NoteClipSession.LastPlain.Contains("인서트"));
+            var pngOnly = new DataObject();
+            pngOnly.SetData("PNG", RtfPict.TinyPngBytes);
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph());
+            host.Editor.CaretPosition = host.Editor.Document.ContentEnd;
+            t.Check("png stream paste inserts a picture", host.PasteObject(pngOnly) && host.DocImageCount() >= 1);
+            var unicode = new DataObject(DataFormats.UnicodeText, "붙여넣은글");
+            t.Check("unicode paste inserts text", host.PasteObject(unicode) && host.PlainText().Contains("붙여넣은글"));
+            var html = new DataObject();
+            html.SetData(DataFormats.Html, "Version:0.9\r\n<html><body><!--StartFragment-->브라우저 <b>글</b><!--EndFragment--></body></html>");
+            t.Check("html paste keeps the words", host.PasteObject(html) && host.PlainText().Contains("브라우저") && host.PlainText().Contains("글"));
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("우리꺼플러그인에 항상")));
+            host.Editor.Document.Blocks.Add(new Paragraph());
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("다음")));
+            var empty = (Paragraph)host.Editor.Document.Blocks.ElementAt(1);
+            host.Editor.CaretPosition = empty.ContentStart;
+            int emptyPara = host.CaretParagraph;
+            host.ParkEditor();
+            host.ResumeEditor();
+            t.Check("empty line caret stays on that paragraph", emptyPara == 1 && host.CaretParagraph == 1 && host.CaretOffsetInParagraph == 0);
+            var other = NoteManager.NewNote();
+            if (other != null)
+            {
+                await TestKit.Until(() => other.Ready, 5000);
+                other.Editor.Document.Blocks.Clear();
+                other.Editor.Document.Blocks.Add(new Paragraph(new Run("다른메모")));
+                other.Editor.CaretPosition = other.Editor.Document.ContentStart;
+                int otherPara = other.CaretParagraph;
+                host.ParkEditor();
+                other.ChromeActivateLikeTest();
+                host.ResumeEditor();
+                t.Check("switching notes keeps both carets", host.CaretParagraph == 1 && other.CaretParagraph == otherPara);
+            }
+            else t.Check("switching notes keeps both carets", false, "no second note");
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("내부")));
+            host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+            host.CopySelection(false);
+            uint owned = NoteClipSession.LastSequence;
+            var foreign = new DataObject(DataFormats.UnicodeText, "외부앱");
+            NoteClipSession.Fake = foreign;
+            NoteClipSession.SequenceIsFake = true;
+            NoteClipSession.SequenceNow = owned + 1;
+            host.Editor.Selection.Select(host.Editor.Document.ContentEnd, host.Editor.Document.ContentEnd);
+            bool foreignPaste = host.PasteMixed();
+            t.Check("paste reads the other app clipboard, not the last internal copy", foreignPaste && host.PlainText().Contains("외부앱") && !host.PlainText().EndsWith("내부내부"));
+            var same = new DataObject();
+            same.SetData(NoteClip.Format, NoteClip.Pack(new[] { new NoteClipPiece { Text = "같은순번" } }));
+            same.SetData(DataFormats.UnicodeText, "무시될글");
+            NoteClipSession.Fake = same;
+            NoteClipSession.SequenceNow = owned;
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph());
+            host.Editor.CaretPosition = host.Editor.Document.ContentEnd;
+            bool ownPaste = host.PasteMixed();
+            t.Check("paste uses BongHub.Note only when the clipboard sequence matches", ownPaste && host.PlainText().Contains("같은순번") && !host.PlainText().Contains("무시될글"));
+            NoteClipSession.Fake = null;
+        }
     }
 }

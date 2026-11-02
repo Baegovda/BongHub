@@ -51,6 +51,10 @@ static class RtfPict
         return list;
     }
 
+    /// <summary>PNG or JPEG blip. Metafile, GIF, and linked pictures are not.</summary>
+    public static bool IsRaster(string group)
+        => group.Contains("\\pngblip", StringComparison.Ordinal) || group.Contains("\\jpegblip", StringComparison.Ordinal);
+
     public static long PayloadBytes(byte[] rtf)
     {
         long n = 0;
