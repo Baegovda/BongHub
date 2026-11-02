@@ -40,7 +40,7 @@ BongHub.exe --smoketest
 BongHub.exe --notetest --data <notes 복사본>
 ```
 
-`--smoketest`와 `--notetest`는 화면 밖이고 저장권 잠금, git, 카톡 창, 모니터 전환을 하지 않아요. 기대값은 스모크 **114 PASS**, 노트 **114 PASS**예요. 탭은 모니터 프로필, 스티커 메모, 카톡 광고 제거, PowerToys, 일반, 정보 여섯 개예요. 옛 기록은 `test-logs/`에 있어요.
+`--smoketest`와 `--notetest`는 화면 밖이고 저장권 잠금, git, 카톡 창, 모니터 전환을 하지 않아요. 기대값은 스모크 **123 PASS**, 노트 **114 PASS**예요. 탭은 모니터 프로필, 스티커 메모, 카톡 광고 제거, PowerToys, 일반, 정보 여섯 개예요. 옛 기록은 `test-logs/`에 있어요.
 
 패치 검사:
 
