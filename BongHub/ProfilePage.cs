@@ -26,63 +26,85 @@ public partial class MainWindow
         Render("presets", false);
     }
 
+    bool windowPickerOpen;
+
     void BuildProfileEditor(MonitorProfile profile)
     {
-        Header("이 프로필");
-        var nameBox = new TextBox { Text = profile.Name, MinWidth = 180, FontSize = 16, FontWeight = FontWeights.SemiBold, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground, VerticalContentAlignment = VerticalAlignment.Center };
-        var hotkeyBox = new TextBox { Text = profile.Hotkey, MinWidth = 120, FontSize = 14, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground, VerticalContentAlignment = VerticalAlignment.Center };
-        nameBox.LostFocus += (_, _) => { ProfileDoc.Rename(profile, nameBox.Text); SaveProfiles(); };
-        hotkeyBox.LostFocus += (_, _) => { profile.Hotkey = hotkeyBox.Text.Trim(); SaveProfiles(); };
-        var named = Group();
-        FieldRow(named, "이름", Chip(nameBox));
-        FieldRow(named, "단축키", Chip(hotkeyBox));
-
-        Header("모니터 배치");
-        DrawProfileCanvas(profile);
-
-        var mon = profile.Monitors.FirstOrDefault(m => m.Number == selectedMonitorNumber) ?? profile.Monitors.FirstOrDefault();
-        if (mon != null)
+        var live = ScreenCatalog.Current();
+        if (ScreenBind.Mismatch(profile, live))
         {
-            var monTools = new StackPanel { Orientation = Orientation.Horizontal };
-            monTools.Children.Add(Small("주 모니터", () => { ProfileDoc.SetPrimary(profile, mon.Number); selectedMonitorNumber = mon.Number; SaveProfiles(); Render("presets", false); }));
-            monTools.Children.Add(Small("모니터 추가", () => { AddMonitor(profile); SaveProfiles(); Render("presets", false); }));
-            if (profile.Monitors.Count > 1)
-                monTools.Children.Add(Small("이 모니터 삭제", () => { RemoveMonitor(profile, mon); SaveProfiles(); Render("presets", false); }));
-            var monGroup = Group();
-            Row(monGroup, "\uE7F4", mon.Primary ? "FF9500" : "4C8AFE", mon.Number + "번 · " + mon.W + "×" + mon.H, mon.Enabled ? "켜짐" : "꺼짐", monTools);
-            Row(monGroup, "\uE7F4", "34C759", "이 모니터 사용", "주 모니터와 마지막 모니터는 끄지 않아요.", Switch(mon.Enabled, v =>
+            var fix = Group();
+            Row(fix, "\uE7BA", "FF9500", "화면이 저장된 구성과 달라요", "번호나 연결이 지금 PC와 맞지 않아요.", Small("현재 화면에 맞추기", () =>
             {
-                if (!ProfileDoc.SetEnabled(profile, mon.Number, v)) return;
+                ScreenBind.MatchCurrent(profile, live);
                 SaveProfiles();
                 Render("presets", false);
-            }, !AppEnv.ReadOnly));
+            }), wrap: true);
         }
+        DrawProfileCanvas(profile);
+        var add = Small(windowPickerOpen ? "닫기" : "+ 창 추가", () => { windowPickerOpen = !windowPickerOpen; Render("presets", false); });
+        var bar = Group();
+        Row(bar, "\uE710", "34C759", "창", "모니터 안에서 끌어 옮기고, 가장자리에서 크기를 바꿔요.", add, wrap: true);
+        if (windowPickerOpen) DrawWindowPicker(profile);
+        Header("선택");
+        DrawDetail(profile);
+        var icons = Group();
+        string when = profile.Icons.Count == 0 ? "아직 이 프로필에 담긴 배치가 없어요." : profile.Icons.Count + "개 · " + (profile.IconsSaved.Length == 0 ? "저장됨" : profile.IconsSaved);
+        Row(icons, "\uE8A9", "34C759", "아이콘 배치를 이 프로필에 저장", when, Small("지금 저장", () => CaptureProfileIcons(profile)), wrap: true);
+        Row(icons, "\uE8A5", "5AC8FA", "적용할 때 아이콘 되돌리기", "지금 적용을 누르면 담긴 위치로 옮겨요.", Switch(profile.RestoreIcons, v => { profile.RestoreIcons = v; SaveProfiles(); }, !AppEnv.ReadOnly), wrap: true);
+    }
 
-        Header("창");
-        DrawWindowList(profile);
-        Header("창 담기");
-        var winGroup = Group();
+    void DrawDetail(MonitorProfile profile)
+    {
+        var g = Group();
+        var nameBox = new TextBox { Text = profile.Name, MinWidth = 180, FontSize = 16, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground };
+        var hotkeyBox = new TextBox { Text = profile.Hotkey, MinWidth = 120, FontSize = 14, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground };
+        nameBox.LostFocus += (_, _) => { ProfileDoc.Rename(profile, nameBox.Text); SaveProfiles(); };
+        hotkeyBox.LostFocus += (_, _) => { profile.Hotkey = hotkeyBox.Text.Trim(); SaveProfiles(); };
+        FieldRow(g, "이름", Chip(nameBox));
+        FieldRow(g, "단축키", Chip(hotkeyBox));
+        var app = profile.Apps.FirstOrDefault(a => a.Id == selectedAppId);
+        var mon = profile.Monitors.FirstOrDefault(m => m.Number == selectedMonitorNumber) ?? profile.Monitors.FirstOrDefault(m => m.Primary) ?? profile.Monitors.FirstOrDefault();
+        if (app != null)
+        {
+            string label = app.Name.Length > 0 ? app.Name : app.Title;
+            Row(g, "\uE737", "5AC8FA", label.Length > 0 ? label : "창", app.W + "×" + app.H + (app.Process.Length > 0 ? " · " + app.Process : ""), Small("창 삭제", () =>
+            {
+                profile.Apps.Remove(app);
+                selectedAppId = "";
+                SaveProfiles();
+                Render("presets", false);
+            }), wrap: true, icon: AppIcon.Lookup(app.Process, app.Path));
+        }
+        else if (mon != null)
+        {
+            string state = mon.Connected ? (mon.Enabled ? "이 프로필에서 사용" : "이 프로필에서 끔") : "연결 안 됨";
+            UIElement? primary = mon.Connected ? Small(mon.Primary ? "주 모니터" : "주로 지정", () => { ProfileDoc.SetPrimary(profile, mon.Number); selectedMonitorNumber = mon.Number; SaveProfiles(); Render("presets", false); }) : null;
+            Row(g, "\uE7F4", mon.Connected ? "4C8AFE" : "8E8E93", mon.Number + "번 · " + mon.W + "×" + mon.H, state, primary, wrap: true);
+            if (mon.Connected)
+                Row(g, "\uE7F4", "34C759", "이 프로필에서 사용", "끄면 적용할 때 이 화면을 빼요.", Switch(mon.Enabled, v =>
+                {
+                    if (!ProfileDoc.SetEnabled(profile, mon.Number, v)) return;
+                    SaveProfiles();
+                    Render("presets", false);
+                }, !AppEnv.ReadOnly), wrap: true);
+        }
+    }
+
+    void DrawWindowPicker(MonitorProfile profile)
+    {
+        var g = Group();
         Button running = null!;
         running = Small("목록", () => ShowRunningMenu(profile, running));
-        Row(winGroup, "\uE737", "5AC8FA", "실행 중인 창", "고르면 이 모니터에 담아요. 시험에서는 가짜 창만 나와요.", running);
-        Row(winGroup, "\uE8B3", "4C8AFE", "조준", "십자선으로 창을 집어요.", Small("조준", () => { RequestCaptureWindow(); if (LastPick != null) AddPicked(profile, LastPick); }));
+        Row(g, "\uE737", "5AC8FA", "실행 중인 창", "아이콘과 함께 고르면 담긴 창이 돼요. 시험에서는 가짜 창만 나와요.", running, wrap: true);
+        Row(g, "\uE8B3", "4C8AFE", "조준", "십자선을 창 위에 놓아요.", Small("조준", () => { RequestCaptureWindow(); if (LastPick != null) AddPicked(profile, LastPick); }), wrap: true);
         var proc = PromptBox("notepad.exe");
-        var title = PromptBox("제목 없음");
+        var title = PromptBox("메모장");
         var cls = PromptBox("Notepad");
-        FieldRow(winGroup, "실행 파일", proc.Field);
-        FieldRow(winGroup, "창 제목", title.Field);
-        FieldRow(winGroup, "창 클래스", cls.Field);
-        Row(winGroup, "\uE710", "34C759", "직접 담기", "위 세 칸으로 창을 추가해요.", Small("담기", () => AddPicked(profile, new WindowPick { Process = proc.Box.Text.Trim(), Title = title.Box.Text.Trim(), Class = cls.Box.Text.Trim(), W = 800, H = 600 })));
-
-        Header("바탕화면 아이콘");
-        var iconGroup = Group();
-        string iconSub = profile.Icons.Count == 0 ? "아직 이 프로필에 담긴 아이콘이 없어요." : profile.Icons.Count + "개 · 지금 적용할 때 되돌려요.";
-        Row(iconGroup, "\uE8A9", "34C759", "이 프로필의 배치", iconSub, Small("이 화면에 담기", () => CaptureProfileIcons(profile)));
-
-        Header("아이콘을 언제 기억할까요");
-        var pol = Group();
-        DeskSwitch(pol, "\uE7F4", "FF9500", "적용 직전에 기억", "프로필을 바꾸기 전에 현재 아이콘 위치만 저장해요.", "SaveBeforeSwitch", ConfigStore.DeskSaveBeforeSwitch);
-        DeskSwitch(pol, "\uE7F8", "AF52DE", "화면이 바뀌면 되돌리기", "저장된 배치가 있을 때만 아이콘을 옮겨요.", "RestoreOnChange", ConfigStore.DeskRestoreOnChange);
+        FieldRow(g, "실행 파일", proc.Field);
+        FieldRow(g, "창 제목", title.Field);
+        FieldRow(g, "창 클래스", cls.Field);
+        Row(g, "\uE710", "34C759", "직접 추가", null, Small("담기", () => AddPicked(profile, new WindowPick { Process = proc.Box.Text.Trim(), Title = title.Box.Text.Trim(), Class = cls.Box.Text.Trim(), W = 800, H = 600 })));
     }
 
     Border Chip(UIElement child) => new()
@@ -111,20 +133,18 @@ public partial class MainWindow
         return (Chip(grid), box);
     }
 
-    void DrawWindowList(MonitorProfile profile)
+    Button ProfileMenu(MonitorProfile item)
     {
-        var g = Group();
-        if (profile.Apps.Count == 0)
-            Row(g, "\uE737", "8E8E93", "담긴 창 없음", "모니터 안에서 끌어 놓고, 가장자리에서 크기를 바꿔요.", null);
-        foreach (var app in profile.Apps.ToList())
-        {
-            var item = app;
-            string sub = (item.Process.Length > 0 ? item.Process + " · " : "") + item.W + "×" + item.H + (item.State != "normal" ? " · " + item.State : "");
-            var tools = new StackPanel { Orientation = Orientation.Horizontal };
-            tools.Children.Add(Small("삭제", () => { profile.Apps.Remove(item); if (selectedAppId == item.Id) selectedAppId = ""; SaveProfiles(); Render("presets", false); }));
-            var row = Row(g, "\uE737", "5AC8FA", item.Name.Length > 0 ? item.Name : item.Title, sub, tools, () => { selectedAppId = item.Id; selectedMonitorNumber = item.Monitor; Render("presets", false); });
-            if (item.Id == selectedAppId) row.Background = new SolidColorBrush(Color.FromArgb(0x18, 0x5A, 0xC8, 0xFA));
-        }
+        var b = new Button { Content = "⋯", Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(6, 0, 0, 0), ToolTip = "복제 또는 삭제" };
+        var menu = new ContextMenu { PlacementTarget = b };
+        var dup = new MenuItem { Header = "복제" };
+        dup.Click += (_, _) => { var n = ProfileDoc.Duplicate(Profiles, item.Id); if (n != null) { SelectedProfileId = n.Id; SaveProfiles(); Render("presets", false); } };
+        var del = new MenuItem { Header = "삭제" };
+        del.Click += (_, _) => { if (ProfileDoc.Delete(Profiles, item.Id)) { SelectedProfileId = Profiles.FirstOrDefault()?.Id ?? ""; selectedAppId = ""; SaveProfiles(); Render("presets", false); } };
+        menu.Items.Add(dup);
+        menu.Items.Add(del);
+        b.Click += (_, _) => menu.IsOpen = true;
+        return b;
     }
 
     void DrawProfileCanvas(MonitorProfile profile)
@@ -160,20 +180,29 @@ public partial class MainWindow
                 BorderThickness = new Thickness(mon.Number == selectedMonitorNumber ? 2 : 1),
                 BorderBrush = (Brush)FindResource("Accent"),
                 Background = new SolidColorBrush(Color.FromArgb(mon.Enabled ? (byte)40 : (byte)16, 0x4C, 0x8A, 0xFE)),
-                Opacity = mon.Enabled ? 1 : 0.55,
+                Opacity = !mon.Connected ? 0.35 : mon.Enabled ? 1 : 0.55,
                 Cursor = Cursors.SizeAll
             };
             Canvas.SetLeft(frame, box.X);
             Canvas.SetTop(frame, box.Y);
-            frame.Child = new TextBlock
+            var badge = new Border
             {
-                Text = mon.Number + (mon.Primary ? " · 주" : "") + "\n" + mon.W + "×" + mon.H,
-                Margin = new Thickness(10, 8, 0, 0),
-                FontSize = 13,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("Secondary"),
-                IsHitTestVisible = false
+                Background = new SolidColorBrush(Color.FromArgb(0xF0, 0x1C, 0x1C, 0x1E)),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(6, 2, 6, 2),
+                IsHitTestVisible = false,
+                Child = new TextBlock
+                {
+                    Text = mon.Number + (mon.Primary ? " · 주" : "") + "  " + mon.W + "×" + mon.H + (mon.Connected ? "" : "  연결 안 됨"),
+                    Foreground = Brushes.White,
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold,
+                    TextWrapping = TextWrapping.Wrap
+                }
             };
+            Canvas.SetLeft(badge, box.X + 8);
+            Canvas.SetTop(badge, box.Y + 8);
+            Canvas.SetZIndex(badge, 5000);
             var start = mon.Box;
             var origin = new Point(box.X, box.Y);
             Point grab = default;
@@ -191,6 +220,8 @@ public partial class MainWindow
                 var p = e.GetPosition(stage);
                 Canvas.SetLeft(frame, origin.X + p.X - grab.X);
                 Canvas.SetTop(frame, origin.Y + p.Y - grab.Y);
+                Canvas.SetLeft(badge, origin.X + p.X - grab.X + 8);
+                Canvas.SetTop(badge, origin.Y + p.Y - grab.Y + 8);
             };
             frame.MouseLeftButtonUp += (_, e) =>
             {
@@ -207,32 +238,53 @@ public partial class MainWindow
                 Render("presets", false);
             };
             stage.Children.Add(frame);
+            stage.Children.Add(badge);
         }
+        int tileZ = 10;
         foreach (var app in profile.Apps)
         {
             var home = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors[0];
             var abs = new ProfileBox(home.X + app.X, home.Y + app.Y, app.W, app.H);
             var view = ProfileSnap.ToCanvas(abs, scene);
+            double tileW = Math.Max(128, view.W);
+            double tileH = Math.Max(72, view.H);
+            double font = Math.Clamp(tileW / 12.0, 12, 16);
+            string shown = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
             var tile = new Border
             {
-                Width = Math.Max(72, view.W),
-                Height = Math.Max(44, view.H),
+                Width = tileW,
+                Height = tileH,
                 CornerRadius = new CornerRadius(8),
                 Background = (Brush)FindResource("Card"),
                 BorderBrush = app.Id == selectedAppId ? (Brush)FindResource("Accent") : new SolidColorBrush(Color.FromArgb(0x55, 255, 255, 255)),
                 BorderThickness = new Thickness(app.Id == selectedAppId ? 2 : 1),
                 Cursor = Cursors.SizeAll,
-                Tag = app
+                Tag = app,
+                ToolTip = shown + "\n" + app.W + "×" + app.H + (app.Process.Length > 0 ? "\n" + app.Process : "")
             };
             Canvas.SetLeft(tile, view.X);
             Canvas.SetTop(tile, view.Y);
-            var body = new StackPanel { Margin = new Thickness(8, 4, 8, 4), IsHitTestVisible = false };
-            var head = new StackPanel { Orientation = Orientation.Horizontal };
-            head.Children.Add(new TextBlock { Text = "\uE737", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 14, Foreground = Brushes.White, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
-            head.Children.Add(new TextBlock { Text = app.Name.Length > 0 ? app.Name : app.Title, Foreground = Brushes.White, FontSize = 12, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
-            body.Children.Add(head);
-            body.Children.Add(new TextBlock { Text = app.W + "×" + app.H, Foreground = (Brush)FindResource("Secondary"), FontSize = 11 });
+            Canvas.SetZIndex(tile, app.Id == selectedAppId ? 40 : 10);
+            var body = new Grid { Margin = new Thickness(8, 6, 8, 6), IsHitTestVisible = false };
+            body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            body.ColumnDefinitions.Add(new ColumnDefinition());
+            body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var icon = AppIcon.Lookup(app.Process, app.Path);
+            UIElement mark = icon != null
+                ? new Image { Source = icon, Width = 20, Height = 20, Margin = new Thickness(0, 0, 6, 0) }
+                : new TextBlock { Text = "\uE737", FontFamily = (FontFamily)FindResource("Icons"), FontSize = font, Foreground = Brushes.White, Margin = new Thickness(0, 0, 6, 0) };
+            body.Children.Add(mark);
+            var nameBlock = new TextBlock { Text = shown.Length > 0 ? shown : "창", Foreground = Brushes.White, FontSize = font, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
+            Grid.SetColumn(nameBlock, 1);
+            body.Children.Add(nameBlock);
+            var sizeBlock = new TextBlock { Text = app.W + "×" + app.H, Foreground = (Brush)FindResource("Secondary"), FontSize = Math.Max(11, font - 2), TextWrapping = TextWrapping.Wrap };
+            Grid.SetRow(sizeBlock, 1);
+            Grid.SetColumnSpan(sizeBlock, 2);
+            body.Children.Add(sizeBlock);
             tile.Child = body;
+            void Raise() { Canvas.SetZIndex(tile, ++tileZ); }
+            tile.MouseEnter += (_, _) => Raise();
             var appStart = abs;
             string edge = "";
             Point grab = default;
@@ -240,6 +292,7 @@ public partial class MainWindow
             {
                 selectedAppId = app.Id;
                 selectedMonitorNumber = app.Monitor;
+                Raise();
                 tile.CaptureMouse();
                 grab = e.GetPosition(tile);
                 edge = EdgeAt(grab, tile.ActualWidth, tile.ActualHeight);
@@ -320,7 +373,6 @@ public partial class MainWindow
                 SaveProfiles();
                 Render("presets", false);
             };
-            Canvas.SetZIndex(tile, 1);
             stage.Children.Add(tile);
         }
         Canvas.SetZIndex(preview, 3);
@@ -342,26 +394,6 @@ public partial class MainWindow
         return "";
     }
 
-    void AddMonitor(MonitorProfile profile)
-    {
-        int x = profile.Monitors.Count == 0 ? 0 : profile.Monitors.Max(m => m.X + m.W);
-        int n = profile.Monitors.Count == 0 ? 1 : profile.Monitors.Max(m => m.Number) + 1;
-        profile.Monitors.Add(new ProfileMonitor { Id = "M" + n, Number = n, X = x, Y = 0, W = 1920, H = 1080, Enabled = true, Primary = profile.Monitors.Count == 0 });
-        ProfileDoc.SyncLists(profile);
-        selectedMonitorNumber = n;
-    }
-
-    void RemoveMonitor(MonitorProfile profile, ProfileMonitor mon)
-    {
-        if (profile.Monitors.Count <= 1) return;
-        profile.Monitors.Remove(mon);
-        foreach (var app in profile.Apps.Where(a => a.Monitor == mon.Number))
-            app.Monitor = profile.Monitors[0].Number;
-        if (!profile.Monitors.Any(m => m.Primary)) profile.Monitors[0].Primary = true;
-        ProfileDoc.SyncLists(profile);
-        selectedMonitorNumber = profile.Monitors[0].Number;
-    }
-
     void AddPicked(MonitorProfile profile, WindowPick pick)
     {
         if (pick.Process.Length == 0 && pick.Title.Length == 0 && pick.Class.Length == 0) return;
@@ -370,6 +402,7 @@ public partial class MainWindow
         {
             Id = ProfileDoc.NewId(),
             Process = pick.Process,
+            Path = pick.Path,
             Title = pick.Title,
             Class = pick.Class,
             Name = pick.Title.Length > 0 ? pick.Title : pick.Process,
@@ -392,6 +425,8 @@ public partial class MainWindow
         {
             var captured = pick;
             var item = new MenuItem { Header = (captured.Title.Length > 0 ? captured.Title : captured.Process) + " · " + captured.W + "×" + captured.H };
+            var face = AppIcon.Lookup(captured.Process, captured.Path);
+            if (face != null) item.Icon = new Image { Source = face, Width = 16, Height = 16 };
             item.Click += (_, _) => AddPicked(profile, captured);
             menu.Items.Add(item);
         }
@@ -411,6 +446,7 @@ public partial class MainWindow
         {
             using var icons = new ExplorerIconSurface();
             profile.Icons = ProfileDoc.CaptureIcons(icons.Read());
+            profile.IconsSaved = DateTime.Now.ToString("M월 d일 HH:mm");
             if (profile.Icons.Count > 0) profile.DeskLayout = "";
             SaveProfiles();
             Render("presets", false);

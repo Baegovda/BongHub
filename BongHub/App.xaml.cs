@@ -33,6 +33,7 @@ public partial class App : Application
         KakaoGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden;
         CloudGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden && !AppEnv.ReadOnly;
         ScreenMap.Live = () => Win32.Monitors().Select(m => new MonitorSpec(m.W, m.H, m.X, m.Y, m.Primary)).ToList();
+        ScreenCatalog.Live = Win32.DisplayIdentities;
         AppEnv.Mark("onstartup");
         DispatcherUnhandledException += (_, ex) => { AppEnv.Log("unhandled: " + ex.Exception); ex.Handled = true; };
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => AppEnv.Log("fatal: " + ex.ExceptionObject);

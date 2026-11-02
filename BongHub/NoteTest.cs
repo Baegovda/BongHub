@@ -399,6 +399,52 @@ public static class NoteTest
             t.Check("selection copy keeps text and image", false, "no note");
         }
         t.Check("link open does not launch during notetest", host != null && host.TryOpenLink("go https://example.com/x", 3, launch: true) && host.LastLink.StartsWith("https://") && !host.LinkLaunched);
+        var wwwHit = NoteLinks.Find("go www.example.com, now");
+        t.Check("www link trims the trailing comma", wwwHit.Count == 1 && wwwHit[0].Url == "https://www.example.com" && wwwHit[0].Length == "www.example.com".Length);
+        bool linkReadable = true;
+        string linkBad = "";
+        foreach (var key in NoteColors.PaletteKeys)
+        {
+            var ink = NoteColors.LinkInk(key);
+            if (NoteColors.Contrast(ink, NoteColors.SurfA(key)) < 4.5 || NoteColors.Contrast(ink, NoteColors.SurfB(key)) < 4.5)
+            {
+                linkReadable = false;
+                linkBad = key;
+                break;
+            }
+        }
+        t.Check("link ink is readable on every note color", linkReadable, linkBad);
+        if (host != null)
+        {
+            host.Editor.Document.Blocks.Clear();
+            var linkPara = new Paragraph();
+            host.Editor.Document.Blocks.Add(linkPara);
+            host.Editor.CaretPosition = linkPara.ContentEnd;
+            host.Editor.CaretPosition.InsertTextInRun("see https://bong.dev/a. and www.bong.dev");
+            var shown = host.DisplayLinks();
+            t.Check("typing paints http and www without eating punctuation", shown.Count == 2 && shown.Contains("https://bong.dev/a") && shown.Contains("www.bong.dev") && host.PlainText().Contains("https://bong.dev/a."));
+            int beforeSpace = host.ReadCaret();
+            host.Editor.CaretPosition.InsertTextInRun("!");
+            t.Check("link styling keeps the caret on the line", host.ReadCaret() == beforeSpace + 1 && host.PlainText().EndsWith("!"));
+            t.Check("link hover underlines and shows the tip", host.HoverFirstLink());
+            t.Check("plain click does not open a link", !host.OpenDisplayedLink(false) && !host.LinkLaunched);
+            t.Check("ctrl click opens the link without a process", host.OpenDisplayedLink(true) && host.LastLink == "https://bong.dev/a" && !host.LinkLaunched);
+            host.FlushText();
+            string linkRtf = Encoding.ASCII.GetString(File.ReadAllBytes(NoteStore.RtfPath(host.Meta.Id)));
+            t.Check("link color stays out of the rtf", !linkRtf.Contains("HYPERLINK", StringComparison.OrdinalIgnoreCase) && linkRtf.Contains("https://bong.dev/a") && linkRtf.Contains("www.bong.dev"));
+            host.SetColor("g:lemon");
+            t.Check("link ink follows the note color", host.LinkInkMatchesNote());
+        }
+        else
+        {
+            t.Check("typing paints http and www without eating punctuation", false, "no note");
+            t.Check("link styling keeps the caret on the line", false, "no note");
+            t.Check("link hover underlines and shows the tip", false, "no note");
+            t.Check("plain click does not open a link", false, "no note");
+            t.Check("ctrl click opens the link without a process", false, "no note");
+            t.Check("link color stays out of the rtf", false, "no note");
+            t.Check("link ink follows the note color", false, "no note");
+        }
         t.Check("shortcut ctrl+t is handled", host != null && host.HandleShortcut(System.Windows.Input.Key.T, System.Windows.Input.ModifierKeys.Control));
     }
 }

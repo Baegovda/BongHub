@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace BongHub;
 
@@ -354,6 +355,33 @@ public static class SmokeTest
         var seedPrimary = seeded[0].Monitors.First(m => m.Primary);
         string seedSummary = seedPrimary.W + "×" + seedPrimary.H;
         t.Check("profile monitors follow the screen list", seeded[0].Monitors.Count == 5 && seedPrimary.W == 3840 && seedPrimary.H == 2160 && seedPrimary.X == 0 && seedPrimary.Id == "SAM1" && seeded[0].Monitors.Any(m => m.W == 960 && m.H == 640) && seedSummary == "3840×2160" && ScreenMap.Current().Count == 0);
+        var numbered = new MonitorProfile { Name = "작업" };
+        numbered.Monitors.Add(new ProfileMonitor { Id = "old-a", Number = 1, X = 0, Y = 0, W = 1920, H = 1080 });
+        numbered.Monitors.Add(new ProfileMonitor { Id = "old-b", Number = 1, X = 1920, Y = 0, W = 3840, H = 2160 });
+        numbered.Apps.Add(new ProfileApp { Id = "w", Process = "notepad.exe", Title = "메모", Monitor = 1, X = 10, Y = 10, W = 400, H = 300 });
+        var live = new List<ScreenInfo>
+        {
+            new() { Number = ScreenBind.WindowsNumber(@"\\.\DISPLAY1"), Device = @"\\.\DISPLAY1", Path = @"\\?\DISPLAY#AAA", Edid = "DEL:1", W = 3840, H = 2160, X = 1920, Y = 0, Primary = true },
+            new() { Number = ScreenBind.WindowsNumber(@"\\.\DISPLAY2"), Device = @"\\.\DISPLAY2", Path = @"\\?\DISPLAY#BBB", Edid = "SAM:2", W = 1920, H = 1080, X = 0, Y = 0 }
+        };
+        ScreenBind.Adopt(numbered, live);
+        var wide = numbered.Monitors.First(m => m.W == 3840);
+        var desk = numbered.Monitors.First(m => m.W == 1920);
+        t.Check("windows numbers follow display names and resolution", ScreenBind.WindowsNumber(@"\\.\DISPLAY12") == 12 && wide.Number == 1 && desk.Number == 2 && wide.Path.Contains("AAA") && numbered.Apps[0].Monitor == desk.Number);
+        var bound = new MonitorProfile();
+        bound.Monitors.Add(new ProfileMonitor { Number = 2, X = 0, Y = 0, W = 800, H = 600, Path = @"\\?\DISPLAY#GONE", Edid = "OLD" });
+        bound.Apps.Add(new ProfileApp { Title = "남은 창", Monitor = 2, W = 200, H = 200 });
+        var now = new List<ScreenInfo> { new() { Number = 4, Device = @"\\.\DISPLAY4", Path = @"\\?\DISPLAY#BBB", Edid = "SAM:2", W = 1920, H = 1080, X = 10, Y = 10 } };
+        int pathScore = ScreenBind.Score(new ProfileMonitor { Path = @"\\?\DISPLAY#BBB", W = 100, H = 100, X = 9000, Y = 0 }, now[0]);
+        int placeScore = ScreenBind.Score(new ProfileMonitor { W = 1920, H = 1080, X = 10, Y = 10 }, now[0]);
+        ScreenBind.Adopt(bound, now);
+        bool wasMismatch = ScreenBind.Mismatch(bound, now);
+        ScreenBind.MatchCurrent(bound, now);
+        bool iconThrew = false;
+        try { AppIcon.ReadReal("notepad.exe"); } catch (InvalidOperationException) { iconThrew = true; }
+        bool screenThrew = false;
+        try { ScreenCatalog.ReadReal(); } catch (InvalidOperationException) { screenThrew = true; }
+        t.Check("disconnected monitor stays and matching uses identity", pathScore > placeScore && bound.Apps.Count == 1 && bound.Apps[0].Monitor == 4 && wasMismatch && !ScreenBind.Mismatch(bound, now) && bound.Monitors.Any(m => m.Connected && m.Number == 4 && m.Path.Contains("BBB")) && iconThrew && AppIcon.NativeCalls == 0 && screenThrew && ScreenCatalog.NativeCalls == 0);
 
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);
@@ -393,6 +421,35 @@ public static class SmokeTest
         int titleAt = titleRaw.IndexOf("\"Title\":", StringComparison.Ordinal);
         int modifiedAt = titleRaw.IndexOf("\"Modified\":", StringComparison.Ordinal);
         t.Check("note title persists without a color name", note.TitleHint.Text == "제목" && titleBack != null && titleBack.Title == "회의" && titleAt > modifiedAt && titleOld != null && titleOld.Title.Length == 0 && !titleRaw.Contains("오로라"));
+        note.UpdateLayout();
+        double bodyPx = note.Editor.Document.FontSize;
+        double titlePx = note.TitleBox.FontSize;
+        var titleBrush = note.TitleBox.Foreground as SolidColorBrush;
+        var caretBrush = note.TitleBox.CaretBrush as SolidColorBrush;
+        var editorCaret = note.Editor.CaretBrush as SolidColorBrush;
+        double titleX = note.TitleBox.TranslatePoint(new Point(note.TitleBox.Padding.Left, 0), note).X;
+        double bodyX = note.Editor.TranslatePoint(new Point(note.Editor.Document.PagePadding.Left, 0), note).X;
+        double titleBottom = note.TitleBox.TranslatePoint(new Point(0, note.TitleBox.ActualHeight), note).Y;
+        double bodyTop = note.Editor.TranslatePoint(new Point(0, note.Editor.Document.PagePadding.Top), note).Y;
+        double barBottom = note.Bar.TranslatePoint(new Point(0, note.Bar.ActualHeight), note).Y;
+        double titleTop = note.TitleBox.TranslatePoint(new Point(0, 0), note).Y;
+        double gap = bodyTop - titleBottom;
+        bool ink = titleBrush != null && caretBrush != null && titleBrush.Color == caretBrush.Color && editorCaret != null && editorCaret.Color == NoteColors.Text && NoteColors.Lum(titleBrush.Color) + 0.001 >= NoteColors.Lum(NoteColors.Text);
+        t.Check("note title uses the ink, sits under the toolbar, and leaves a short gap",
+            ink && note.TitleBox.FontWeight == FontWeights.Bold && titlePx / bodyPx > 1.55 && titlePx / bodyPx < 1.66
+            && Math.Abs(titleX - bodyX) < 2 && gap >= 8 && gap <= 18 && titleTop + 1 >= barBottom && titleTop - barBottom <= 12,
+            $"ink={titleBrush?.Color} caret={caretBrush?.Color} editor={editorCaret?.Color} size {titlePx:0.0}/{bodyPx:0.0} align {titleX:0.0}/{bodyX:0.0} gap {gap:0.0} above {titleTop - barBottom:0.0}");
+        note.SetTitle("");
+        var hintBrush = note.TitleHint.Foreground as SolidColorBrush;
+        t.Check("note title placeholder is dimmed", note.TitleHint.Visibility == Visibility.Visible && note.TitleHint.Opacity <= 0.45 && note.TitleHint.Opacity >= 0.25 && hintBrush != null && titleBrush != null && hintBrush.Color == titleBrush.Color);
+        note.SetTitle("회의");
+        foreach (var key in new[] { "g:lemon", "yellow", "g:mist", "g:blocks", "g:mint", "charcoal" })
+        {
+            note.SetColor(key); await TestKit.Delay(260);
+            var c = TestKit.Contrast(note, note.TitleBox, DarkUnder);
+            t.Check($"note title contrast [{key}] ≥ 7", c.ratio >= 7, $"{c.ratio:0.0}:1 ({c.fg} on {c.bg})");
+        }
+        note.SetColor("g:aurora");
         note.Editor.Document.Blocks.Clear();
         for (int line = 0; line < 40; line++)
             note.Editor.Document.Blocks.Add(new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run("줄 " + line + " 스크롤 유지")) { FontSize = 28 });
@@ -487,5 +544,22 @@ public static class SmokeTest
         tray.RaiseHeader("스티커 메모 모두 보이기");
         t.Check("tray show-all opens notes", await TestKit.Until(() => NoteManager.Windows.Count >= 1, 4000), $"open {NoteManager.Windows.Count}");
         t.Check("tray note commands still installed no hook", NoteHotkey.HookInstalls == 0 && NoteHotkey.NativeRegistrations == 0);
+
+        var bare = new HashSet<string>();
+        foreach (var page in new[] { "notes", "general", "powertoys", "kakao", "presets" })
+        {
+            w.Navigate(page);
+            w.UpdateLayout();
+            var live = NoteManager.Windows.FirstOrDefault();
+            if (live != null) { _ = live.Editor; live.ShowPalette(); live.CustomColor.OpenPicker(); }
+            foreach (var item in ThemeAudit.Bare(tray.Menu)) bare.Add(item);
+            live?.ClosePalette();
+        }
+        var bmp = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null, new byte[16], 8);
+        var viewer = ImageViewerWindow.Open(bmp);
+        await TestKit.Delay(120);
+        foreach (var item in ThemeAudit.Bare(tray.Menu)) bare.Add(item);
+        t.Check("every control uses a themed style", bare.Count == 0, bare.Count == 0 ? "" : string.Join(", ", bare.Take(12)));
+        viewer.Close();
     }
 }

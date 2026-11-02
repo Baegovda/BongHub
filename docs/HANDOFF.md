@@ -1,6 +1,6 @@
 # BongHub 인수인계 문서 (HANDOFF)
 
-> **결론 (2026-11-02 KST):** 소스는 **BongHub 1.2.0** 하나예요. WinForms 3.4.x 소스(`app/`, `BongHub.cs`, `build.ps1`)는 저장소에서 뺐어요. 실행 파일은 `BongHub.exe`예요. `%LOCALAPPDATA%\BongHub`, 메모·설정 형식, `Local\BongHub_NotesWriter`는 그대로예요. 기대 시험은 스모크 **112**, 노트 **93**예요. 0.4.0 유휴는 트레이 8/18MB, 설정 20/64MB, 메모 7개 22/94MB예요. 클라우드 `data/`는 계속 커밋됩니다.
+> **결론 (2026-11-02 KST):** 소스는 **BongHub 1.3.0** 하나예요. WinForms 3.4.x 소스(`app/`, `BongHub.cs`, `build.ps1`)는 저장소에서 뺐어요. 실행 파일은 `BongHub.exe`예요. `%LOCALAPPDATA%\BongHub`, 메모·설정 형식, `Local\BongHub_NotesWriter`는 그대로예요. 기대 시험은 스모크 **114**, 노트 **102**예요. 0.4.0 유휴는 트레이 8/18MB, 설정 20/64MB, 메모 7개 22/94MB예요. 클라우드 `data/`는 계속 커밋됩니다.
 
 - 언어: 한국어 해요체. 비밀값(토큰·암호)은 넣지 않아요.
 - 실제 모니터 전환·밝기·아이콘 복원·후킹·프리셋 CLI는 봇이 실행하지 않아요.
@@ -11,12 +11,12 @@
 
 | 항목 | 값 |
 |---|---|
-| 앱 | **BongHub 1.2.0** (“석봉이의 유틸 창고”). WPF, `net10.0-windows`. WinForms 없음 |
+| 앱 | **BongHub 1.3.0** (“석봉이의 유틸 창고”). WPF, `net10.0-windows`. WinForms 없음 |
 | 예전 이름 | MonitorMode → BongMonitor → (BongUtil 검토) → BongHub |
 | **배포 exe** | **3.4.9** @ `C:\Users\Revaptor_FX\BongHub\BongHub.exe`. 파일 버전 **3.4.9.0** (PC에서 확인). 3.4.8 백업 `backup\3.4.8_20261102_123333` |
-| **`main` 소스** | **BongHub 1.2.0** (`BongHub/`). 3.4.x WinForms 소스는 없음 |
+| **`main` 소스** | **BongHub 1.3.0** (`BongHub/`). 3.4.x WinForms 소스는 없음 |
 | **PR** | **#4·#5·#6·#7·#9 병합.** 열린 PR은 이 문서의 설정 패치(#8) |
-| 시험 | 0.4.0을 Windows에서 확인: 스모크 **58**, 노트 **26**, 설정 첫 프레임 **593ms**. 1.2.0 기대값은 스모크 **112**, 노트 **93**. 옛 기록은 `test-logs/` |
+| 시험 | 0.4.0을 Windows에서 확인: 스모크 **58**, 노트 **26**, 설정 첫 프레임 **593ms**. 1.3.0 기대값은 스모크 **114**, 노트 **102**. 옛 기록은 `test-logs/` |
 | BongHub 메모리 | Windows 유휴, 작업 집합/private: 트레이 **8/18MB**, 설정 **20/64MB**, 메모 7개 **22/94MB** |
 | 런타임 | `%LOCALAPPDATA%\BongHub\` |
 | 클라우드 | **Enabled=true**. `data/`가 `main`에 커밋됨. 커밋 대부분은 `sync: REVAPTOR-FX …` (수는 `git log --grep='^sync:'`로 확인) |
@@ -50,7 +50,7 @@
 
 | 경로 | 내용 |
 |---|---|
-| `BongHub/` | WPF 앱 1.2.0. 출력은 `BongHub.exe` |
+| `BongHub/` | WPF 앱 1.3.0. 출력은 `BongHub.exe` |
 | `BongHub.PatchTests/` | 설정 바이트와 목 동작. `BongHub.RichEditTests/`는 창 없는 RTF |
 | `legacy/BongAd/` | 옛 BongAd 원본 |
 | `docs/HANDOFF.md` | 이 문서 |

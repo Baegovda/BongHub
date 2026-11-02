@@ -133,6 +133,24 @@ public static class NoteColors
         new[] { "g:mist", "미스트", "A5A5A0", "7D7D78" }, new[] { "g:mustard", "머스터드", "AC9B63", "817446" }, new[] { "g:deepteal", "딥 틸", "5C7E79", "48615D" },
         new[] { "g:plumgray", "플럼 그레이", "8D8294", "665D6B" }, new[] { "g:smoke", "스모크", "9A9DA1", "72767A" }, new[] { "g:terracotta", "테라코타", "AA806B", "805F50" } };
     public static readonly Color Text = C(240, 240, 246);
+    /// <summary>Same ink as the body, nudged toward white so the bold title reads a little stronger.</summary>
+    public static Color TitleInk => Mix(Text, Colors.White, 0.42);
+    /// <summary>iOS-style blue, lightened until it stays readable on this note's surfaces.</summary>
+    public static Color LinkInk(string? key)
+    {
+        string k = string.IsNullOrEmpty(key) ? "g:blocks" : key!;
+        Color ink = C(0x64, 0xD2, 0xFF);
+        var bgA = SurfA(k);
+        var bgB = SurfB(k);
+        for (int n = 0; n < 24 && (Contrast(ink, bgA) < 4.5 || Contrast(ink, bgB) < 4.5); n++)
+            ink = Mix(ink, Colors.White, 0.14);
+        return ink;
+    }
+    public static double Contrast(Color a, Color b)
+    {
+        double la = Lum(a), lb = Lum(b);
+        return (Math.Max(la, lb) + 0.05) / (Math.Min(la, lb) + 0.05);
+    }
     static readonly Color Base = C(20, 19, 34);
     public static bool Grad => ConfigStore.Notes.Gradient;
     static Color C(byte r, byte g, byte b) => Color.FromRgb(r, g, b);

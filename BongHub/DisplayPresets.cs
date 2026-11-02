@@ -243,10 +243,16 @@ public static class ProfileCloud
 public sealed class ProfileMonitor
 {
     public string Id = "";
+    /// <summary>Windows Display Settings number, the same one Identify shows.</summary>
     public int Number = 1;
     public int X, Y, W = 1920, H = 1080;
     public bool Primary = true;
     public bool Enabled = true;
+    public string Device = "";
+    public string Path = "";
+    public string Edid = "";
+    /// <summary>Runtime. False when this saved screen is not in the current display list.</summary>
+    public bool Connected = true;
     public ProfileBox Box => new(X, Y, W, H);
 }
 
@@ -254,6 +260,7 @@ public sealed class ProfileApp
 {
     public string Id = "";
     public string Process = "";
+    public string Path = "";
     public string Title = "";
     public string Class = "";
     public string Name = "";
@@ -278,6 +285,8 @@ public sealed class MonitorProfile
     public string Layout = "";
     public string DeskLayout = "";
     public string Workspace = "";
+    public string IconsSaved = "";
+    public bool RestoreIcons = true;
     public List<string> Enable = new();
     public List<string> Disable = new();
     public List<BrightTarget> Brightness = new();
@@ -468,6 +477,189 @@ public static class ProfileLegacy
         if (x + w > monitor.W) x = Math.Max(0, monitor.W - w);
         if (y + h > monitor.H) y = Math.Max(0, monitor.H - h);
         return new ProfileBox(x, y, Math.Min(w, monitor.W), Math.Min(h, monitor.H));
+    }
+}
+
+/// <summary>One live display. <see cref="Number"/> is the Windows Identify number from <c>\\.\DISPLAYn</c>.</summary>
+public sealed class ScreenInfo
+{
+    public int Number;
+    public int W, H, X, Y;
+    public bool Primary;
+    public string Device = "";
+    public string Path = "";
+    public string Edid = "";
+}
+
+/// <summary>Binds saved monitors to physical screens. No display API.</summary>
+public static class ScreenBind
+{
+    public static int WindowsNumber(string? device)
+    {
+        if (string.IsNullOrEmpty(device)) return 0;
+        int i = device.Length;
+        while (i > 0 && char.IsDigit(device[i - 1])) i--;
+        if (i >= device.Length) return 0;
+        return int.TryParse(device[i..], out int n) ? n : 0;
+    }
+
+    public static int Score(ProfileMonitor saved, ScreenInfo live)
+    {
+        int score = 0;
+        if (saved.Path.Length > 0 && string.Equals(saved.Path, live.Path, StringComparison.OrdinalIgnoreCase)) score += 1_000_000;
+        if (saved.Edid.Length > 0 && string.Equals(saved.Edid, live.Edid, StringComparison.OrdinalIgnoreCase)) score += 100_000;
+        if (saved.W == live.W && saved.H == live.H) score += 10_000;
+        int dist = Math.Abs(saved.X - live.X) + Math.Abs(saved.Y - live.Y);
+        score += Math.Max(0, 5_000 - dist / 4);
+        return score;
+    }
+
+    public static ScreenInfo? Best(ProfileMonitor saved, IReadOnlyList<ScreenInfo> live, ISet<int> used, int minimum = 0)
+    {
+        ScreenInfo? pick = null;
+        int best = int.MinValue;
+        foreach (var s in live)
+        {
+            if (used.Contains(s.Number)) continue;
+            int score = Score(saved, s);
+            if (score < minimum) continue;
+            if (pick == null || score > best) { pick = s; best = score; }
+        }
+        return pick;
+    }
+
+    static void Retarget(MonitorProfile profile, Dictionary<ProfileMonitor, int> oldNumbers)
+    {
+        foreach (var app in profile.Apps)
+        {
+            var owner = profile.Monitors.FirstOrDefault(m => oldNumbers.TryGetValue(m, out int n) && n == app.Monitor);
+            if (owner != null) app.Monitor = owner.Number;
+        }
+    }
+
+    static void Remember(Dictionary<ProfileMonitor, int> old, ProfileMonitor m) { if (!old.ContainsKey(m)) old[m] = m.Number; }
+
+    public static void Adopt(MonitorProfile profile, IReadOnlyList<ScreenInfo>? live)
+    {
+        if (live == null || live.Count == 0)
+        {
+            foreach (var m in profile.Monitors) m.Connected = true;
+            return;
+        }
+        var old = new Dictionary<ProfileMonitor, int>();
+        foreach (var m in profile.Monitors) Remember(old, m);
+        var used = new HashSet<int>();
+        foreach (var m in profile.Monitors)
+        {
+            var hit = Best(m, live, used, 10_000);
+            if (hit == null) { m.Connected = false; continue; }
+            used.Add(hit.Number);
+            m.Connected = true;
+            m.Number = hit.Number;
+            m.Device = hit.Device ?? "";
+            m.Path = hit.Path ?? "";
+            m.Edid = hit.Edid ?? "";
+            m.W = hit.W;
+            m.H = hit.H;
+            string hitPath = hit.Path ?? "";
+            string hitDevice = hit.Device ?? "";
+            if ((m.Id ?? "").Length == 0) m.Id = hitPath.Length > 0 ? hitPath : hitDevice;
+        }
+        foreach (var s in live)
+        {
+            if (profile.Monitors.Any(m => m.Connected && m.Number == s.Number)) continue;
+            var added = new ProfileMonitor
+            {
+                Id = (s.Path ?? "").Length > 0 ? s.Path ?? "" : s.Device ?? "",
+                Number = s.Number,
+                X = s.X, Y = s.Y, W = s.W, H = s.H,
+                Primary = s.Primary, Enabled = true, Connected = true,
+                Device = s.Device ?? "", Path = s.Path ?? "", Edid = s.Edid ?? ""
+            };
+            Remember(old, added);
+            profile.Monitors.Add(added);
+        }
+        Retarget(profile, old);
+        if (profile.Monitors.Count > 0 && !profile.Monitors.Any(m => m.Primary && m.Connected))
+        {
+            var pick = profile.Monitors.FirstOrDefault(m => m.Connected) ?? profile.Monitors[0];
+            foreach (var m in profile.Monitors) m.Primary = false;
+            pick.Primary = true;
+        }
+    }
+
+    public static bool Mismatch(MonitorProfile profile, IReadOnlyList<ScreenInfo>? live)
+    {
+        if (live == null || live.Count == 0 || profile.Monitors.Count == 0) return false;
+        if (profile.Monitors.Any(m => !m.Connected)) return true;
+        foreach (var s in live)
+            if (profile.Monitors.All(m => m.Number != s.Number)) return true;
+        foreach (var m in profile.Monitors)
+        {
+            var hit = live.FirstOrDefault(s => s.Number == m.Number);
+            if (hit == null) return true;
+            if (m.W != hit.W || m.H != hit.H) return true;
+            if (m.Path.Length > 0 && hit.Path.Length > 0 && !string.Equals(m.Path, hit.Path, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    public static void MatchCurrent(MonitorProfile profile, IReadOnlyList<ScreenInfo> live)
+    {
+        var old = new Dictionary<ProfileMonitor, int>();
+        foreach (var m in profile.Monitors) Remember(old, m);
+        var used = new HashSet<int>();
+        foreach (var m in profile.Monitors)
+        {
+            var hit = Best(m, live, used);
+            if (hit == null) { m.Connected = false; continue; }
+            used.Add(hit.Number);
+            m.Connected = true;
+            m.Number = hit.Number;
+            m.X = hit.X; m.Y = hit.Y; m.W = hit.W; m.H = hit.H;
+            m.Primary = hit.Primary;
+            m.Device = hit.Device ?? "";
+            m.Path = hit.Path ?? "";
+            m.Edid = hit.Edid ?? "";
+            m.Enabled = m.Enabled || hit.Primary;
+        }
+        foreach (var s in live)
+        {
+            if (used.Contains(s.Number)) continue;
+            var added = new ProfileMonitor
+            {
+                Id = (s.Path ?? "").Length > 0 ? s.Path ?? "" : s.Number.ToString(),
+                Number = s.Number, X = s.X, Y = s.Y, W = s.W, H = s.H,
+                Primary = s.Primary, Enabled = true, Connected = true,
+                Device = s.Device ?? "", Path = s.Path ?? "", Edid = s.Edid ?? ""
+            };
+            Remember(old, added);
+            profile.Monitors.Add(added);
+        }
+        Retarget(profile, old);
+    }
+}
+
+/// <summary>Live display list. Tests set <see cref="Source"/> or leave the gate shut, so the native read never runs.</summary>
+public static class ScreenCatalog
+{
+    public static int Attempts, NativeCalls;
+    public static Func<IReadOnlyList<ScreenInfo>>? Source;
+    public static Func<IReadOnlyList<ScreenInfo>>? Live;
+
+    public static IReadOnlyList<ScreenInfo> Current()
+    {
+        if (Source != null) return Source();
+        if (!DisplayGate.RealAllowed || Live == null) return Array.Empty<ScreenInfo>();
+        return ReadReal();
+    }
+
+    public static IReadOnlyList<ScreenInfo> ReadReal()
+    {
+        Attempts++;
+        DisplayGate.Demand();
+        NativeCalls++;
+        return Live?.Invoke() ?? Array.Empty<ScreenInfo>();
     }
 }
 
@@ -802,12 +994,12 @@ public static class ProfileDoc
     {
         var monitors = new JsonArray();
         foreach (var m in p.Monitors)
-            monitors.Add(new JsonObject { ["id"] = m.Id, ["number"] = m.Number, ["x"] = m.X, ["y"] = m.Y, ["w"] = m.W, ["h"] = m.H, ["primary"] = m.Primary, ["enabled"] = m.Enabled });
+            monitors.Add(new JsonObject { ["id"] = m.Id, ["number"] = m.Number, ["x"] = m.X, ["y"] = m.Y, ["w"] = m.W, ["h"] = m.H, ["primary"] = m.Primary, ["enabled"] = m.Enabled, ["device"] = m.Device, ["path"] = m.Path, ["edid"] = m.Edid });
         var windows = new JsonArray();
         foreach (var a in p.Apps)
             windows.Add(new JsonObject
             {
-                ["id"] = a.Id, ["process"] = a.Process, ["title"] = a.Title, ["class"] = a.Class, ["name"] = a.Name,
+                ["id"] = a.Id, ["process"] = a.Process, ["path"] = a.Path, ["title"] = a.Title, ["class"] = a.Class, ["name"] = a.Name,
                 ["monitor"] = a.Monitor, ["x"] = a.X, ["y"] = a.Y, ["w"] = a.W, ["h"] = a.H, ["state"] = a.State
             });
         var icons = new JsonArray();
@@ -816,7 +1008,7 @@ public static class ProfileDoc
         foreach (var b in p.Brightness) bright.Add(new JsonObject { ["monitor"] = b.Monitor, ["value"] = b.Value });
         return new JsonObject
         {
-            ["id"] = p.Id, ["name"] = p.Name, ["hotkey"] = p.Hotkey, ["primary"] = p.Primary, ["layout"] = p.Layout, ["windowSpace"] = "pixels",
+            ["id"] = p.Id, ["name"] = p.Name, ["hotkey"] = p.Hotkey, ["primary"] = p.Primary, ["layout"] = p.Layout, ["windowSpace"] = "pixels", ["iconsSaved"] = p.IconsSaved, ["restoreIcons"] = p.RestoreIcons,
             ["deskLayout"] = p.DeskLayout, ["icons"] = p.DeskLayout, ["workspace"] = p.Workspace,
             ["enable"] = new JsonArray(p.Enable.Select(s => JsonValue.Create(s)).ToArray()),
             ["disable"] = new JsonArray(p.Disable.Select(s => JsonValue.Create(s)).ToArray()),
@@ -847,7 +1039,9 @@ public static class ProfileDoc
             Primary = Str(node["primary"]),
             Layout = Str(node["layout"]),
             DeskLayout = Str(node["deskLayout"]).Length > 0 ? Str(node["deskLayout"]) : Str(node["icons"]),
-            Workspace = Str(node["workspace"])
+            Workspace = Str(node["workspace"]),
+            IconsSaved = Str(node["iconsSaved"]),
+            RestoreIcons = node["restoreIcons"] == null || Bool(node["restoreIcons"])
         };
         if (profile.Id.Length == 0) profile.Id = NewId();
         Strings(node["enable"], profile.Enable);
@@ -866,7 +1060,10 @@ public static class ProfileDoc
                     W = Num(item["w"], 1920),
                     H = Num(item["h"], 1080),
                     Primary = Bool(item["primary"]),
-                    Enabled = item["enabled"] == null || Bool(item["enabled"])
+                    Enabled = item["enabled"] == null || Bool(item["enabled"]),
+                    Device = Str(item["device"]),
+                    Path = Str(item["path"]),
+                    Edid = Str(item["edid"])
                 });
         if (node["windows"] is JsonArray windows)
             foreach (var item in windows.OfType<JsonObject>())
@@ -874,6 +1071,7 @@ public static class ProfileDoc
                 {
                     Id = Str(item["id"]).Length > 0 ? Str(item["id"]) : NewId(),
                     Process = Str(item["process"]),
+                    Path = Str(item["path"]),
                     Title = Str(item["title"]),
                     Class = Str(item["class"]),
                     Name = Str(item["name"]).Length > 0 ? Str(item["name"]) : Str(item["title"]),
