@@ -179,6 +179,21 @@ public static class ConfigStore
         }
     }
     public static void SetDeskMinutes(int minutes) { DeskAutoSaveMinutes = Math.Clamp(minutes, 1, 240); }
+    public static bool SetPtEnabled(string child, bool enabled)
+    {
+        if (AppEnv.DenyWrite()) return false;
+        if (child is not ("Zones" or "Grab" or "Palette" or "Paste" or "Peek")) return false;
+        try
+        {
+            if (!NotesConfigPatch.TryWriteNested(AppEnv.ConfigPath, "Pt", child, "Enabled", JsonValue.Create(enabled), out bool changed))
+                return false;
+            var toy = PowerToys.FirstOrDefault(t => t.Name == child);
+            if (toy != null) toy.Enabled = enabled;
+            if (changed) Writes++;
+            return true;
+        }
+        catch (Exception e) { AppEnv.Log("config patch failed: " + e.Message); return false; }
+    }
     public static bool SetRuleEnabled(int index, bool enabled)
     {
         if (AppEnv.DenyWrite()) return false;

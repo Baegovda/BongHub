@@ -180,6 +180,16 @@ public static class SmokeTest
         try { using var blockedWindows = new LiveWindowSurface(); } catch (InvalidOperationException) { windowThrew = true; }
         t.Check("window actions stay off real top-level windows", windowThrew && w.WindowBlocks == 2 && w.WindowAction == "blocked" && LiveWindowSurface.NativeCalls == 0);
 
+        var cols = ZoneMath.Rects(new ZoneLayout { Kind = "cols", A = 2, Spacing = 0 }, new PxRect(0, 0, 1920, 1080));
+        t.Check("zone columns split the work area", cols.Count == 2 && cols[0].W == 960 && cols[1].Right == 1920);
+        t.Check("palette calculator", PaletteMath.Calc("12*3+4") == "40" && PaletteMath.Calc("hello") == null && PaletteMath.Search("7*6", Array.Empty<(string, string)>())[0] == "= 42");
+        string md = PasteText.HtmlToMarkdown("Version:0.9\r\n<html><body><!--StartFragment--><h2>제목</h2><p>이건 <b>굵게</b></p><!--EndFragment--></body></html>") ?? "";
+        t.Check("paste html becomes markdown", md.Contains("## 제목") && md.Contains("**굵게**"));
+        t.Check("resize fit keeps the ratio", ImageFit.Target(new ImageFit.Px(2400, 1600), 1366, 768, "fit", true) == new ImageFit.Px(1152, 768));
+        bool ptThrew = false;
+        try { PtSystem.Touch(); } catch (InvalidOperationException) { ptThrew = true; }
+        t.Check("powertoys effects stay off hooks and hardware", ptThrew && PtSystem.NativeCalls == 0 && !PtDefaults.Zones && !PtDefaults.Grab && !PtDefaults.Paste && PtDefaults.Resizer && !GrabMath.CanGrab(false, false, true, false, false));
+
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);
         meta.Color = "g:lemon";   // one of the lightest gradients: hardest case for white text

@@ -732,13 +732,18 @@ public partial class MainWindow : Window
 
     void PagePowerToys()
     {
-        Footer("후킹과 창 이동은 하지 않아요. 설정 파일의 켜짐만 보여요.");
+        Footer("켠 값을 저장해도 후킹, 전역 단축키, 밝기, 모니터는 바꾸지 않아요. 테스트에서는 그 호출이 거부돼요. 코드 기본은 위험한 항목이 꺼져 있어요.");
         var g = Group();
         if (ConfigStore.PowerToys.Count == 0)
             Row(g, "\uE945", "AF52DE", "PowerToys 설정 없음", "코드 기본은 위험한 항목이 꺼져 있어요.", null);
         else
             foreach (var toy in ConfigStore.PowerToys)
-                Row(g, "\uE945", "AF52DE", toy.Name, (toy.Enabled ? "켜짐" : "꺼짐") + (toy.Hotkey.Length > 0 ? " · " + toy.Hotkey : ""), null);
+            {
+                string key = toy.Name;
+                bool owned = key is "Zones" or "Grab" or "Palette" or "Paste" or "Peek";
+                string sub = (toy.Enabled ? "켜짐" : "꺼짐") + (toy.Hotkey.Length > 0 ? " · " + toy.Hotkey : "") + (owned ? " · 값만 저장" : "");
+                Row(g, "\uE945", "AF52DE", toy.Name, sub, owned ? Switch(toy.Enabled, v => ConfigStore.SetPtEnabled(key, v), !AppEnv.ReadOnly) : null);
+            }
     }
 
     void PageGeneral()
@@ -818,7 +823,7 @@ public partial class MainWindow : Window
             if (p.Hotkey.Length > 0) hotkeys += " · " + p.Name + " " + p.Hotkey;
         AboutMentionsHotkey = hotkeys.Contains("메모");
         Row(g, null, null, "단축키", hotkeys, null);
-        Row(g, null, null, "변경", "0.8.0 창 위치. 바탕화면 아이콘은 0.7.0.", null);
+        Row(g, null, null, "변경", "0.9.0 PowerToys 계산. 창 위치는 0.8.0.", null);
     }
 
     sealed class UniformGrid4 : Grid

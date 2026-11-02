@@ -323,6 +323,74 @@ bool windowThrew = false;
 try { using var blockedWindows = new LiveWindowSurface(); } catch (InvalidOperationException) { windowThrew = true; }
 Check("window backend refuses before any native call", windowThrew && LiveWindowSurface.NativeCalls == 0 && LiveWindowSurface.Attempts == 1);
 
+var area = new PxRect(0, 0, 1920, 1080);
+var cols = ZoneMath.Rects(new ZoneLayout { Kind = "cols", A = 2, Spacing = 0 }, area);
+Check("2 columns", cols.Count == 2 && cols[0].W == 960 && cols[1].Right == 1920);
+var grid = ZoneMath.Rects(new ZoneLayout { Kind = "grid", A = 2, B = 2, Spacing = 8 }, area);
+Check("2x2 grid inside area, no overlap", grid.Count == 4 && grid.All(r => area.Contains(r)) && !grid[0].Intersects(grid[3]));
+var pri = ZoneMath.Rects(new ZoneLayout { Kind = "priority", Spacing = 0 }, new PxRect(0, 0, 4000, 1000));
+Check("priority 25/50/25", pri.Count == 3 && pri[1].W == 2000 && pri[0].W == 1000);
+var custom = ZoneMath.Rects(new ZoneLayout { Kind = "custom", Custom = new List<float> { 1, 3 }, Spacing = 0 }, area);
+Check("custom ratio 1:3", custom.Count == 2 && custom[0].W == 480);
+var rows = ZoneMath.Rects(new ZoneLayout { Kind = "rows", A = 3, Spacing = 0 }, area);
+Check("3 rows", rows.Count == 3 && rows[2].Bottom == 1080);
+var editable = new ZoneLayout { Kind = "cols", A = 2 };
+ZoneMath.Split(editable, 0, false);
+Check("editor split -> 3 zones", editable.Kind == "canvas" && ZoneMath.Rects(editable, new PxRect(0, 0, 1000, 1000)).Count == 3);
+Check("editor merge -> 2 zones", ZoneMath.Merge(editable, 0, 1) && ZoneMath.Rects(editable, new PxRect(0, 0, 1000, 1000)).Count == 2);
+Check("bad zone index is empty", ZoneMath.ZoneAt(area, new ZoneLayout { Kind = "cols", A = 2 }, 99) == null && ZoneMath.ZoneAt(area, new ZoneLayout { Kind = "cols", A = 2 }, 0) != null);
+Check("risky tools default off", !PtDefaults.Zones && !PtDefaults.Grab && !PtDefaults.Palette && !PtDefaults.Paste && !PtDefaults.Peek && !PtDefaults.ResizerContextMenu && PtDefaults.Resizer);
+Check("calculator", PaletteMath.Calc("12*3+4") == "40" && PaletteMath.Calc("(1+2)/4") == "0.75" && PaletteMath.Calc("2^10+sqrt(16)*(3-1)") == "1032" && PaletteMath.Calc("10 % 3") == "1" && PaletteMath.Calc("0xff") == "255" && PaletteMath.Calc("hello") == null && PaletteMath.Calc("123") == null);
+Check("fuzzy score", PaletteMath.Score("메모", "새 스티커 메모") > 0 && PaletteMath.Score("ntp", "notepad") > 0 && PaletteMath.Score("xyz", "notepad") == 0);
+var found = PaletteMath.Search("작업", new[] { ("모니터 프리셋: 작업", "작업") });
+Check("palette finds preset", found.Count >= 1 && found[0].Contains("작업"));
+Check("palette calc first", PaletteMath.Search("7*6", Array.Empty<(string, string)>())[0] == "= 42");
+string km = PaletteMath.Unit("10 km to mi") ?? "", temp = PaletteMath.Unit("100 c to f") ?? "";
+Check("unit km->mi and c->f", km.StartsWith("6.21") && temp.StartsWith("212"));
+string html = "Version:0.9\r\n<html><body><!--StartFragment--><h2>제목</h2><p>이건 <b>굵게</b>, <i>기울임</i>, <a href=\"https://x.y\">링크</a></p><ul><li>하나</li><li>둘</li></ul><!--EndFragment--></body></html>";
+string markdown = PasteText.HtmlToMarkdown(html) ?? "";
+Check("html -> markdown", markdown.Contains("## 제목") && markdown.Contains("**굵게**") && markdown.Contains("*기울임*") && markdown.Contains("[링크](https://x.y)") && markdown.Contains("- 하나"));
+string csv = PasteText.ToJson("name,age\n봉,30\n석,25") ?? "";
+Check("csv -> json", csv.Contains("\"name\": \"봉\"") && csv.Contains("\"age\": 30"));
+Check("tsv -> json", (PasteText.ToJson("a\tb\n1\t2") ?? "").Contains("\"a\": 1"));
+string prettyJson = PasteText.ToJson("{\"x\":[1,2],\"y\":\"z\"}") ?? "";
+Check("json pretty", prettyJson.Contains("\n") && prettyJson.Contains("\"y\": \"z\""));
+Check("key:value -> json", (PasteText.ToJson("host: a.b\nport = 80") ?? "").Contains("\"port\": 80"));
+Check("custom regex action", PasteText.ApplyCustom("010-1234-5678", "regex", "[^0-9]", "") == "01012345678");
+Check("custom dedupe", PasteText.ApplyCustom("b\na\nb", "dedupe").Replace("\r", "") == "b\na");
+string peekDir = Path.Combine(Path.GetTempPath(), "bhnext_peek_" + Environment.ProcessId);
+Directory.CreateDirectory(peekDir);
+try
+{
+    string note = Path.Combine(peekDir, "readme.md");
+    File.WriteAllText(note, "# BongHub\n미리보기 텍스트 테스트\n- 한글 OK\n", new UTF8Encoding(false));
+    string pdf = Path.Combine(peekDir, "doc.pdf");
+    File.WriteAllBytes(pdf, new byte[] { 0x25, 0x50, 0x44, 0x46 });
+    Check("peek kinds", PeekKind.Kind(Path.Combine(peekDir, "photo.jpg")) == "image" && PeekKind.Kind(note) == "markdown" && PeekKind.Kind(pdf) == "info" && PeekKind.Kind(peekDir) == "folder");
+    Check("peek reads utf8", PeekKind.ReadText(note).Contains("한글 OK"));
+}
+finally { try { Directory.Delete(peekDir, true); } catch { } }
+Check("fit keeps ratio", ImageFit.Target(new ImageFit.Px(2400, 1600), 1366, 768, "fit", true) == new ImageFit.Px(1152, 768));
+Check("shrink-only skips small", ImageFit.Target(new ImageFit.Px(800, 600), 1920, 1080, "fit", true) == new ImageFit.Px(800, 600));
+Check("stretch", ImageFit.Target(new ImageFit.Px(2400, 1600), 854, 480, "stretch", false) == new ImageFit.Px(854, 480));
+Check("resize % unit", ImageFit.Resolve(50, 50, "%", new ImageFit.Px(2400, 1600), 96, 96, true) == new ImageFit.Px(1200, 800));
+Check("ignore orientation swaps for portrait", ImageFit.Resolve(1920, 1080, "px", new ImageFit.Px(1000, 2000), 96, 96, true) == new ImageFit.Px(1080, 1920));
+Check("resize cm unit", ImageFit.Resolve(254, 254, "cm", new ImageFit.Px(4000, 4000), 96, 96, false).W == 9600);
+Check("resize name format", ImageFit.FileName(Path.Combine(Path.GetTempPath(), "photo.jpg"), "t", 7, 9, "%1_%5x%6") == "photo_7x9.jpg");
+Check("grab ignores a missing window and a fullscreen window", !GrabMath.CanGrab(false, false, true, false, false) && !GrabMath.CanGrab(true, true, true, false, false) && GrabMath.CanGrab(true, false, true, false, false));
+const string PtCfg = "{\"Presets\":[{\"Marker\":\"PRESET_KEEP\"}],\"Pt\":{\"Zones\":{\"Enabled\":false,\"Marker\":\"ZONE_KEEP\"},\"Paste\":{\"Enabled\":false,\"Marker\":\"PASTE_KEEP\"}},\"Desk\":{\"Marker\":\"DESK_KEEP\"}}";
+const string PtPretty = "{\r\n  \"Presets\": [{ \"Marker\": \"PRESET_KEEP\" }],\r\n  \"Pt\": {\r\n    \"Zones\": {\r\n      \"Enabled\": false,\r\n      \"Marker\": \"ZONE_KEEP\"\r\n    },\r\n    \"Paste\": { \"Enabled\": false, \"Marker\": \"PASTE_KEEP\" }\r\n  },\r\n  \"Desk\": { \"Marker\": \"DESK_KEEP\" }\r\n}\r\n";
+Check("zones enabled splices one token", NotesConfigPatch.TryApplyNested(PtCfg, "Pt", "Zones", "Enabled", JsonValue.Create(true), out string zoned)
+    && zoned == PtCfg.Replace("\"Zones\":{\"Enabled\":false", "\"Zones\":{\"Enabled\":true")
+    && zoned.Contains("ZONE_KEEP") && zoned.Contains("PASTE_KEEP") && zoned.Contains("\"Paste\":{\"Enabled\":false") && zoned.Contains("PRESET_KEEP") && zoned.Contains("DESK_KEEP"));
+Check("zones enabled keeps pretty formatting", NotesConfigPatch.TryApplyNested(PtPretty, "Pt", "Zones", "Enabled", JsonValue.Create(true), out string zonePretty)
+    && zonePretty == PtPretty.Replace("\"Zones\": {\r\n      \"Enabled\": false", "\"Zones\": {\r\n      \"Enabled\": true") && zonePretty.Contains("\"Paste\": { \"Enabled\": false"));
+Check("zones enabled byte span", OnlyToken(PtCfg, zoned, out string zoneOld, out string zoneNew) && zoneOld == "false" && zoneNew == "true");
+Check("powertoys gate stays shut", !PtGate.RealAllowed && PtSystem.NativeCalls == 0);
+bool ptThrew = false;
+try { PtSystem.Touch(); } catch (InvalidOperationException) { ptThrew = true; }
+Check("powertoys backend refuses before any native call", ptThrew && PtSystem.NativeCalls == 0 && PtSystem.Attempts == 1);
+
 Console.WriteLine(fail == 0 ? "RESULT PASS" : "RESULT FAIL " + fail);
 return fail == 0 ? 0 : 1;
 
