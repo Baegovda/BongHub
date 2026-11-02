@@ -256,6 +256,109 @@ public partial class MainWindow : Window
     // Inherit UiFont. A new FontFamily("Cascadia Mono, ...") probes the font collection on the first frame.
     Border Keycap(string text) => new() { CornerRadius = new CornerRadius(7), Background = KeycapBrush, Padding = new Thickness(9, 3, 9, 4), Child = new TextBlock { Text = text, FontSize = 12.5 } };
 
+    public string DisplayAction { get; private set; } = "";
+    public int DisplayBlocks { get; private set; }
+    int displayBusy;
+
+    /// <summary>Explicit click. Tests, <c>--off</c>, and CI return here before any display command runs.</summary>
+    public void RequestApplyPreset(string name)
+    {
+        if (!DisplayGate.RealAllowed)
+        {
+            DisplayBlocks++;
+            DisplayAction = "blocked";
+            return;
+        }
+        var snap = ConfigStore.Presets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
+        if (snap == null) { DisplayAction = "missing"; return; }
+        if (Interlocked.CompareExchange(ref displayBusy, 1, 0) != 0) { DisplayAction = "busy"; return; }
+        var plan = PresetCodec.Clone(snap);
+        DisplayAction = "applying";
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try { ApplyPresetNow(plan); DisplayAction = "applied " + plan.Name; }
+            catch (Exception ex) { DisplayAction = ex.Message; }
+            finally { Interlocked.Exchange(ref displayBusy, 0); }
+        });
+    }
+
+    void ApplyPresetNow(MonitorPreset plan)
+    {
+        new RealDisplay().Apply(PresetPlan.Commands(plan));
+        var sleep = PresetExtras.Sleep;
+        var signature = PresetExtras.Signature;
+        var stamp = PresetExtras.StampFile;
+        var workStamp = PresetExtras.WorkStampFile;
+        var mutex = PresetExtras.WorkMutexName;
+        var findDesk = PresetExtras.FindDesk;
+        var restoreDesk = PresetExtras.RestoreDesk;
+        var findWork = PresetExtras.FindWork;
+        var launch = PresetExtras.LaunchWork;
+        var missing = PresetExtras.WorkLaunchMissing;
+        try
+        {
+            PresetExtras.Sleep = ms => { if (ms > 0) Thread.Sleep(ms); };
+            PresetExtras.Signature = () =>
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var m in Win32.Monitors()) sb.Append(m.W).Append('x').Append(m.H).Append('@').Append(m.X).Append(',').Append(m.Y).Append(m.Primary ? "*" : "").Append(';');
+                return sb.ToString();
+            };
+            PresetExtras.StampFile = System.IO.Path.Combine(AppEnv.DataDir, "linked_desk.stamp");
+            PresetExtras.WorkStampFile = System.IO.Path.Combine(AppEnv.DataDir, "linked_work.stamp");
+            PresetExtras.WorkMutexName = @"Local\BongHub_LinkedWork";
+            PresetExtras.FindDesk = id =>
+            {
+                var hit = LayoutStore.Default.Load().FirstOrDefault(l => l.Id == id);
+                return hit == null ? null : new LinkedDesk { Id = hit.Id, Name = hit.Name };
+            };
+            PresetExtras.RestoreDesk = link =>
+            {
+                if (!DesktopGate.RealAllowed) return new DeskLinkResult { Ok = false, Error = "테스트 모드" };
+                var hit = LayoutStore.Default.Load().FirstOrDefault(l => l.Id == link.Id);
+                if (hit == null) return new DeskLinkResult { Ok = false, Error = "배치 없음" };
+                using var icons = new ExplorerIconSurface();
+                var r = IconMatch.Apply(icons, hit.Items);
+                return new DeskLinkResult { Ok = r.Ok, Moved = r.Moved, Error = r.Error };
+            };
+            PresetExtras.FindWork = id =>
+            {
+                var ws = ConfigStore.Workspaces.FirstOrDefault(w => w.Id == id || w.Name == id);
+                return ws == null ? null : new LinkedWork { Id = ws.Id.Length > 0 ? ws.Id : ws.Name, Name = ws.Name };
+            };
+            PresetExtras.WorkLaunchMissing = () => false;
+            PresetExtras.LaunchWork = (w, _) =>
+            {
+                if (!WindowGate.RealAllowed) return "창 배치 실패: 테스트 모드";
+                var ws = ConfigStore.Workspaces.FirstOrDefault(x => x.Id == w.Id || x.Name == w.Name);
+                if (ws == null) return "창 배치 실패: 없음";
+                using var live = new LiveWindowSurface();
+                var moves = WorkspacePlan.Plan(live.List(), ws.Apps, out int _);
+                foreach (var m in moves)
+                {
+                    if (m.State == "min") live.Minimize(m.WindowId);
+                    else if (m.State == "max") { live.TryWorkArea("", m.WindowId, out var area); live.Maximize(m.WindowId, area); }
+                    else live.Place(m.WindowId, m.X, m.Y, m.W, m.H);
+                }
+                return "'" + w.Name + "' · 배치 " + moves.Count + "개";
+            };
+            PresetExtras.Run(plan, _ => { });
+        }
+        finally
+        {
+            PresetExtras.Sleep = sleep;
+            PresetExtras.Signature = signature;
+            PresetExtras.StampFile = stamp;
+            PresetExtras.WorkStampFile = workStamp;
+            PresetExtras.WorkMutexName = mutex;
+            PresetExtras.FindDesk = findDesk;
+            PresetExtras.RestoreDesk = restoreDesk;
+            PresetExtras.FindWork = findWork;
+            PresetExtras.LaunchWork = launch;
+            PresetExtras.WorkLaunchMissing = missing;
+        }
+    }
+
     // ---------- pages ----------
     void PagePresets()
     {
@@ -263,8 +366,22 @@ public partial class MainWindow : Window
         var g = Group();
         string[] hexes = { "4C8AFE", "FF9500", "FF2D55", "34C759", "AF52DE" };
         int i = 0;
-        foreach (var p in ConfigStore.Presets) Row(g, "\uE7F4", hexes[i++ % hexes.Length], p.Name, null, string.IsNullOrEmpty(p.Hotkey) ? null : Keycap(p.Hotkey));
-        Footer("프리셋 적용(모니터·밝기·창 배치)은 아직 3.4.8에서 동작해요. Next는 설정을 읽어 보여주기만 하고 바꾸지 않아요.");
+        if (ConfigStore.Presets.Count == 0)
+            Row(g, "\uE7F4", "8E8E93", "저장된 프리셋 없음", "모니터는 바꾸지 않아요.", null);
+        foreach (var p in ConfigStore.Presets)
+        {
+            var item = p;
+            string sum = PresetExtras.BrightSummary(item);
+            string? sub = sum == "밝기는 바꾸지 않아요" ? null : sum;
+            var apply = new Button { Content = "지금 적용", Padding = new Thickness(12, 6, 12, 6) };
+            apply.Click += (_, _) => RequestApplyPreset(item.Name);
+            var trail = new StackPanel { Orientation = Orientation.Horizontal };
+            if (!string.IsNullOrEmpty(item.Hotkey)) trail.Children.Add(Keycap(item.Hotkey));
+            apply.Margin = new Thickness(item.Hotkey.Length > 0 ? 8 : 0, 0, 0, 0);
+            trail.Children.Add(apply);
+            Row(g, "\uE7F4", hexes[i++ % hexes.Length], item.Name.Length > 0 ? item.Name : "(이름 없음)", sub, trail);
+        }
+        Footer("모니터 전환과 밝기는 지금 적용을 눌렀을 때만 해요. 시험·화면 밖·CI에서는 디스플레이 API를 호출하지 않고 작업·자리비움도 적용하지 않아요.");
         Header("이전 상태");
         var m = Group();
         Row(m, "\uE8B7", "8E8E93", "설정 파일", AppEnv.ConfigPath, Value(ConfigStore.LoadError == "" ? "읽음" : "오류"));
@@ -823,7 +940,7 @@ public partial class MainWindow : Window
             if (p.Hotkey.Length > 0) hotkeys += " · " + p.Name + " " + p.Hotkey;
         AboutMentionsHotkey = hotkeys.Contains("메모");
         Row(g, null, null, "단축키", hotkeys, null);
-        Row(g, null, null, "변경", "0.9.0 PowerToys 계산. 창 위치는 0.8.0.", null);
+        Row(g, null, null, "변경", "0.10.0 모니터 프리셋. PowerToys 계산은 0.9.0.", null);
     }
 
     sealed class UniformGrid4 : Grid

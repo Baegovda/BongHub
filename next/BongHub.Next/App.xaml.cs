@@ -29,6 +29,7 @@ public partial class App : Application
         DesktopGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden;
         WindowGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden;
         PtGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden;
+        DisplayGate.Allow = () => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && !AppEnv.IdleHidden;
         ScreenMap.Live = () => Win32.Monitors().Select(m => new MonitorSpec(m.W, m.H, m.X, m.Y, m.Primary)).ToList();
         AppEnv.Mark("onstartup");
         DispatcherUnhandledException += (_, ex) => { AppEnv.Log("unhandled: " + ex.Exception); ex.Handled = true; };
@@ -74,7 +75,7 @@ public partial class App : Application
         if (!AppEnv.Off || AppEnv.Has("--tray")) tray = new TrayService(this, registerShell: true);
         // --off (tests and the memory baseline) must not register a global hotkey or create the message window.
         // Arming only allows a later save/restore click to open the desktop list view. It does not open it now.
-        if (!AppEnv.Off) { NoteHotkey.Start(tray); DesktopGate.Arm(); WindowGate.Arm(); PtGate.Arm(); }
+        if (!AppEnv.Off) { NoteHotkey.Start(tray); DesktopGate.Arm(); WindowGate.Arm(); PtGate.Arm(); DisplayGate.Arm(); DisplayNative.Install(); }
         SessionEnding += (_, _) => RequestShutdown();
         // settings window first; notes then open one per idle tick so the first frame is not held up by big RTFs
         if (AppEnv.IdleHidden) ShowThenHide();
