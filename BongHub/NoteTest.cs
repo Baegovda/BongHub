@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Documents;
+using System.Windows.Input;
 
 namespace BongHub;
 
@@ -429,9 +430,20 @@ public static class NoteTest
             t.Check("link hover underlines and shows the tip", host.HoverFirstLink());
             t.Check("plain click does not open a link", !host.OpenDisplayedLink(false) && !host.LinkLaunched);
             t.Check("ctrl click opens the link without a process", host.OpenDisplayedLink(true) && host.LastLink == "https://bong.dev/a" && !host.LinkLaunched);
-            host.FlushText();
-            string linkRtf = Encoding.ASCII.GetString(File.ReadAllBytes(NoteStore.RtfPath(host.Meta.Id)));
-            t.Check("link color stays out of the rtf", !linkRtf.Contains("HYPERLINK", StringComparison.OrdinalIgnoreCase) && linkRtf.Contains("https://bong.dev/a") && linkRtf.Contains("www.bong.dev"));
+            var linkNote = NoteManager.NewNote();
+            t.Check("link note opened", linkNote != null);
+            if (linkNote != null)
+            {
+                await TestKit.Until(() => linkNote.Ready, 5000);
+                linkNote.Editor.Document.Blocks.Clear();
+                var fresh = new Paragraph(new Run("see https://bong.dev/a. and www.bong.dev"));
+                linkNote.Editor.Document.Blocks.Add(fresh);
+                linkNote.RefreshLinks();
+                linkNote.FlushText();
+                string linkRtf = Encoding.ASCII.GetString(File.ReadAllBytes(NoteStore.RtfPath(linkNote.Meta.Id)));
+                t.Check("link color stays out of the rtf", !linkRtf.Contains("HYPERLINK", StringComparison.OrdinalIgnoreCase) && linkRtf.Contains("https://bong.dev/a") && linkRtf.Contains("www.bong.dev"));
+            }
+            else t.Check("link color stays out of the rtf", false, "no link note");
             host.SetColor("g:lemon");
             t.Check("link ink follows the note color", host.LinkInkMatchesNote());
         }
@@ -446,5 +458,70 @@ public static class NoteTest
             t.Check("link ink follows the note color", false, "no note");
         }
         t.Check("shortcut ctrl+t is handled", host != null && host.HandleShortcut(System.Windows.Input.Key.T, System.Windows.Input.ModifierKeys.Control));
+        if (host != null)
+        {
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("안녕복사")));
+            host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+            NoteClipSession.RichThrows = 0;
+            bool textCopied = host.CopySelection(false);
+            t.Check("text-only copy reaches the clipboard", textCopied && NoteClipSession.LastPlain.Contains("안녕복사"));
+            NoteClipSession.RichThrows = 40;
+            host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+            bool fellBack = host.CopySelection(false);
+            t.Check("copy keeps plain text when rich clipboard data throws", fellBack && NoteClipSession.LastPlain.Contains("안녕복사") && NoteClipSession.LastError != null);
+            NoteClipSession.RichThrows = 0;
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("자를글")));
+            host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+            bool cut = host.HandleShortcut(System.Windows.Input.Key.X, System.Windows.Input.ModifierKeys.Control);
+            t.Check("ctrl+x copies then clears the selection", cut && NoteClipSession.LastPlain.Contains("자를글") && host.PlainText().Length == 0);
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("인서트")));
+            host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+            bool insert = host.HandleShortcut(System.Windows.Input.Key.Insert, System.Windows.Input.ModifierKeys.Control);
+            t.Check("ctrl+insert copies", insert && NoteClipSession.LastPlain.Contains("인서트"));
+            host.TitleBox.Text = "제목만";
+            host.TitleBox.SelectAll();
+            bool titleCopied = host.CopyTitleText(false);
+            t.Check("title copy is plain text", titleCopied && NoteClipSession.LastPlain == "제목만" && string.IsNullOrEmpty(NoteClipSession.LastXaml));
+            System.Windows.Input.ApplicationCommands.Copy.Execute(null, host.Editor);
+            t.Check("editor context menu can copy", host.Editor.ContextMenu != null && host.Editor.ContextMenu.Items.Count >= 4 && NoteClipSession.LastPlain.Contains("인서트"));
+            var pngOnly = new DataObject();
+            pngOnly.SetData("PNG", RtfPict.TinyPngBytes);
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph());
+            host.Editor.CaretPosition = host.Editor.Document.ContentEnd;
+            t.Check("png stream paste inserts a picture", host.PasteObject(pngOnly) && host.DocImageCount() >= 1);
+            var unicode = new DataObject(DataFormats.UnicodeText, "붙여넣은글");
+            t.Check("unicode paste inserts text", host.PasteObject(unicode) && host.PlainText().Contains("붙여넣은글"));
+            var html = new DataObject();
+            html.SetData(DataFormats.Html, "Version:0.9\r\n<html><body><!--StartFragment-->브라우저 <b>글</b><!--EndFragment--></body></html>");
+            t.Check("html paste keeps the words", host.PasteObject(html) && host.PlainText().Contains("브라우저") && host.PlainText().Contains("글"));
+            host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("우리꺼플러그인에 항상")));
+            host.Editor.Document.Blocks.Add(new Paragraph());
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("다음")));
+            var empty = (Paragraph)host.Editor.Document.Blocks.ElementAt(1);
+            host.Editor.CaretPosition = empty.ContentStart;
+            int emptyPara = host.CaretParagraph;
+            host.ParkEditor();
+            host.ResumeEditor();
+            t.Check("empty line caret stays on that paragraph", emptyPara == 1 && host.CaretParagraph == 1 && host.CaretOffsetInParagraph == 0);
+            var other = NoteManager.NewNote();
+            if (other != null)
+            {
+                await TestKit.Until(() => other.Ready, 5000);
+                other.Editor.Document.Blocks.Clear();
+                other.Editor.Document.Blocks.Add(new Paragraph(new Run("다른메모")));
+                other.Editor.CaretPosition = other.Editor.Document.ContentStart;
+                int otherPara = other.CaretParagraph;
+                host.ParkEditor();
+                other.ChromeActivateLikeTest();
+                host.ResumeEditor();
+                t.Check("switching notes keeps both carets", host.CaretParagraph == 1 && other.CaretParagraph == otherPara);
+            }
+            else t.Check("switching notes keeps both carets", false, "no second note");
+        }
     }
 }

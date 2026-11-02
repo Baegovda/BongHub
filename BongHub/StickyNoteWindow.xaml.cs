@@ -106,9 +106,19 @@ public partial class StickyNoteWindow : Window
         };
         ApplyTitle();
         TitleBox.TextChanged += (_, _) => OnTitleEdited();
+        TitleBox.CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, (_, e) => { CopyTitleText(false); e.Handled = true; }));
+        TitleBox.CommandBindings.Add(new CommandBinding(ApplicationCommands.Cut, (_, e) => { CopyTitleText(true); e.Handled = true; }));
+        TitleBox.CommandBindings.Add(new CommandBinding(ApplicationCommands.Paste, (_, e) => { PasteTitleClipboard(); e.Handled = true; }));
+        DataObject.AddPastingHandler(TitleBox, OnTitlePasting);
+        TitleBox.ContextMenu = EditMenu(TitleBox);
         Viewer.Loaded += (_, _) => WatchScroll(Viewer);
         Deactivated += (_, _) => HoldView();
-        Activated += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, RestoreView);
+        Activated += (_, _) => { if (!textClick) Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, RestoreView); };
+        PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            var source = e.OriginalSource as DependencyObject;
+            textClick = source != null && IsUnder(EditorHost, source);
+        };
 
         NewBtn.Click += (_, _) => NoteManager.NewNote();
         FontBtn.Click += (_, _) => ToggleFormatBar();
@@ -235,14 +245,21 @@ public partial class StickyNoteWindow : Window
         };
         box.PreviewDragOver += (_, e) => { if (CanDrop(e.Data)) { e.Effects = DragDropEffects.Copy; e.Handled = true; } };
         box.Drop += (_, e) => { if (AcceptDrop(e.Data)) e.Handled = true; };
-        box.CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, (_, e) => { if (CopyMixed()) e.Handled = true; }));
-        box.CommandBindings.Add(new CommandBinding(ApplicationCommands.Paste, (_, e) => { if (PasteMixed()) e.Handled = true; }));
+        box.CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, (_, e) => { CopySelection(false); e.Handled = true; }));
+        box.CommandBindings.Add(new CommandBinding(ApplicationCommands.Cut, (_, e) => { CopySelection(true); e.Handled = true; }));
+        box.CommandBindings.Add(new CommandBinding(ApplicationCommands.Paste, (_, e) => { PasteClipboard(); e.Handled = true; }));
+        box.ContextMenu = EditMenu(box);
         box.PreviewMouseLeftButtonDown += OnEditorDown;
         box.PreviewMouseMove += OnEditorMove;
         box.PreviewMouseLeftButtonUp += OnEditorUp;
         box.PreviewMouseRightButtonUp += OnEditorRight;
         box.PreviewMouseDoubleClick += OnEditorDouble;
-        box.SelectionChanged += (_, _) => { if (!restoringView && !freezeCaret && box.IsKeyboardFocusWithin) HeldCaret = ReadCaret(); };
+        box.SelectionChanged += (_, _) =>
+        {
+            if (restoringView || freezeCaret || !box.IsKeyboardFocusWithin) return;
+            HeldCaret = ReadCaret();
+            HeldSpot = CaptureSpot(box);
+        };
         box.PreviewLostKeyboardFocus += (_, _) => HoldView();
         box.LayoutUpdated += (_, _) => { if (freezeCaret) ApplyHeld(); };
         box.Loaded += (_, _) => WatchScroll(box);
@@ -265,6 +282,9 @@ public partial class StickyNoteWindow : Window
     public double HeldScroll { get; private set; }
     /// <summary>Caret as a character count from the start of the text, not a symbol offset.</summary>
     public int HeldCaret { get; private set; }
+    public readonly record struct CaretSpot(int Paragraph, int Offset, LogicalDirection Direction);
+    public CaretSpot HeldSpot { get; private set; }
+    bool textClick;
     bool restoringView, freezeCaret, idleQueued;
 
     void WatchScroll(FrameworkElement host)
@@ -362,7 +382,68 @@ public partial class StickyNoteWindow : Window
     {
         var sv = EditorScroll;
         if (sv != null && !(freezeCaret && sv.VerticalOffset + 1 < HeldScroll)) HeldScroll = sv.VerticalOffset;
-        if (editor != null && !freezeCaret) HeldCaret = ReadCaret();
+        if (editor != null && !freezeCaret)
+        {
+            HeldCaret = ReadCaret();
+            HeldSpot = CaptureSpot(editor);
+        }
+    }
+
+    public int CaretParagraph => editor == null ? HeldSpot.Paragraph : CaptureSpot(editor).Paragraph;
+    public int CaretOffsetInParagraph => editor == null ? HeldSpot.Offset : CaptureSpot(editor).Offset;
+
+    static CaretSpot CaptureSpot(RichTextBox box)
+    {
+        var caret = box.CaretPosition;
+        var para = caret.Paragraph;
+        if (para == null) return new CaretSpot(0, 0, LogicalDirection.Forward);
+        int index = 0;
+        foreach (var block in box.Document.Blocks)
+        {
+            if (ReferenceEquals(block, para)) break;
+            index++;
+        }
+        int offset = new TextRange(para.ContentStart, caret).Text.Length;
+        return new CaretSpot(index, offset, caret.LogicalDirection);
+    }
+
+    static void ApplySpot(RichTextBox box, CaretSpot spot)
+    {
+        var blocks = box.Document.Blocks.ToList();
+        if (blocks.Count == 0) return;
+        int index = Math.Clamp(spot.Paragraph, 0, blocks.Count - 1);
+        var para = blocks[index] as Paragraph;
+        if (para == null)
+        {
+            var paragraphs = blocks.OfType<Paragraph>().ToList();
+            if (paragraphs.Count == 0) return;
+            para = paragraphs[Math.Clamp(spot.Paragraph, 0, paragraphs.Count - 1)];
+        }
+        TextPointer raw = spot.Offset <= 0
+            ? para.ContentStart
+            : para.ContentStart.GetPositionAtOffset(spot.Offset, spot.Direction) ?? para.ContentEnd;
+        var inserted = raw.GetInsertionPosition(LogicalDirection.Forward) ?? raw;
+        if (inserted.Paragraph != null && !ReferenceEquals(inserted.Paragraph, para))
+            inserted = para.ContentEnd.GetInsertionPosition(LogicalDirection.Backward) ?? para.ContentStart;
+        if (inserted.Paragraph != null && !ReferenceEquals(inserted.Paragraph, para))
+            inserted = para.ContentStart;
+        box.CaretPosition = inserted;
+    }
+
+    public void ChromeActivateLikeTest()
+    {
+        textClick = false;
+        RestoreView();
+    }
+
+    static bool IsUnder(DependencyObject root, DependencyObject node)
+    {
+        while (node != null)
+        {
+            if (ReferenceEquals(node, root)) return true;
+            node = VisualTreeHelper.GetParent(node) ?? LogicalTreeHelper.GetParent(node);
+        }
+        return false;
     }
 
     void ApplyHeld()
@@ -377,8 +458,7 @@ public partial class StickyNoteWindow : Window
             if (sv != null && Math.Abs(sv.VerticalOffset - HeldScroll) > 0.5) sv.ScrollToVerticalOffset(HeldScroll);
             if (editor != null)
             {
-                var caret = PointerAtChars(editor.Document, HeldCaret);
-                if (editor.CaretPosition.CompareTo(caret) != 0) editor.CaretPosition = caret;
+                ApplySpot(editor, HeldSpot);
             }
         }
         catch { }
@@ -554,8 +634,8 @@ public partial class StickyNoteWindow : Window
     /// <summary>Title uses the note ink (a little stronger than the body). The caret matches that ink.</summary>
     void ApplyInk()
     {
-        var title = InkBrush(NoteColors.TitleInk);
         var body = InkBrush(NoteColors.Text);
+        var title = body;
         double size = Math.Round(PointsToDip(ClampPt(ConfigStore.Notes.FontSize)) * 1.6, 2);
         TitleBox.Foreground = title;
         TitleBox.CaretBrush = title;
@@ -579,7 +659,7 @@ public partial class StickyNoteWindow : Window
         RefreshLinks();
     }
     static int CountPict(byte[] b) { int n = 0; var s = Encoding.ASCII.GetString(b); for (int i = s.IndexOf("\\pict", StringComparison.Ordinal); i >= 0; i = s.IndexOf("\\pict", i + 5, StringComparison.Ordinal)) n++; return n; }
-    int DocImageCount() => CountImages(Document.Blocks);
+    public int DocImageCount() => CountImages(Document.Blocks);
     static int CountImages(IEnumerable<Block> blocks)
     {
         int n = 0;
@@ -787,8 +867,10 @@ public partial class StickyNoteWindow : Window
             case Key.Add: GrowFont(1); return true;
             case Key.OemMinus:
             case Key.Subtract: GrowFont(-1); return true;
-            case Key.V: return PasteMixed() || PasteImage();
-            case Key.C: return CopyMixed() || CopySelectedImage();
+            case Key.V: PasteClipboard(); return true;
+            case Key.C: CopySelection(false); return true;
+            case Key.X: CopySelection(true); return true;
+            case Key.Insert: CopySelection(false); return true;
             default: return false;
         }
     }
@@ -1044,39 +1126,207 @@ public partial class StickyNoteWindow : Window
         var bytes = RtfPict.Parse(Encoding.ASCII.GetBytes(originalPicts[index].Group)).FirstOrDefault()?.Bytes;
         if (bytes == null || bytes.Length < 8) return null;
         LastCopiedPng = bytes;
-        try
-        {
-            var bmp = RtfPict.DecodeScaled(bytes, 0, 0, 4096);
-            if (bmp != null) Clipboard.SetImage(bmp);
-        }
-        catch (Exception e) { AppEnv.Log("copy image: " + e.Message); }
+        NoteClipSession.Publish(NoteClip.Pack(new[] { new NoteClipPiece { Png = bytes } }), "", "", bytes, null, null);
         return bytes;
     }
 
-    public bool CopyMixed()
+    public bool CopyMixed() => CopySelection(false);
+
+    /// <summary>Ctrl+C, Ctrl+Insert, Ctrl+X, and the edit menu. Always leaves plain text when the selection has any.</summary>
+    public bool CopySelection(bool cut)
     {
-        TextPointer? selStart = null, selEnd = null;
-        if (editor != null && !editor.Selection.IsEmpty)
+        try
         {
-            selStart = editor.Selection.Start;
-            selEnd = editor.Selection.End;
+            if (TitleBox.IsKeyboardFocusWithin) return CopyTitleText(cut);
+            return CopyEditor(cut);
         }
-        else return false;
-        var pieces = ExportPieces(selStart, selEnd);
-        if (!pieces.Any(p => p.Png is { Length: > 0 })) return false;
-        string pack = NoteClip.Pack(pieces);
-        string plain = NoteClip.Plain(pieces);
+        catch (Exception ex)
+        {
+            AppEnv.Log("copy: " + ex);
+            try
+            {
+                string plain = editor != null && !editor.Selection.IsEmpty
+                    ? new TextRange(editor.Selection.Start, editor.Selection.End).Text
+                    : TitleBox.SelectedText ?? "";
+                if (plain.Length == 0) return false;
+                return NoteClipSession.Publish(NoteClip.Pack(new[] { new NoteClipPiece { Text = plain } }), plain, plain, null, null, null);
+            }
+            catch (Exception ex2)
+            {
+                AppEnv.Log("copy fallback: " + ex2);
+                return false;
+            }
+        }
+    }
+
+    public bool CopyTitleText(bool cut)
+    {
+        string all = TitleBox.Text ?? "";
+        int start = Math.Clamp(TitleBox.SelectionStart, 0, all.Length);
+        int len = Math.Clamp(TitleBox.SelectionLength, 0, all.Length - start);
+        string plain = len > 0 ? all.Substring(start, len) : all;
+        if (plain.Length == 0) return false;
+        bool ok = NoteClipSession.Publish(NoteClip.Pack(new[] { new NoteClipPiece { Text = plain } }), plain, plain, null, null, null);
+        if (ok && cut && !AppEnv.ReadOnly)
+        {
+            if (len > 0) TitleBox.Text = all.Remove(start, len);
+            else TitleBox.Text = "";
+            OnTitleEdited();
+        }
+        return ok;
+    }
+
+    bool CopyEditor(bool cut)
+    {
+        if (editor == null) return CopySelectedImage();
+        if (editor.Selection.IsEmpty)
+        {
+            if (CopySelectedImage()) return true;
+            string all = PlainText();
+            if (all.Length == 0) return false;
+            return NoteClipSession.Publish(NoteClip.Pack(new[] { new NoteClipPiece { Text = all } }), all, all, null, null, null);
+        }
+        var start = editor.Selection.Start;
+        var end = editor.Selection.End;
+        string plain = new TextRange(start, end).Text ?? "";
+        List<NoteClipPiece> pieces;
+        try { pieces = ExportPieces(start, end); }
+        catch (Exception ex)
+        {
+            AppEnv.Log("copy pieces: " + ex);
+            pieces = plain.Length > 0 ? new List<NoteClipPiece> { new() { Text = plain } } : new List<NoteClipPiece>();
+        }
+        if (pieces.Count == 0 && plain.Length == 0) return CopySelectedImage();
+        if (plain.Length == 0) plain = NoteClip.Plain(pieces);
         string? xaml = null;
         try
         {
             using var ms = new MemoryStream();
-            new TextRange(selStart, selEnd).Save(ms, DataFormats.Xaml);
+            new TextRange(start, end).Save(ms, DataFormats.Xaml);
             xaml = Encoding.UTF8.GetString(ms.ToArray());
         }
-        catch { }
+        catch (Exception ex) { AppEnv.Log("copy xaml: " + ex); }
         var pngs = pieces.Where(p => p.Png is { Length: > 0 }).ToList();
-        NoteClipSession.Publish(pack, plain, NoteClip.ToRtf(pieces), pngs.Count == 1 ? pngs[0].Png : null, xaml, NoteClip.ToHtml(pieces));
+        byte[]? png = pngs.Count == 1 ? pngs[0].Png : null;
+        string rtf = "";
+        string html = "";
+        try { rtf = NoteClip.ToRtf(pieces); } catch (Exception ex) { AppEnv.Log("copy rtf: " + ex); }
+        try { html = NoteClip.ToHtml(pieces); } catch (Exception ex) { AppEnv.Log("copy html: " + ex); }
+        bool ok = NoteClipSession.Publish(NoteClip.Pack(pieces), plain, rtf, png, xaml, html);
+        if (ok && cut && !AppEnv.ReadOnly)
+        {
+            editor.Selection.Text = "";
+            TextDirty = true;
+            textTimer.Stop();
+            textTimer.Start();
+        }
+        return ok;
+    }
+
+    ContextMenu EditMenu(Control target)
+    {
+        var menu = new ContextMenu();
+        if (Application.Current?.TryFindResource(typeof(ContextMenu)) is Style style) menu.Style = style;
+        void Add(string label, string icon, string gesture, ICommand command)
+        {
+            var item = new MenuItem { Header = label, InputGestureText = gesture, Command = command, CommandTarget = target };
+            if (Application.Current?.TryFindResource(typeof(MenuItem)) is Style itemStyle) item.Style = itemStyle;
+            item.Icon = new TextBlock
+            {
+                Text = icon,
+                FontFamily = (FontFamily)FindResource("Icons"),
+                FontSize = 14,
+                Width = 18,
+                TextAlignment = TextAlignment.Center
+            };
+            menu.Items.Add(item);
+        }
+        Add("잘라내기", "\uE8C6", "Ctrl+X", ApplicationCommands.Cut);
+        Add("복사", "\uE8C8", "Ctrl+C", ApplicationCommands.Copy);
+        Add("붙여넣기", "\uE77F", "Ctrl+V", ApplicationCommands.Paste);
+        menu.Items.Add(new Separator());
+        Add("모두 선택", "\uE8B3", "Ctrl+A", ApplicationCommands.SelectAll);
+        return menu;
+    }
+
+    void OnTitlePasting(object sender, DataObjectPastingEventArgs e)
+    {
+        e.CancelCommand();
+        string plain = TitlePlain(e.DataObject);
+        if (plain.Length == 0) return;
+        int start = TitleBox.SelectionStart;
+        int len = TitleBox.SelectionLength;
+        string all = TitleBox.Text ?? "";
+        if (start < 0 || start > all.Length) start = all.Length;
+        if (len < 0 || start + len > all.Length) len = 0;
+        string next = (all.Remove(start, len).Insert(start, plain));
+        next = next.Replace("\r", "").Replace("\n", " ");
+        if (next.Length > 80) next = next[..80];
+        TitleBox.Text = next;
+        TitleBox.SelectionStart = Math.Min(start + plain.Length, TitleBox.Text.Length);
+        OnTitleEdited();
+    }
+
+    public bool PasteTitleClipboard()
+    {
+        var data = NoteClipSession.TakeClipboard();
+        string plain = data == null ? "" : TitlePlain(data);
+        if (plain.Length == 0) return false;
+        int start = Math.Clamp(TitleBox.SelectionStart, 0, (TitleBox.Text ?? "").Length);
+        int len = Math.Clamp(TitleBox.SelectionLength, 0, (TitleBox.Text ?? "").Length - start);
+        string all = TitleBox.Text ?? "";
+        string next = all.Remove(start, len).Insert(start, plain);
+        if (next.Length > 80) next = next[..80];
+        TitleBox.Text = next;
+        TitleBox.SelectionStart = Math.Min(start + plain.Length, TitleBox.Text.Length);
+        OnTitleEdited();
         return true;
+    }
+
+    static string TitlePlain(IDataObject data)
+    {
+        string text = "";
+        try
+        {
+            if (data.GetDataPresent(DataFormats.UnicodeText)) text = data.GetData(DataFormats.UnicodeText) as string ?? "";
+            else if (data.GetDataPresent(DataFormats.Text)) text = data.GetData(DataFormats.Text) as string ?? "";
+        }
+        catch (Exception ex) { AppEnv.Log("title paste: " + ex.Message); }
+        text = text.Replace("\r", "").Replace("\n", " ").Trim();
+        return text.Length > 80 ? text[..80] : text;
+    }
+
+    public bool PasteClipboard()
+    {
+        if (AppEnv.ReadOnly) return false;
+        if (TitleBox.IsKeyboardFocusWithin) return PasteTitleClipboard();
+        var data = NoteClipSession.TakeClipboard();
+        if (data != null && PasteObject(data)) return true;
+        return PasteMixed() || PasteImage();
+    }
+
+    public bool PasteObject(IDataObject data)
+    {
+        if (AppEnv.ReadOnly || data == null) return false;
+        var pieces = NotePaste.Read(data);
+        if (pieces.Count == 0) return false;
+        bool any = false;
+        foreach (var piece in pieces)
+        {
+            if (piece.Text.Length > 0)
+            {
+                Editor.CaretPosition.InsertTextInRun(piece.Text);
+                TextDirty = true;
+                any = true;
+            }
+            if (piece.Png is { Length: > 0 } png && png.Length <= NotePaste.MaxBytes)
+            {
+                InsertPng(png);
+                any = true;
+            }
+        }
+        if (any) { textTimer.Stop(); textTimer.Start(); }
+        return any;
     }
 
     public bool PasteMixed()
@@ -1492,16 +1742,14 @@ public partial class StickyNoteWindow : Window
     public bool AcceptDrop(IDataObject data)
     {
         if (AppEnv.ReadOnly || data == null) return false;
-        bool any = false;
-        if (data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] files)
-            foreach (var f in files) if (NoteImages.IsImagePath(f) && InsertImageFile(f)) any = true;
-        if (!any && data.GetDataPresent(DataFormats.Bitmap) && data.GetData(DataFormats.Bitmap) is BitmapSource bmp)
-            any = InsertBitmap(bmp);
-        return any;
+        return PasteObject(data);
     }
 
     static bool CanDrop(IDataObject data)
-        => data.GetDataPresent(DataFormats.FileDrop) || data.GetDataPresent(DataFormats.Bitmap);
+        => data.GetDataPresent(DataFormats.FileDrop) || data.GetDataPresent(DataFormats.Bitmap)
+        || data.GetDataPresent(DataFormats.UnicodeText) || data.GetDataPresent(DataFormats.Text)
+        || data.GetDataPresent(DataFormats.Html) || data.GetDataPresent(DataFormats.Rtf)
+        || data.GetDataPresent("PNG") || data.GetDataPresent(NoteClip.Format);
 
     bool PasteImage()
     {
@@ -1669,40 +1917,107 @@ public static class NoteClipSession
     public static string? LastRtf { get; private set; }
     public static string? LastXaml { get; private set; }
     public static string? LastHtml { get; private set; }
+    public static string LastPlain { get; private set; } = "";
     public static bool LastHadBitmap { get; private set; }
     public static int SystemCalls { get; private set; }
+    public static int SetAttempts { get; private set; }
+    public static int RichThrows { get; set; }
+    public static Exception? LastError { get; private set; }
+    public static IDataObject? Fake { get; set; }
+    public static DataObject? Memory { get; private set; }
     public static bool AllowsSystem => !AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest;
 
-    public static void Publish(string pack, string plain, string rtf, byte[]? png, string? xaml = null, string? html = null)
+    public static bool Publish(string pack, string plain, string rtf, byte[]? png, string? xaml = null, string? html = null)
     {
         LastPack = pack;
         LastRtf = rtf;
         LastXaml = xaml;
         LastHtml = html;
         LastHadBitmap = png is { Length: > 0 };
-        if (!AllowsSystem) return;
-        SystemCalls++;
+        LastPlain = plain ?? "";
+        if (Commit(Build(plain, rtf, html, xaml, pack, png, rich: true), rich: true)) return HasPayload(plain, png);
+        AppEnv.Log("clipboard rich copy failed; writing plain text");
+        return Commit(Build(plain, null, null, null, null, png, rich: false), rich: false) && HasPayload(plain, png);
+    }
+
+    static bool HasPayload(string? plain, byte[]? png) => !string.IsNullOrEmpty(plain) || png is { Length: > 0 };
+
+    static DataObject Build(string? plain, string? rtf, string? html, string? xaml, string? pack, byte[]? png, bool rich)
+    {
         var data = new DataObject();
-        data.SetData(NoteClip.Format, pack);
-        data.SetData(DataFormats.UnicodeText, plain ?? "");
-        data.SetData(DataFormats.Rtf, rtf ?? "");
-        if (!string.IsNullOrEmpty(xaml)) data.SetData(DataFormats.Xaml, xaml);
-        if (!string.IsNullOrEmpty(html)) data.SetData(DataFormats.Html, html);
-        if (png is { Length: > 0 })
+        string text = plain ?? "";
+        try { data.SetData(DataFormats.UnicodeText, text); } catch (Exception ex) { AppEnv.Log("clipboard text: " + ex.Message); }
+        try { data.SetData(DataFormats.Text, text); } catch (Exception ex) { AppEnv.Log("clipboard ansi: " + ex.Message); }
+        if (!rich) return AttachPng(data, png);
+        try { if (!string.IsNullOrEmpty(pack)) data.SetData(NoteClip.Format, pack); } catch (Exception ex) { AppEnv.Log("clipboard pack: " + ex.Message); }
+        try { if (!string.IsNullOrEmpty(rtf)) data.SetData(DataFormats.Rtf, rtf); } catch (Exception ex) { AppEnv.Log("clipboard rtf: " + ex.Message); }
+        try { if (!string.IsNullOrEmpty(xaml)) data.SetData(DataFormats.Xaml, xaml); } catch (Exception ex) { AppEnv.Log("clipboard xaml: " + ex.Message); }
+        try { if (!string.IsNullOrEmpty(html)) data.SetData(DataFormats.Html, html); } catch (Exception ex) { AppEnv.Log("clipboard html: " + ex.Message); }
+        return AttachPng(data, png);
+    }
+
+    static DataObject AttachPng(DataObject data, byte[]? png)
+    {
+        if (png is not { Length: > 0 }) return data;
+        try { data.SetData("PNG", new MemoryStream(png), false); } catch (Exception ex) { AppEnv.Log("clipboard png: " + ex.Message); }
+        try
         {
+            using var ms = new MemoryStream(png);
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.StreamSource = ms;
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.EndInit();
+            bmp.Freeze();
+            data.SetImage(bmp);
+        }
+        catch (Exception ex) { AppEnv.Log("clipboard bitmap: " + ex.Message); }
+        return data;
+    }
+
+    static bool Commit(DataObject data, bool rich)
+    {
+        for (int i = 0; i < 6; i++)
+        {
+            SetAttempts++;
             try
             {
-                using var ms = new System.IO.MemoryStream(png);
-                var bmp = new BitmapImage();
-                bmp.BeginInit();
-                bmp.StreamSource = ms;
-                bmp.CacheOption = BitmapCacheOption.OnLoad;
-                bmp.EndInit();
-                bmp.Freeze();
-                data.SetImage(bmp);
+                if (rich && RichThrows > 0)
+                {
+                    RichThrows--;
+                    throw new System.Runtime.InteropServices.COMException("OpenClipboard", unchecked((int)0x800401D0));
+                }
+                Memory = data;
+                if (!AllowsSystem) return true;
+                Clipboard.SetDataObject(data, copy: true);
+                SystemCalls++;
+                return true;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LastError = ex;
+                AppEnv.Log("clipboard: " + ex.GetType().Name + " " + ex.Message);
+                if (AllowsSystem && i + 1 < 6) Thread.Sleep(15 * (i + 1));
+            }
         }
-        Clipboard.SetDataObject(data, copy: true);
+        return false;
+    }
+
+    public static IDataObject? TakeClipboard()
+    {
+        if (Fake != null) return Fake;
+        if (Memory != null && !AllowsSystem) return Memory;
+        if (!AllowsSystem) return null;
+        for (int i = 0; i < 6; i++)
+        {
+            try { return Clipboard.GetDataObject(); }
+            catch (Exception ex)
+            {
+                LastError = ex;
+                AppEnv.Log("clipboard read: " + ex.GetType().Name + " " + ex.Message);
+                if (i + 1 < 6) Thread.Sleep(15 * (i + 1));
+            }
+        }
+        return Memory;
     }
 }

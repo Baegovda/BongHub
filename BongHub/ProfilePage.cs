@@ -42,6 +42,15 @@ public partial class MainWindow
             }), wrap: true);
         }
         DrawProfileCanvas(profile);
+        Header("담긴 창");
+        var windowRows = Group();
+        if (profile.Apps.Count == 0)
+            Row(windowRows, "\uE737", "8E8E93", "아직 없어요", "+ 창 추가로 실행 중인 창을 담아요.", null, wrap: true);
+        foreach (var listed in profile.Apps)
+        {
+            string listedName = listed.Name.Length > 0 ? listed.Name : (listed.Title.Length > 0 ? listed.Title : listed.Process);
+            Row(windowRows, "\uE737", "5AC8FA", listedName.Length > 0 ? listedName : "창", listed.W + "×" + listed.H, null, wrap: true, icon: AppIcon.Lookup(listed.Process, listed.Path));
+        }
         var add = Small(windowPickerOpen ? "닫기" : "+ 창 추가", () => { windowPickerOpen = !windowPickerOpen; Render("presets", false); });
         var bar = Group();
         Row(bar, "\uE710", "34C759", "창", "모니터 안에서 끌어 옮기고, 가장자리에서 크기를 바꿔요.", add, wrap: true);
@@ -169,6 +178,7 @@ public partial class MainWindow
         {
             return profile.Monitors.FirstOrDefault(m => x >= m.X && y >= m.Y && x < m.X + m.W && y < m.Y + m.H) ?? profile.Monitors.FirstOrDefault();
         }
+        var badges = new List<Border>();
         foreach (var mon in profile.Monitors)
         {
             var box = ProfileSnap.ToCanvas(mon.Box, scene);
@@ -202,7 +212,7 @@ public partial class MainWindow
             };
             Canvas.SetLeft(badge, box.X + 8);
             Canvas.SetTop(badge, box.Y + 8);
-            Canvas.SetZIndex(badge, 5000);
+            badges.Add(badge);
             var start = mon.Box;
             var origin = new Point(box.X, box.Y);
             Point grab = default;
@@ -246,8 +256,14 @@ public partial class MainWindow
             var home = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors[0];
             var abs = new ProfileBox(home.X + app.X, home.Y + app.Y, app.W, app.H);
             var view = ProfileSnap.ToCanvas(abs, scene);
-            double tileW = Math.Max(128, view.W);
-            double tileH = Math.Max(72, view.H);
+            var homeBox = ProfileSnap.ToCanvas(home.Box, scene);
+            double left = Math.Max(homeBox.X + 4, view.X);
+            double top = Math.Max(homeBox.Y + 26, view.Y);
+            double tileW = Math.Max(36, Math.Min(view.W, Math.Max(36, homeBox.X + homeBox.W - 4 - left)));
+            double tileH = Math.Max(28, Math.Min(view.H, Math.Max(28, homeBox.Y + homeBox.H - 4 - top)));
+            if (left + tileW > homeBox.X + homeBox.W - 4) left = Math.Max(homeBox.X + 4, homeBox.X + homeBox.W - 4 - tileW);
+            if (top + tileH > homeBox.Y + homeBox.H - 4) top = Math.Max(homeBox.Y + 26, homeBox.Y + homeBox.H - 4 - tileH);
+            view = new ProfileBox((int)left, (int)top, (int)tileW, (int)tileH);
             double font = Math.Clamp(tileW / 12.0, 12, 16);
             string shown = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
             var tile = new Border
@@ -377,6 +393,7 @@ public partial class MainWindow
         }
         Canvas.SetZIndex(preview, 3);
         stage.Children.Add(preview);
+        foreach (var badge in badges) Canvas.SetZIndex(badge, 100000);
         PageHost.Children.Add(stage);
     }
 

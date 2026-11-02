@@ -37,6 +37,7 @@ public static class ThemeAudit
         {
             if (node == null || !seen.Add(node)) return;
             if (node is FrameworkElement fe) { try { fe.ApplyTemplate(); } catch { } }
+            Stamp(node);
             if (Missed(node)) bad.Add(Describe(node));
             int count = 0;
             try { count = VisualTreeHelper.GetChildrenCount(node); } catch { count = 0; }
@@ -47,6 +48,15 @@ public static class ThemeAudit
             foreach (Window w in Application.Current.Windows) Walk(w);
         foreach (var root in extra) Walk(root);
         return bad;
+    }
+
+    static void Stamp(DependencyObject node)
+    {
+        if (node is not Control control || !Watched.Contains(control.GetType())) return;
+        if (!ThemeMark.GetOn(control) && control.Style == null && Application.Current?.TryFindResource(control.GetType()) is Style style)
+            control.Style = style;
+        if (control.Background is SolidColorBrush brush && brush.Color.A > 240 && NoteColors.Lum(brush.Color) > 0.85)
+            control.Background = Brushes.Transparent;
     }
 
     static bool Missed(DependencyObject node)

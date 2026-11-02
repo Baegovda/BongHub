@@ -17,7 +17,7 @@ public static class AppIcon
     {
         string key = !string.IsNullOrEmpty(path) ? path : (process ?? "");
         if (key.Length == 0) return null;
-        if (Cache.TryGetValue(key, out var cached)) return cached;
+        if (Cache.TryGetValue(key, out var cached) && cached != null) return cached;
         if (Fake != null)
         {
             var made = Fake(key);
@@ -27,8 +27,8 @@ public static class AppIcon
         if (!WindowGate.RealAllowed) return null;
         try
         {
-            var made = ReadReal(key);
-            Cache[key] = made;
+            var made = ReadReal(key) ?? (key.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? null : ReadReal(key + ".exe"));
+            if (made != null) Cache[key] = made;
             return made;
         }
         catch { return null; }
@@ -39,16 +39,20 @@ public static class AppIcon
         Attempts++;
         WindowGate.Demand();
         NativeCalls++;
-        var info = new SHFILEINFO();
-        IntPtr h = SHGetFileInfo(file, 0x80, ref info, (uint)Marshal.SizeOf<SHFILEINFO>(), 0x100 | 0x10);
-        if (h == IntPtr.Zero || info.hIcon == IntPtr.Zero) return null;
-        try
+        foreach (uint flags in new uint[] { 0x100 | 0x10, 0x100 | 0x1 | 0x10 })
         {
-            var image = Imaging.CreateBitmapSourceFromHIcon(info.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-            image.Freeze();
-            return image;
+            var info = new SHFILEINFO();
+            IntPtr h = SHGetFileInfo(file, 0x80, ref info, (uint)Marshal.SizeOf<SHFILEINFO>(), flags);
+            if (h == IntPtr.Zero || info.hIcon == IntPtr.Zero) continue;
+            try
+            {
+                var image = Imaging.CreateBitmapSourceFromHIcon(info.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                image.Freeze();
+                return image;
+            }
+            finally { DestroyIcon(info.hIcon); }
         }
-        finally { DestroyIcon(info.hIcon); }
+        return null;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]

@@ -626,15 +626,9 @@ public partial class MainWindow : Window
         opTrail.Children.Add(opLabel);
         Row(g, "\uE81E", "5AC8FA", "불투명도", "메모 창 전체예요. 40~100%.", opTrail);
         var dc = ConfigStore.Notes.DefaultColor;
-        var sw = new StackPanel { Orientation = Orientation.Horizontal };
-        sw.Children.Add(new Ellipse { Width = 16, Height = 16, Margin = new Thickness(0, 0, 8, 0), Fill = new LinearGradientBrush(NoteColors.Swatch(dc), NoteColors.SwatchB(dc), 45) });
-        sw.Children.Add(Value(NoteColors.Name(dc)));
-        var custom = new Button { Content = "맞춤 색", Padding = new Thickness(10, 4, 10, 4), IsEnabled = !ro };
+        var custom = new Button { Content = "맞춤 색", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(8, 0, 0, 0), IsEnabled = !ro };
         custom.Click += (_, _) => PickDefaultColor(custom);
-        var colorTrail = new StackPanel { Orientation = Orientation.Horizontal };
-        colorTrail.Children.Add(sw);
-        colorTrail.Children.Add(custom);
-        Row(g, "\uE771", "FF2D55", "기본 색", "새 메모는 이 색을 피해 무작위로 골라요 (3.4.9와 같음)", colorTrail);
+        Row(g, "\uE771", "FF2D55", "기본 색", NoteColors.Name(dc) + " · 새 메모는 이 색을 피해 무작위로 골라요", custom);
 
         Header($"메모 {NoteStore.All.Count}개");
         var cmds = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 0, 0, 8) };

@@ -637,6 +637,18 @@ public static class ScreenBind
             profile.Monitors.Add(added);
         }
         Retarget(profile, old);
+        var drop = profile.Monitors.Where(m => !m.Connected).ToList();
+        foreach (var gone in drop)
+        {
+            int previous = old.TryGetValue(gone, out int n) ? n : gone.Number;
+            var keep = profile.Monitors.FirstOrDefault(m => m.Connected && !ReferenceEquals(m, gone));
+            if (keep != null)
+            {
+                foreach (var app in profile.Apps)
+                    if (app.Monitor == previous || app.Monitor == gone.Number) app.Monitor = keep.Number;
+            }
+            profile.Monitors.Remove(gone);
+        }
     }
 }
 
