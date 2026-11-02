@@ -303,6 +303,57 @@ public static class SmokeTest
         bool captureThrew = false;
         try { using var livePick = new LiveWindowSurface(); } catch (InvalidOperationException) { captureThrew = true; }
         t.Check("profile snap and capture stay off real windows", snapped.X == 16 && snapped.Y == 16 && snapped.Right <= 800 && w.LastPick != null && w.LastPick.Title == "메모장" && w.LastPick.W == 640 && captureThrew && LiveWindowSurface.NativeCalls == 0);
+        var beside = ProfileSnap.SnapMonitor(new ProfileBox(1900, 30, 1920, 1080), new[] { new ProfileBox(0, 0, 1920, 1080) }, 48);
+        var half = ProfileSnap.PreviewAt(10, 540, new ProfileBox(0, 0, 1920, 1080));
+        var quarter = ProfileSnap.PreviewAt(8, 8, new ProfileBox(0, 0, 1920, 1080));
+        var maximized = ProfileSnap.PreviewAt(960, 8, new ProfileBox(0, 0, 1920, 1080));
+        var resized = ProfileSnap.Resize(new ProfileBox(100, 100, 400, 300), new ProfileBox(0, 0, 1920, 1080), "e", 50, 0, 120);
+        var clamped = ProfileSnap.Resize(new ProfileBox(100, 100, 400, 300), new ProfileBox(0, 0, 1920, 1080), "e", 5000, 0, 120);
+        t.Check("profile monitors snap together and windows snap to half, quarter, and max", beside.X == 1920 && beside.Y == 0 && half.Kind == "left" && half.Box.W == 960 && half.Box.H == 1080 && quarter.Kind == "tl" && quarter.Box.W == 960 && quarter.Box.H == 540 && maximized.Kind == "top" && maximized.Box.W == 1920 && resized.W == 450 && clamped.Right == 1920);
+        var crossed = ProfileSnap.Transfer(new ProfileBox(1800, 100, 400, 300), new[] { new ProfileBox(0, 0, 1920, 1080), new ProfileBox(1920, 0, 1920, 1080) });
+        var edged = ProfileSnap.SnapWindow(new ProfileBox(200, 40, 100, 80), new ProfileBox(0, 0, 800, 600), new[] { new ProfileBox(0, 0, 208, 200) }, 8);
+        t.Check("profile window crosses monitors and snaps to a neighbor", crossed.Index == 1 && crossed.Local.X == -120 && crossed.Local.Y == 100 && edged.X == 208 && edged.Y == 40);
+        var migrated = ProfileDoc.Migrate(
+            new[] { new MonitorPreset { Name = "작업", Hotkey = "Ctrl+Alt+1", Primary = "SAM1", DeskLayout = "L1", Workspace = "W1", Enable = new() { "SAM1" }, Brightness = new() { new BrightTarget { Monitor = "SAM1", Value = 40 } } } },
+            new[] { new WindowRule { Name = "Discord", Process = "discord.exe", Title = "친구", X = 10, Y = 20, W = 300, H = 200 } },
+            "{\"profiles\":[{\"name\":\"작업\",\"icons\":\"L1\",\"windows\":[{\"process\":\"notepad.exe\",\"title\":\"메모장\",\"class\":\"Notepad\",\"x\":16,\"y\":16,\"w\":640,\"h\":480}]}]}");
+        var again = ProfileDoc.Parse(ProfileDoc.ToJson(migrated));
+        bool primaryOff = !ProfileDoc.SetEnabled(migrated[0], migrated[0].Monitors.First(m => m.Primary).Number, false);
+        var added = ProfileDoc.Add(migrated);
+        ProfileDoc.Rename(added, "집");
+        var copy = ProfileDoc.Duplicate(migrated, added.Id);
+        bool dropped = copy != null && ProfileDoc.Delete(migrated, copy.Id);
+        t.Check("profile migration and edits keep the 3.4.x fields", migrated[0].Hotkey == "Ctrl+Alt+1" && migrated[0].Workspace == "W1" && migrated[0].Apps.Any(a => a.Process == "notepad.exe" && a.Class == "Notepad") && migrated[0].Apps.Any(a => a.Process == "discord.exe") && migrated[0].Monitors[0].Id == "SAM1" && migrated[0].Monitors[0].Primary && again[0].Workspace == "W1" && again[0].Brightness[0].Value == 40 && primaryOff && added.Name == "집" && dropped && migrated.All(p => p.Id != copy!.Id));
+        var iconSurface = new MemoryIconSurface();
+        iconSurface.Icons.Add(new DeskIcon { Name = "휴지통", X = 1, Y = 1 });
+        var storedIcons = ProfileDoc.CaptureIcons(iconSurface.Read());
+        storedIcons[0].X = 40; storedIcons[0].Y = 50;
+        var iconResult = ProfileDoc.RestoreIcons(storedIcons, iconSurface);
+        bool explorerBlocked = false;
+        try { using var realIcons = new ExplorerIconSurface(); } catch (InvalidOperationException) { explorerBlocked = true; }
+        t.Check("profile icon layout restores through a fake desktop", iconResult.Ok && iconSurface.Icons[0].X == 40 && iconSurface.Icons[0].Y == 50 && explorerBlocked && ExplorerIconSurface.NativeCalls == 0);
+        string legacy = "{\"profiles\":[{\"name\":\"작업\",\"icons\":\"L1\",\"windows\":["
+            + "{\"process\":\"a.exe\",\"title\":\"A\",\"class\":\"A\",\"x\":36,\"y\":28,\"w\":96,\"h\":64},"
+            + "{\"process\":\"b.exe\",\"title\":\"B\",\"class\":\"B\",\"x\":140,\"y\":28,\"w\":96,\"h\":64},"
+            + "{\"process\":\"c.exe\",\"title\":\"C\",\"class\":\"C\",\"x\":244,\"y\":28,\"w\":96,\"h\":64},"
+            + "{\"process\":\"d.exe\",\"title\":\"D\",\"class\":\"D\",\"x\":36,\"y\":100,\"w\":96,\"h\":64},"
+            + "{\"process\":\"e.exe\",\"title\":\"E\",\"class\":\"E\",\"x\":140,\"y\":100,\"w\":96,\"h\":64},"
+            + "{\"process\":\"f.exe\",\"title\":\"F\",\"class\":\"F\",\"x\":244,\"y\":100,\"w\":96,\"h\":64}]}]}";
+        var lifted = ProfileDoc.Migrate(new[] { new MonitorPreset { Name = "작업", Hotkey = "Ctrl+Alt+1" } }, Array.Empty<WindowRule>(), legacy);
+        var liftedApps = lifted[0].Apps.OrderBy(a => a.Title).ToList();
+        t.Check("1.1.0 canvas windows become monitor pixels", liftedApps.Count == 6 && liftedApps.All(a => a.W == 576 && a.H == 384) && liftedApps[0].X == 96 && liftedApps[1].X == 720 && liftedApps[5].Y == 540 && liftedApps.Select(a => a.X).Distinct().Count() == 3 && lifted[0].Monitors[0].W == 1920);
+        var screens = new List<MonitorSpec>
+        {
+            new(3840, 2160, 0, 0, true),
+            new(1920, 1080, 3840, 0, false),
+            new(1920, 1080, 3840, 1080, false),
+            new(3840, 2160, -3840, 0, false),
+            new(960, 640, 5760, 0, false)
+        };
+        var seeded = ProfileDoc.Migrate(new[] { new MonitorPreset { Name = "작업", Hotkey = "Ctrl+Alt+1", Primary = "SAM1", Enable = new() { "SAM1" } } }, Array.Empty<WindowRule>(), null, screens);
+        var seedPrimary = seeded[0].Monitors.First(m => m.Primary);
+        string seedSummary = seedPrimary.W + "×" + seedPrimary.H;
+        t.Check("profile monitors follow the screen list", seeded[0].Monitors.Count == 5 && seedPrimary.W == 3840 && seedPrimary.H == 2160 && seedPrimary.X == 0 && seedPrimary.Id == "SAM1" && seeded[0].Monitors.Any(m => m.W == 960 && m.H == 640) && seedSummary == "3840×2160" && ScreenMap.Current().Count == 0);
 
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);

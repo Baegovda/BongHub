@@ -221,7 +221,7 @@ public partial class MainWindow : Window
             group.Children.Add(new Border { Height = 1, Background = (Brush)FindResource("Separator"), Margin = new Thickness(glyph != null ? 58 : 16, 0, 0, 0) });
         var g = new Grid { MinHeight = 50 };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        g.ColumnDefinitions.Add(new ColumnDefinition());
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 140 });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         if (glyph != null) g.Children.Add(new Border { Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Child = Tile(glyph, hex ?? "8E8E93", 30, 8, 15) });
         var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(glyph != null ? 14 : 16, 9, 10, 9) };
@@ -259,6 +259,11 @@ public partial class MainWindow : Window
     public string ActivePreset { get; private set; } = "";
     public string LastPresetToast { get; private set; } = "";
     public WindowPick? LastPick { get; private set; }
+    public List<MonitorProfile> Profiles { get; } = new();
+    public string SelectedProfileId { get; private set; } = "";
+    int selectedMonitorNumber = 1;
+    string selectedAppId = "";
+    bool profilesReady;
 
     /// <summary>Crosshair result. Real top-level windows are read only after the window gate opens.</summary>
     public void RequestCaptureWindow() => RequestCaptureAt(40, 48);
@@ -302,13 +307,105 @@ public partial class MainWindow : Window
         if (snap == null) { DisplayAction = "missing"; return; }
         if (Interlocked.CompareExchange(ref displayBusy, 1, 0) != 0) { DisplayAction = "busy"; return; }
         var plan = PresetCodec.Clone(snap);
+        var profile = Profiles.FirstOrDefault(p => string.Equals(p.Name, plan.Name, StringComparison.Ordinal));
         DisplayAction = "applying";
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            try { ApplyPresetNow(plan); ActivePreset = plan.Name; DisplayAction = "applied " + plan.Name; }
+            try { ApplyPresetNow(plan); PlaceProfile(profile); ActivePreset = plan.Name; DisplayAction = "applied " + plan.Name; }
             catch (Exception ex) { DisplayAction = ex.Message; }
             finally { Interlocked.Exchange(ref displayBusy, 0); }
         });
+    }
+
+    /// <summary>Apply a profile that is not one of the 3.4.x presets. Tests return before any display call.</summary>
+    public void RequestApplyProfile(string id)
+    {
+        EnsureProfiles();
+        var profile = Profiles.FirstOrDefault(p => p.Id == id);
+        if (profile == null) { DisplayAction = "missing"; return; }
+        if (ConfigStore.Presets.Any(p => string.Equals(p.Name, profile.Name, StringComparison.Ordinal)))
+        {
+            RequestApplyPreset(profile.Name);
+            return;
+        }
+        if (PresetApplyPolicy.IsCurrent(ActivePreset, profile.Name))
+        {
+            LastPresetToast = PresetApplyPolicy.Toast(profile.Name);
+            return;
+        }
+        if (!DisplayGate.RealAllowed)
+        {
+            DisplayBlocks++;
+            DisplayAction = "blocked";
+            return;
+        }
+        if (Interlocked.CompareExchange(ref displayBusy, 1, 0) != 0) { DisplayAction = "busy"; return; }
+        var plan = ProfileDoc.ToPreset(profile);
+        DisplayAction = "applying";
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try { ApplyPresetNow(plan); PlaceProfile(profile); ActivePreset = plan.Name; DisplayAction = "applied " + plan.Name; }
+            catch (Exception ex) { DisplayAction = ex.Message; }
+            finally { Interlocked.Exchange(ref displayBusy, 0); }
+        });
+    }
+
+    void PlaceProfile(MonitorProfile? profile)
+    {
+        if (profile == null) return;
+        if (WindowGate.RealAllowed)
+        {
+            using var live = new LiveWindowSurface();
+            ProfileDoc.Place(profile, live);
+        }
+        if (DesktopGate.RealAllowed && profile.Icons.Count > 0)
+        {
+            using var icons = new ExplorerIconSurface();
+            ProfileDoc.RestoreIcons(profile.Icons, icons);
+        }
+    }
+
+    public IReadOnlyList<WindowPick> ListCaptureCandidates()
+    {
+        if (!WindowGate.RealAllowed)
+            return new[] { WindowPicker.From(new TrackedWindow { Process = "notepad.exe", Title = "메모장", Class = "Notepad", X = 40, Y = 48, W = 640, H = 480 }) };
+        using var live = new LiveWindowSurface();
+        return live.List().Select(WindowPicker.From).ToList();
+    }
+
+    void EnsureProfiles()
+    {
+        if (profilesReady) return;
+        profilesReady = true;
+        string? json = null;
+        try
+        {
+            string path = System.IO.Path.Combine(AppEnv.DataDir, "profiles.json");
+            if (File.Exists(path)) json = File.ReadAllText(path);
+        }
+        catch { }
+        Profiles.Clear();
+        Profiles.AddRange(ProfileDoc.Migrate(ConfigStore.Presets, ConfigStore.WindowRules, json, ScreenMap.Current()));
+        if (Profiles.All(p => p.Id != SelectedProfileId))
+            SelectedProfileId = Profiles.FirstOrDefault()?.Id ?? "";
+    }
+
+    void SaveProfiles()
+    {
+        if (AppEnv.Off || AppEnv.Smoke || AppEnv.NoteTest || AppEnv.ReadOnly) return;
+        try
+        {
+            Directory.CreateDirectory(AppEnv.DataDir);
+            File.WriteAllText(System.IO.Path.Combine(AppEnv.DataDir, "profiles.json"), ProfileDoc.ToJson(Profiles));
+        }
+        catch { }
+    }
+
+    void TouchProfile(Action edit)
+    {
+        edit();
+        SaveProfiles();
+        Render("presets", false);
     }
 
     void ApplyPresetNow(MonitorPreset plan)
@@ -391,95 +488,35 @@ public partial class MainWindow : Window
     // ---------- pages ----------
     void PagePresets()
     {
-        Header("내 프리셋");
+        EnsureProfiles();
+        Header("모니터 프로필");
         var g = Group();
         string[] hexes = { "4C8AFE", "FF9500", "FF2D55", "34C759", "AF52DE" };
         int i = 0;
-        if (ConfigStore.Presets.Count == 0)
-            Row(g, "\uE7F4", "8E8E93", "저장된 프리셋 없음", "모니터는 바꾸지 않아요.", null);
-        foreach (var p in ConfigStore.Presets)
+        if (Profiles.Count == 0)
+            Row(g, "\uE7F4", "8E8E93", "프로필 없음", "추가하면 모니터 배치를 그릴 수 있어요.", null);
+        foreach (var p in Profiles)
         {
             var item = p;
-            string sum = PresetExtras.BrightSummary(item);
-            string? sub = sum == "밝기는 바꾸지 않아요" ? null : sum;
+            var prim = item.Monitors.FirstOrDefault(m => m.Primary) ?? item.Monitors.FirstOrDefault();
+            string sub = prim == null ? "모니터 없음" : (prim.Primary ? "주 모니터 · " : "") + prim.W + "×" + prim.H + " · 창 " + item.Apps.Count;
             var apply = new Button { Content = "지금 적용", Padding = new Thickness(12, 6, 12, 6) };
-            apply.Click += (_, _) => RequestApplyPreset(item.Name);
+            apply.Click += (_, _) => RequestApplyProfile(item.Id);
             var trail = new StackPanel { Orientation = Orientation.Horizontal };
             if (!string.IsNullOrEmpty(item.Hotkey)) trail.Children.Add(Keycap(item.Hotkey));
             apply.Margin = new Thickness(item.Hotkey.Length > 0 ? 8 : 0, 0, 0, 0);
             trail.Children.Add(apply);
-            Row(g, "\uE7F4", hexes[i++ % hexes.Length], item.Name.Length > 0 ? item.Name : "(이름 없음)", sub, trail);
+            var row = Row(g, "\uE7F4", hexes[i++ % hexes.Length], item.Name.Length > 0 ? item.Name : "(이름 없음)", sub, trail, () => SelectProfile(item.Id));
+            if (item.Id == SelectedProfileId) row.Background = new SolidColorBrush(Color.FromArgb(0x22, 0x4C, 0x8A, 0xFE));
         }
-        Header("화면 안 창");
-        var stage = new Canvas { Width = 360, Height = 200, Margin = new Thickness(16, 0, 16, 8) };
-        var canvasBox = new ProfileBox(20, 10, 320, 180);
-        var source = new ProfileBox(0, 0, 1920, 1080);
-        var monitor = new Border { Width = canvasBox.W, Height = canvasBox.H, Background = new SolidColorBrush(Color.FromArgb(0x18, 76, 138, 254)), BorderBrush = new SolidColorBrush(Color.FromRgb(0x4C, 0x8A, 0xFE)), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12) };
-        Canvas.SetLeft(monitor, canvasBox.X); Canvas.SetTop(monitor, canvasBox.Y);
-        stage.Children.Add(monitor);
-        var board = new List<ProfileWindow>();
-        foreach (var rule in ConfigStore.WindowRules.Where(r => r.W > 0 && r.H > 0).Take(6))
-        {
-            var fit = ProfileLayout.Fit(new ProfileBox(rule.X, rule.Y, Math.Min(rule.W, source.W), Math.Min(rule.H, source.H)), source, canvasBox);
-            board.Add(new ProfileWindow { Process = rule.Process, Title = rule.Name.Length > 0 ? rule.Name : rule.Title, Class = rule.Class, X = fit.X, Y = fit.Y, W = fit.W, H = fit.H });
-        }
-        if (board.Count == 0) board.Add(new ProfileWindow { Title = "창", X = 36, Y = 28, W = 96, H = 64 });
-        TextBlock? captureLabel = null;
-        void AddTile(ProfileWindow item)
-        {
-            var tile = new Border { Width = item.W, Height = item.H, Background = new SolidColorBrush(Color.FromArgb(0xCC, 0x1C, 0x1C, 0x1E)), CornerRadius = new CornerRadius(8), Cursor = Cursors.SizeAll };
-            Canvas.SetLeft(tile, item.X); Canvas.SetTop(tile, item.Y);
-            var grab = new Point();
-            tile.MouseLeftButtonDown += (_, e) => { tile.CaptureMouse(); grab = e.GetPosition(tile); e.Handled = true; };
-            tile.MouseMove += (_, e) =>
-            {
-                if (!tile.IsMouseCaptured) return;
-                var p = e.GetPosition(stage);
-                var snapped = ProfileLayout.Snap(new ProfileBox((int)(p.X - grab.X), (int)(p.Y - grab.Y), item.W, item.H), canvasBox, 8);
-                item.X = snapped.X; item.Y = snapped.Y;
-                Canvas.SetLeft(tile, snapped.X); Canvas.SetTop(tile, snapped.Y);
-            };
-            tile.MouseLeftButtonUp += (_, _) => { tile.ReleaseMouseCapture(); RememberProfileFile(board); };
-            tile.Child = new TextBlock { Text = item.Title.Length > 0 ? item.Title : "창", Foreground = Brushes.White, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-            stage.Children.Add(tile);
-        }
-        foreach (var item in board) AddTile(item);
-        var cross = new Border { Width = 28, Height = 28, Background = new SolidColorBrush(Color.FromRgb(0x4C, 0x8A, 0xFE)), CornerRadius = new CornerRadius(14), Cursor = Cursors.Cross };
-        Canvas.SetLeft(cross, 28); Canvas.SetTop(cross, 16);
-        cross.Child = new TextBlock { Text = "\uE8B3", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 14, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        cross.MouseLeftButtonDown += (_, e) => { cross.CaptureMouse(); e.Handled = true; };
-        cross.MouseMove += (_, e) =>
-        {
-            if (!cross.IsMouseCaptured) return;
-            var p = e.GetPosition(stage);
-            Canvas.SetLeft(cross, Math.Max(0, p.X - 14)); Canvas.SetTop(cross, Math.Max(0, p.Y - 14));
-        };
-        cross.MouseLeftButtonUp += (_, e) =>
-        {
-            cross.ReleaseMouseCapture();
-            var p = e.GetPosition(stage);
-            var snapped = ProfileLayout.Snap(new ProfileBox((int)p.X, (int)p.Y, 96, 64), canvasBox, 8);
-            RequestCaptureAt(snapped.X, snapped.Y);
-            if (LastPick == null) return;
-            if (captureLabel != null) captureLabel.Text = LastPick.Title.Length > 0 ? LastPick.Title : LastPick.Process;
-            var caught = new ProfileWindow { Process = LastPick.Process, Title = LastPick.Title, Class = LastPick.Class, X = snapped.X, Y = snapped.Y, W = 96, H = 64 };
-            board.Add(caught);
-            AddTile(caught);
-            RememberProfileFile(board);
-        };
-        stage.Children.Add(cross);
-        PageHost.Children.Add(stage);
-        Header("이 프로필의 창");
-        var rules = Group();
-        var pickRow = Row(rules, "\uE8B3", "5AC8FA", LastPick == null ? "담긴 창 없음" : LastPick.Title, "십자선을 창 위로 끌어 놓으면 프로세스·제목·클래스·위치를 담아요. 시험에서는 가짜 창만 담아요.", null);
-        captureLabel = (pickRow.Child as Grid)?.Children.OfType<StackPanel>().FirstOrDefault()?.Children.OfType<TextBlock>().FirstOrDefault();
-        PageWindows();
-        PageDesktop();
-        Footer("모니터 전환과 밝기는 지금 적용을 눌렀을 때만 해요. 시험·화면 밖·CI에서는 디스플레이 API, 실제 창, 탐색기를 열지 않아요. 모니터를 바꾼 뒤 Windows가 최소화된 창을 다시 그리는 경우가 있어요. 작업 표시줄을 맞추려고 탐색기를 끝내지는 않아요.");
-        Header("이전 상태");
-        var m = Group();
-        Row(m, "\uE8B7", "8E8E93", "설정 파일", AppEnv.ConfigPath, Value(ConfigStore.LoadError == "" ? "읽음" : "오류"));
-        Row(m, "\uE70B", "F5B83D", "스티커 메모", $"{NoteStore.All.Count}개 불러옴" + (NoteStore.CorruptMeta > 0 ? $" · 손상 {NoteStore.CorruptMeta}개 건너뜀" : ""), null);
+        var cmds = new StackPanel { Orientation = Orientation.Horizontal };
+        cmds.Children.Add(Small("추가", () => { var n = ProfileDoc.Add(Profiles); SelectedProfileId = n.Id; SaveProfiles(); Render("presets", false); }));
+        cmds.Children.Add(Small("복제", () => { var n = ProfileDoc.Duplicate(Profiles, SelectedProfileId); if (n != null) { SelectedProfileId = n.Id; SaveProfiles(); Render("presets", false); } }));
+        cmds.Children.Add(Small("삭제", () => { if (ProfileDoc.Delete(Profiles, SelectedProfileId)) { SelectedProfileId = Profiles.FirstOrDefault()?.Id ?? ""; SaveProfiles(); Render("presets", false); } }));
+        Row(g, null, null, "목록", null, cmds);
+        var selected = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId);
+        if (selected != null) BuildProfileEditor(selected);
+        Footer("모니터와 창, 아이콘은 지금 적용을 눌렀을 때만 바뀌어요. 시험·화면 밖·CI에서는 디스플레이, 실제 창, 탐색기를 열지 않아요. 모니터를 바꾼 뒤 Windows가 최소화된 창을 다시 그리는 경우가 있어요. 작업 표시줄을 맞추려고 탐색기를 끝내지는 않아요.");
     }
 
     void PageNotes()
