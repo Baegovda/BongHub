@@ -726,6 +726,38 @@ Check("crosshair copies a fake window", picked.Process == "notepad.exe" && picke
 string profileDoc = ProfileCodec.ToJson(new[] { new ProfileRecord { Name = "작업", Icons = "L1", Windows = { new ProfileWindow { Process = "notepad.exe", Title = "메모장", Class = "Notepad", X = 16, Y = 16, W = 96, H = 64 } } } });
 var profileBack = ProfileCodec.Parse(profileDoc);
 Check("profile json keeps windows and icons", profileBack.Count == 1 && profileBack[0].Name == "작업" && profileBack[0].Icons == "L1" && profileBack[0].Windows.Count == 1 && profileBack[0].Windows[0].Class == "Notepad" && profileBack[0].Windows[0].X == 16 && !profileDoc.Contains("IdleMinutes"));
+var beside = ProfileSnap.SnapMonitor(new ProfileBox(1900, 30, 1920, 1080), new[] { new ProfileBox(0, 0, 1920, 1080) }, 48);
+var half = ProfileSnap.PreviewAt(10, 540, new ProfileBox(0, 0, 1920, 1080));
+var quarter = ProfileSnap.PreviewAt(8, 8, new ProfileBox(0, 0, 1920, 1080));
+var right = ProfileSnap.PreviewAt(1910, 8, new ProfileBox(0, 0, 1920, 1080));
+var maximized = ProfileSnap.PreviewAt(960, 8, new ProfileBox(0, 0, 1920, 1080));
+var resized = ProfileSnap.Resize(new ProfileBox(100, 100, 400, 300), new ProfileBox(0, 0, 1920, 1080), "e", 50, 0, 120);
+var clamped = ProfileSnap.Resize(new ProfileBox(100, 100, 400, 300), new ProfileBox(0, 0, 1920, 1080), "e", 5000, 0, 120);
+Check("monitor drag snaps to the neighbor", beside.X == 1920 && beside.Y == 0 && beside.W == 1920);
+Check("window edge snap is half, quarter, or max", half.Kind == "left" && half.Box == new ProfileBox(0, 0, 960, 1080) && quarter.Kind == "tl" && quarter.Box.H == 540 && right.Kind == "tr" && maximized.Kind == "top" && maximized.Box.H == 1080 && resized.W == 450 && clamped.Right == 1920);
+var crossed = ProfileSnap.Transfer(new ProfileBox(1800, 100, 400, 300), new[] { new ProfileBox(0, 0, 1920, 1080), new ProfileBox(1920, 0, 1920, 1080) });
+var neighbor = ProfileSnap.SnapWindow(new ProfileBox(200, 40, 100, 80), new ProfileBox(0, 0, 800, 600), new[] { new ProfileBox(0, 0, 208, 200) }, 8);
+Check("window can cross a monitor and snap to another window", crossed.Index == 1 && crossed.Local.X == -120 && neighbor.X == 208 && neighbor.Right <= 800);
+var board = ProfileDoc.Migrate(
+    new[] { new MonitorPreset { Name = "작업", Hotkey = "Ctrl+Alt+1", Primary = "SAM1", DeskLayout = "L1", Workspace = "W1", Enable = new List<string> { "SAM1" }, Brightness = new List<BrightTarget> { new BrightTarget { Monitor = "SAM1", Value = 40 } } } },
+    new[] { new WindowRule { Name = "Discord", Process = "discord.exe", Title = "친구", X = 10, Y = 20, W = 300, H = 200 } },
+    "{\"profiles\":[{\"name\":\"작업\",\"icons\":\"L1\",\"windows\":[{\"process\":\"notepad.exe\",\"title\":\"메모장\",\"class\":\"Notepad\",\"x\":16,\"y\":16,\"w\":640,\"h\":480}]}]}");
+var round = ProfileDoc.Parse(ProfileDoc.ToJson(board));
+int primaryNumber = board[0].Monitors.First(m => m.Primary).Number;
+bool keptPrimary = !ProfileDoc.SetEnabled(board[0], primaryNumber, false);
+var second = ProfileDoc.Add(board);
+ProfileDoc.Rename(second, "집");
+var duplicated = ProfileDoc.Duplicate(board, second.Id);
+bool deleted = duplicated != null && ProfileDoc.Delete(board, duplicated.Id);
+Check("profile migration is lossless and editable", board[0].Hotkey == "Ctrl+Alt+1" && board[0].Workspace == "W1" && board[0].DeskLayout == "L1" && board[0].Apps.Any(a => a.Class == "Notepad" && a.X == 16) && board[0].Apps.Any(a => a.Process == "discord.exe" && a.W == 300) && board[0].Monitors[0].Id == "SAM1" && round[0].Brightness.Count == 1 && round[0].Brightness[0].Value == 40 && round[0].Workspace == "W1" && keptPrimary && second.Name == "집" && deleted);
+var icons = new MemoryIconSurface();
+icons.Icons.Add(new DeskIcon { Name = "휴지통", X = 1, Y = 1 });
+var captured = ProfileDoc.CaptureIcons(icons.Read());
+captured[0].X = 40; captured[0].Y = 12;
+var restored = ProfileDoc.RestoreIcons(captured, icons);
+bool explorerBlocked = false;
+try { _ = new ExplorerIconSurface(); } catch (InvalidOperationException) { explorerBlocked = true; }
+Check("profile icons restore on a fake desktop", restored.Ok && icons.Icons[0].X == 40 && icons.Icons[0].Y == 12 && icons.Moves == 1 && explorerBlocked && ExplorerIconSurface.NativeCalls == 0);
 string profileRoot = Path.Combine(Path.GetTempPath(), "bonghub_profile_" + Environment.ProcessId);
 try
 {

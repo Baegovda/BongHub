@@ -240,6 +240,574 @@ public static class ProfileCloud
     }
 }
 
+public sealed class ProfileMonitor
+{
+    public string Id = "";
+    public int Number = 1;
+    public int X, Y, W = 1920, H = 1080;
+    public bool Primary = true;
+    public bool Enabled = true;
+    public ProfileBox Box => new(X, Y, W, H);
+}
+
+public sealed class ProfileApp
+{
+    public string Id = "";
+    public string Process = "";
+    public string Title = "";
+    public string Class = "";
+    public string Name = "";
+    public int Monitor = 1;
+    public int X, Y, W = 800, H = 600;
+    public string State = "normal";
+}
+
+public sealed class ProfileIcon
+{
+    public string Name = "";
+    public int X, Y;
+}
+
+/// <summary>One monitor profile. Extra fields sit beside the 3.4.x preset values and never replace config.json.</summary>
+public sealed class MonitorProfile
+{
+    public string Id = "";
+    public string Name = "";
+    public string Hotkey = "";
+    public string Primary = "";
+    public string Layout = "";
+    public string DeskLayout = "";
+    public string Workspace = "";
+    public List<string> Enable = new();
+    public List<string> Disable = new();
+    public List<BrightTarget> Brightness = new();
+    public List<ProfileMonitor> Monitors = new();
+    public List<ProfileApp> Apps = new();
+    public List<ProfileIcon> Icons = new();
+}
+
+public readonly record struct SnapPreview(string Kind, ProfileBox Box);
+
+public readonly record struct ProfileScene(double Scale, int OriginX, int OriginY, ProfileBox Bounds);
+
+/// <summary>Monitor-profile geometry. Nothing here talks to a display, a window, or the desktop.</summary>
+public static class ProfileSnap
+{
+    public const int Edge = 28;
+    public const int Grid = 8;
+
+    public static ProfileBox SnapMonitor(ProfileBox moving, IReadOnlyList<ProfileBox> others, int threshold)
+    {
+        int x = moving.X, y = moving.Y;
+        int best = threshold + 1;
+        foreach (var o in others)
+        {
+            Consider(o.Right, Align(moving.Y, o.Y, threshold), Math.Abs(moving.X - o.Right));
+            Consider(o.X - moving.W, Align(moving.Y, o.Y, threshold), Math.Abs(moving.Right - o.X));
+            Consider(Align(moving.X, o.X, threshold), o.Bottom, Math.Abs(moving.Y - o.Bottom));
+            Consider(Align(moving.X, o.X, threshold), o.Y - moving.H, Math.Abs(moving.Bottom - o.Y));
+        }
+        return new ProfileBox(x, y, moving.W, moving.H);
+
+        void Consider(int cx, int cy, int dist)
+        {
+            if (dist <= threshold && dist < best) { best = dist; x = cx; y = cy; }
+        }
+    }
+
+    static int Align(int current, int target, int threshold) => Math.Abs(current - target) <= threshold ? target : current;
+
+    public static ProfileBox ZoneBox(string kind, ProfileBox monitor)
+    {
+        int hw = Math.Max(1, monitor.W / 2);
+        int hh = Math.Max(1, monitor.H / 2);
+        return kind switch
+        {
+            "left" => new ProfileBox(monitor.X, monitor.Y, hw, monitor.H),
+            "right" => new ProfileBox(monitor.X + hw, monitor.Y, monitor.W - hw, monitor.H),
+            "top" => new ProfileBox(monitor.X, monitor.Y, monitor.W, monitor.H),
+            "tl" => new ProfileBox(monitor.X, monitor.Y, hw, hh),
+            "tr" => new ProfileBox(monitor.X + hw, monitor.Y, monitor.W - hw, hh),
+            "bl" => new ProfileBox(monitor.X, monitor.Y + hh, hw, monitor.H - hh),
+            "br" => new ProfileBox(monitor.X + hw, monitor.Y + hh, monitor.W - hw, monitor.H - hh),
+            _ => default
+        };
+    }
+
+    public static SnapPreview PreviewAt(int x, int y, ProfileBox monitor)
+    {
+        bool left = x - monitor.X <= Edge;
+        bool right = monitor.Right - x <= Edge;
+        bool top = y - monitor.Y <= Edge;
+        bool bottom = monitor.Bottom - y <= Edge;
+        string kind = "";
+        if (top && left) kind = "tl";
+        else if (top && right) kind = "tr";
+        else if (bottom && left) kind = "bl";
+        else if (bottom && right) kind = "br";
+        else if (top) kind = "top";
+        else if (left) kind = "left";
+        else if (right) kind = "right";
+        if (kind.Length == 0) return new SnapPreview("", default);
+        return new SnapPreview(kind, ZoneBox(kind, monitor));
+    }
+
+    public static ProfileBox Resize(ProfileBox window, ProfileBox monitor, string edge, int dx, int dy, int min)
+    {
+        int x = window.X, y = window.Y, w = window.W, h = window.H;
+        string e = edge ?? "";
+        if (e.Contains('w')) { x += dx; w -= dx; }
+        if (e.Contains('e')) w += dx;
+        if (e.Contains('n')) { y += dy; h -= dy; }
+        if (e.Contains('s')) h += dy;
+        if (w < min) { if (e.Contains('w')) x -= min - w; w = min; }
+        if (h < min) { if (e.Contains('n')) y -= min - h; h = min; }
+        if (x < monitor.X) { w -= monitor.X - x; x = monitor.X; }
+        if (y < monitor.Y) { h -= monitor.Y - y; y = monitor.Y; }
+        if (x + w > monitor.Right) w = monitor.Right - x;
+        if (y + h > monitor.Bottom) h = monitor.Bottom - y;
+        return new ProfileBox(x, y, Math.Max(min, w), Math.Max(min, h));
+    }
+
+    public static ProfileBox SnapWindow(ProfileBox window, ProfileBox monitor, IReadOnlyList<ProfileBox> others, int grid)
+    {
+        int g = grid < 1 ? 1 : grid;
+        int x = monitor.X + (int)Math.Round((window.X - monitor.X) / (double)g) * g;
+        int y = monitor.Y + (int)Math.Round((window.Y - monitor.Y) / (double)g) * g;
+        int w = Math.Max(g, window.W);
+        int h = Math.Max(g, window.H);
+        int slop = Math.Max(g, 8);
+        x = Pull(x, monitor.X, slop);
+        x = Pull(x, monitor.Right - w, slop);
+        y = Pull(y, monitor.Y, slop);
+        y = Pull(y, monitor.Bottom - h, slop);
+        if (others != null)
+            foreach (var o in others)
+            {
+                x = Pull(x, o.Right, slop);
+                x = Pull(x, o.X - w, slop);
+                y = Pull(y, o.Bottom, slop);
+                y = Pull(y, o.Y - h, slop);
+            }
+        if (x < monitor.X) x = monitor.X;
+        if (y < monitor.Y) y = monitor.Y;
+        if (x + w > monitor.Right) x = Math.Max(monitor.X, monitor.Right - w);
+        if (y + h > monitor.Bottom) y = Math.Max(monitor.Y, monitor.Bottom - h);
+        return new ProfileBox(x, y, Math.Min(w, monitor.W), Math.Min(h, monitor.H));
+    }
+
+    static int Pull(int value, int target, int slop) => Math.Abs(value - target) <= slop ? target : value;
+
+    public static (int Index, ProfileBox Local) Transfer(ProfileBox absolute, IReadOnlyList<ProfileBox> monitors)
+    {
+        if (monitors == null || monitors.Count == 0) return (0, absolute);
+        int cx = absolute.X + absolute.W / 2;
+        int cy = absolute.Y + absolute.H / 2;
+        int index = 0;
+        for (int i = 0; i < monitors.Count; i++)
+        {
+            var m = monitors[i];
+            if (cx >= m.X && cy >= m.Y && cx < m.Right && cy < m.Bottom) { index = i; break; }
+        }
+        var host = monitors[index];
+        return (index, new ProfileBox(absolute.X - host.X, absolute.Y - host.Y, absolute.W, absolute.H));
+    }
+
+    public static ProfileScene Fit(IReadOnlyList<ProfileBox> monitors, int canvasW, int canvasH, int pad)
+    {
+        if (monitors == null || monitors.Count == 0) return new ProfileScene(1, pad, pad, new ProfileBox(0, 0, 1, 1));
+        int minX = monitors.Min(m => m.X);
+        int minY = monitors.Min(m => m.Y);
+        int maxX = monitors.Max(m => m.Right);
+        int maxY = monitors.Max(m => m.Bottom);
+        int bw = Math.Max(1, maxX - minX);
+        int bh = Math.Max(1, maxY - minY);
+        double s = Math.Min((canvasW - pad * 2) / (double)bw, (canvasH - pad * 2) / (double)bh);
+        if (s <= 0 || double.IsInfinity(s)) s = 0.1;
+        return new ProfileScene(s, pad, pad, new ProfileBox(minX, minY, bw, bh));
+    }
+
+    public static ProfileBox ToCanvas(ProfileBox box, ProfileScene scene)
+    {
+        int x = scene.OriginX + (int)Math.Round((box.X - scene.Bounds.X) * scene.Scale);
+        int y = scene.OriginY + (int)Math.Round((box.Y - scene.Bounds.Y) * scene.Scale);
+        int w = Math.Max(28, (int)Math.Round(box.W * scene.Scale));
+        int h = Math.Max(22, (int)Math.Round(box.H * scene.Scale));
+        return new ProfileBox(x, y, w, h);
+    }
+}
+
+public static class ProfileDoc
+{
+    public static string NewId() => Guid.NewGuid().ToString("N")[..8];
+
+    public static MonitorProfile FromPreset(MonitorPreset preset)
+    {
+        var profile = new MonitorProfile
+        {
+            Id = NewId(),
+            Name = preset?.Name ?? "",
+            Hotkey = preset?.Hotkey ?? "",
+            Primary = preset?.Primary ?? "",
+            Layout = preset?.Layout ?? "",
+            DeskLayout = preset?.DeskLayout ?? "",
+            Workspace = preset?.Workspace ?? ""
+        };
+        if (preset?.Enable != null) profile.Enable.AddRange(preset.Enable.Where(s => !string.IsNullOrEmpty(s)));
+        if (preset?.Disable != null) profile.Disable.AddRange(preset.Disable.Where(s => !string.IsNullOrEmpty(s)));
+        if (preset?.Brightness != null)
+            foreach (var b in preset.Brightness)
+                profile.Brightness.Add(new BrightTarget { Monitor = b.Monitor, Value = b.Value });
+        int x = 0;
+        int number = 1;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void AddMon(string id, bool enabled)
+        {
+            if (string.IsNullOrEmpty(id) || !seen.Add(id)) return;
+            bool primary = string.Equals(id, profile.Primary, StringComparison.OrdinalIgnoreCase) || (profile.Primary.Length == 0 && number == 1 && enabled);
+            profile.Monitors.Add(new ProfileMonitor { Id = id, Number = number, X = x, Y = 0, W = 1920, H = 1080, Primary = primary, Enabled = enabled });
+            x += 1920;
+            number++;
+        }
+        foreach (var id in profile.Enable) AddMon(id, true);
+        foreach (var id in profile.Disable) AddMon(id, false);
+        if (profile.Monitors.Count == 0)
+            profile.Monitors.Add(new ProfileMonitor { Id = profile.Primary.Length > 0 ? profile.Primary : "1", Number = 1, W = 1920, H = 1080, Primary = true, Enabled = true });
+        if (!profile.Monitors.Any(m => m.Primary)) profile.Monitors[0].Primary = true;
+        var prim = profile.Monitors.First(m => m.Primary);
+        profile.Primary = prim.Id;
+        SyncLists(profile);
+        return profile;
+    }
+
+    public static void SyncLists(MonitorProfile profile)
+    {
+        var prim = profile.Monitors.FirstOrDefault(m => m.Primary) ?? profile.Monitors.FirstOrDefault();
+        if (prim != null)
+        {
+            foreach (var m in profile.Monitors) m.Primary = false;
+            prim.Primary = true;
+            prim.Enabled = true;
+            profile.Primary = prim.Id;
+        }
+        profile.Enable = profile.Monitors.Where(m => m.Enabled && m.Id.Length > 0).Select(m => m.Id).ToList();
+        profile.Disable = profile.Monitors.Where(m => !m.Enabled && m.Id.Length > 0).Select(m => m.Id).ToList();
+    }
+
+    public static bool SetPrimary(MonitorProfile profile, int number)
+    {
+        var mon = profile.Monitors.FirstOrDefault(m => m.Number == number);
+        if (mon == null) return false;
+        foreach (var m in profile.Monitors) m.Primary = false;
+        mon.Primary = true;
+        mon.Enabled = true;
+        SyncLists(profile);
+        return profile.Primary == mon.Id && profile.Enable.Contains(mon.Id);
+    }
+
+    public static bool SetEnabled(MonitorProfile profile, int number, bool on)
+    {
+        var mon = profile.Monitors.FirstOrDefault(m => m.Number == number);
+        if (mon == null) return false;
+        if (!on && (mon.Primary || profile.Monitors.Count(m => m.Enabled) <= 1)) return false;
+        mon.Enabled = on;
+        SyncLists(profile);
+        return mon.Enabled == on;
+    }
+
+    public static ProfileApp FromRule(WindowRule rule)
+    {
+        string state = rule.Action == "max" ? "top" : rule.Action == "min" ? "min" : "normal";
+        string name = rule.Name ?? "";
+        string title = rule.Title ?? "";
+        string process = rule.Process ?? "";
+        return new ProfileApp
+        {
+            Id = NewId(),
+            Process = process,
+            Title = title,
+            Class = rule.Class ?? "",
+            Name = name.Length > 0 ? name : (title.Length > 0 ? title : process),
+            Monitor = 1,
+            X = rule.X,
+            Y = rule.Y,
+            W = rule.W > 0 ? rule.W : 800,
+            H = rule.H > 0 ? rule.H : 600,
+            State = state
+        };
+    }
+
+    static bool SameApp(ProfileApp app, WindowRule rule)
+    {
+        if (rule.Process.Length > 0 && !string.Equals(app.Process, rule.Process, StringComparison.OrdinalIgnoreCase)) return false;
+        if (rule.Class.Length > 0 && !string.Equals(app.Class, rule.Class, StringComparison.OrdinalIgnoreCase)) return false;
+        if (rule.Title.Length > 0 && !string.Equals(app.Title, rule.Title, StringComparison.OrdinalIgnoreCase)) return false;
+        return rule.Process.Length > 0 || rule.Class.Length > 0 || rule.Title.Length > 0;
+    }
+
+    static void Absorb(MonitorProfile profile, MonitorPreset preset)
+    {
+        if (profile.Hotkey.Length == 0) profile.Hotkey = preset.Hotkey ?? "";
+        if (profile.Layout.Length == 0) profile.Layout = preset.Layout ?? "";
+        if (profile.DeskLayout.Length == 0) profile.DeskLayout = preset.DeskLayout ?? "";
+        if (profile.Workspace.Length == 0) profile.Workspace = preset.Workspace ?? "";
+        if (profile.Primary.Length == 0) profile.Primary = preset.Primary ?? "";
+        if (profile.Enable.Count == 0 && preset.Enable != null) profile.Enable.AddRange(preset.Enable.Where(s => !string.IsNullOrEmpty(s)));
+        if (profile.Disable.Count == 0 && preset.Disable != null) profile.Disable.AddRange(preset.Disable.Where(s => !string.IsNullOrEmpty(s)));
+        if (profile.Brightness.Count == 0 && preset.Brightness != null)
+            foreach (var b in preset.Brightness) profile.Brightness.Add(new BrightTarget { Monitor = b.Monitor, Value = b.Value });
+        if (profile.Monitors.Count == 0)
+        {
+            var built = FromPreset(preset);
+            profile.Monitors = built.Monitors;
+            profile.Primary = built.Primary;
+            profile.Enable = built.Enable;
+            profile.Disable = built.Disable;
+        }
+    }
+
+    public static List<MonitorProfile> Migrate(IEnumerable<MonitorPreset>? presets, IEnumerable<WindowRule>? rules, string? json)
+    {
+        var list = Parse(json);
+        var presetList = presets?.Where(p => p != null).ToList() ?? new List<MonitorPreset>();
+        if (list.Count == 0)
+        {
+            foreach (var p in presetList) list.Add(FromPreset(p));
+        }
+        else
+        {
+            foreach (var p in presetList)
+            {
+                var hit = list.FirstOrDefault(x => string.Equals(x.Name, p.Name, StringComparison.Ordinal));
+                if (hit == null) list.Add(FromPreset(p));
+                else Absorb(hit, p);
+            }
+        }
+        if (list.Count == 0) list.Add(FromPreset(new MonitorPreset { Name = "작업", Hotkey = "Ctrl+Alt+1" }));
+        var home = list[0];
+        foreach (var rule in rules ?? Array.Empty<WindowRule>())
+        {
+            if (rule == null || !RuleMatch.HasCriteria(rule)) continue;
+            if (list.Any(p => p.Apps.Any(a => SameApp(a, rule)))) continue;
+            home.Apps.Add(FromRule(rule));
+        }
+        foreach (var p in list)
+            if (p.Monitors.Count == 0) p.Monitors.Add(new ProfileMonitor { Id = "1", Number = 1, W = 1920, H = 1080, Primary = true, Enabled = true });
+        return list;
+    }
+
+    public static MonitorProfile Add(List<MonitorProfile> list)
+    {
+        int n = list.Count + 1;
+        var profile = FromPreset(new MonitorPreset { Name = "프로필 " + n });
+        list.Add(profile);
+        return profile;
+    }
+
+    public static void Rename(MonitorProfile profile, string name)
+    {
+        string next = (name ?? "").Trim();
+        if (next.Length > 0) profile.Name = next;
+    }
+
+    public static MonitorProfile? Duplicate(List<MonitorProfile> list, string id)
+    {
+        var src = list.FirstOrDefault(p => p.Id == id);
+        if (src == null) return null;
+        var copy = Parse(ToJson(new[] { src })).FirstOrDefault();
+        if (copy == null) return null;
+        copy.Id = NewId();
+        copy.Name = src.Name + " 복사";
+        foreach (var app in copy.Apps) app.Id = NewId();
+        list.Add(copy);
+        return copy;
+    }
+
+    public static bool Delete(List<MonitorProfile> list, string id)
+    {
+        var src = list.FirstOrDefault(p => p.Id == id);
+        return src != null && list.Remove(src);
+    }
+
+    public static MonitorPreset ToPreset(MonitorProfile profile)
+    {
+        var preset = new MonitorPreset
+        {
+            Name = profile.Name ?? "",
+            Hotkey = profile.Hotkey ?? "",
+            Primary = profile.Primary ?? "",
+            Layout = profile.Layout ?? "",
+            DeskLayout = profile.Icons.Count > 0 ? "" : (profile.DeskLayout ?? ""),
+            Workspace = profile.Workspace ?? ""
+        };
+        preset.Enable.AddRange(profile.Enable ?? new List<string>());
+        preset.Disable.AddRange(profile.Disable ?? new List<string>());
+        if (profile.Brightness != null)
+            foreach (var b in profile.Brightness) preset.Brightness.Add(new BrightTarget { Monitor = b.Monitor, Value = b.Value });
+        return preset;
+    }
+
+    public static List<ProfileIcon> CaptureIcons(IReadOnlyList<DeskIcon> icons)
+        => (icons ?? Array.Empty<DeskIcon>()).Select(i => new ProfileIcon { Name = i.Name ?? "", X = i.X, Y = i.Y }).ToList();
+
+    public static DeskResult RestoreIcons(IReadOnlyList<ProfileIcon> icons, IIconSurface surface)
+        => IconMatch.Apply(surface, (icons ?? Array.Empty<ProfileIcon>()).Select(i => new DeskIcon { Name = i.Name, X = i.X, Y = i.Y }).ToList());
+
+    public static int Place(MonitorProfile profile, IWindowSurface surface)
+    {
+        var live = surface.List();
+        int n = 0;
+        foreach (var app in profile.Apps)
+        {
+            var hit = live.FirstOrDefault(w => AppMatch(app, w));
+            if (hit == null) continue;
+            var mon = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors.FirstOrDefault();
+            if (mon == null) continue;
+            if (app.State is "top" or "max") surface.Maximize(hit.Id, new WorkRect(mon.X, mon.Y, mon.W, mon.H));
+            else if (app.State == "min") surface.Minimize(hit.Id);
+            else
+            {
+                var box = app.State is "left" or "right" or "tl" or "tr" or "bl" or "br"
+                    ? ZoneBoxRelative(app.State, mon)
+                    : new ProfileBox(mon.X + app.X, mon.Y + app.Y, app.W, app.H);
+                surface.Place(hit.Id, box.X, box.Y, box.W, box.H);
+            }
+            n++;
+        }
+        return n;
+    }
+
+    static ProfileBox ZoneBoxRelative(string state, ProfileMonitor mon)
+    {
+        var abs = ProfileSnap.ZoneBox(state, mon.Box);
+        return abs;
+    }
+
+    static bool AppMatch(ProfileApp app, TrackedWindow window)
+    {
+        if (app.Process.Length > 0)
+        {
+            string want = app.Process.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? app.Process[..^4] : app.Process;
+            if (!string.Equals(want, window.Process, StringComparison.OrdinalIgnoreCase)) return false;
+        }
+        if (app.Class.Length > 0 && !string.Equals(app.Class, window.Class, StringComparison.OrdinalIgnoreCase)) return false;
+        if (app.Title.Length > 0 && window.Title.IndexOf(app.Title, StringComparison.OrdinalIgnoreCase) < 0) return false;
+        return app.Process.Length > 0 || app.Class.Length > 0 || app.Title.Length > 0;
+    }
+
+    public static string ToJson(IEnumerable<MonitorProfile> profiles)
+    {
+        var arr = new JsonArray();
+        foreach (var p in profiles) arr.Add(WriteProfile(p));
+        return new JsonObject { ["v"] = 2, ["profiles"] = arr }.ToJsonString();
+    }
+
+    static JsonObject WriteProfile(MonitorProfile p)
+    {
+        var monitors = new JsonArray();
+        foreach (var m in p.Monitors)
+            monitors.Add(new JsonObject { ["id"] = m.Id, ["number"] = m.Number, ["x"] = m.X, ["y"] = m.Y, ["w"] = m.W, ["h"] = m.H, ["primary"] = m.Primary, ["enabled"] = m.Enabled });
+        var windows = new JsonArray();
+        foreach (var a in p.Apps)
+            windows.Add(new JsonObject
+            {
+                ["id"] = a.Id, ["process"] = a.Process, ["title"] = a.Title, ["class"] = a.Class, ["name"] = a.Name,
+                ["monitor"] = a.Monitor, ["x"] = a.X, ["y"] = a.Y, ["w"] = a.W, ["h"] = a.H, ["state"] = a.State
+            });
+        var icons = new JsonArray();
+        foreach (var i in p.Icons) icons.Add(new JsonObject { ["name"] = i.Name, ["x"] = i.X, ["y"] = i.Y });
+        var bright = new JsonArray();
+        foreach (var b in p.Brightness) bright.Add(new JsonObject { ["monitor"] = b.Monitor, ["value"] = b.Value });
+        return new JsonObject
+        {
+            ["id"] = p.Id, ["name"] = p.Name, ["hotkey"] = p.Hotkey, ["primary"] = p.Primary, ["layout"] = p.Layout,
+            ["deskLayout"] = p.DeskLayout, ["icons"] = p.DeskLayout, ["workspace"] = p.Workspace,
+            ["enable"] = new JsonArray(p.Enable.Select(s => JsonValue.Create(s)).ToArray()),
+            ["disable"] = new JsonArray(p.Disable.Select(s => JsonValue.Create(s)).ToArray()),
+            ["brightness"] = bright, ["monitors"] = monitors, ["windows"] = windows, ["iconItems"] = icons
+        };
+    }
+
+    public static List<MonitorProfile> Parse(string? json)
+    {
+        var list = new List<MonitorProfile>();
+        if (string.IsNullOrWhiteSpace(json)) return list;
+        try
+        {
+            if (JsonNode.Parse(json) is not JsonObject root || root["profiles"] is not JsonArray arr) return list;
+            foreach (var node in arr.OfType<JsonObject>()) list.Add(ReadProfile(node));
+        }
+        catch { }
+        return list;
+    }
+
+    static MonitorProfile ReadProfile(JsonObject node)
+    {
+        var profile = new MonitorProfile
+        {
+            Id = Str(node["id"]),
+            Name = Str(node["name"]),
+            Hotkey = Str(node["hotkey"]),
+            Primary = Str(node["primary"]),
+            Layout = Str(node["layout"]),
+            DeskLayout = Str(node["deskLayout"]).Length > 0 ? Str(node["deskLayout"]) : Str(node["icons"]),
+            Workspace = Str(node["workspace"])
+        };
+        if (profile.Id.Length == 0) profile.Id = NewId();
+        Strings(node["enable"], profile.Enable);
+        Strings(node["disable"], profile.Disable);
+        if (node["brightness"] is JsonArray bright)
+            foreach (var item in bright.OfType<JsonObject>())
+                profile.Brightness.Add(new BrightTarget { Monitor = Str(item["monitor"]), Value = Num(item["value"]) });
+        if (node["monitors"] is JsonArray monitors)
+            foreach (var item in monitors.OfType<JsonObject>())
+                profile.Monitors.Add(new ProfileMonitor
+                {
+                    Id = Str(item["id"]),
+                    Number = Num(item["number"], 1),
+                    X = Num(item["x"]),
+                    Y = Num(item["y"]),
+                    W = Num(item["w"], 1920),
+                    H = Num(item["h"], 1080),
+                    Primary = Bool(item["primary"]),
+                    Enabled = item["enabled"] == null || Bool(item["enabled"])
+                });
+        if (node["windows"] is JsonArray windows)
+            foreach (var item in windows.OfType<JsonObject>())
+                profile.Apps.Add(new ProfileApp
+                {
+                    Id = Str(item["id"]).Length > 0 ? Str(item["id"]) : NewId(),
+                    Process = Str(item["process"]),
+                    Title = Str(item["title"]),
+                    Class = Str(item["class"]),
+                    Name = Str(item["name"]).Length > 0 ? Str(item["name"]) : Str(item["title"]),
+                    Monitor = Num(item["monitor"], 1),
+                    X = Num(item["x"]),
+                    Y = Num(item["y"]),
+                    W = Num(item["w"], 800),
+                    H = Num(item["h"], 600),
+                    State = Str(item["state"]).Length > 0 ? Str(item["state"]) : "normal"
+                });
+        if (node["iconItems"] is JsonArray iconItems)
+            foreach (var item in iconItems.OfType<JsonObject>())
+                profile.Icons.Add(new ProfileIcon { Name = Str(item["name"]), X = Num(item["x"]), Y = Num(item["y"]) });
+        return profile;
+    }
+
+    static string Str(JsonNode? node) => node == null ? "" : node.GetValue<string>() ?? "";
+    static int Num(JsonNode? node, int fallback = 0) { try { return node == null ? fallback : node.GetValue<int>(); } catch { return fallback; } }
+    static bool Bool(JsonNode? node) { try { return node != null && node.GetValue<bool>(); } catch { return false; } }
+    static void Strings(JsonNode? node, List<string> into)
+    {
+        if (node is not JsonArray arr) return;
+        foreach (var item in arr)
+        {
+            string s = item?.GetValue<string>() ?? "";
+            if (s.Length > 0) into.Add(s);
+        }
+    }
+}
+
 public static class PresetApplyPolicy
 {
     public static bool IsCurrent(string? active, string? requested)
