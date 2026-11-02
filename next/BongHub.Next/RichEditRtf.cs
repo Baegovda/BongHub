@@ -267,8 +267,10 @@ static class RichEditRtf
                 if (page == IntPtr.Zero) { log?.Invoke("richedit stub alloc " + Marshal.GetLastWin32Error()); return false; }
                 Marshal.Copy(StubCode, 0, page, StubCode.Length);
                 FlushInstructionCache((IntPtr)(-1), page, (UIntPtr)StubCode.Length);
-                string cfg = MarkCfg(page);
+                // VirtualProtect clears CFG call targets, so the page must be marked after it is executable.
                 VirtualProtect(page, (UIntPtr)4096, 0x20, out _);
+                FlushInstructionCache((IntPtr)(-1), page, (UIntPtr)StubCode.Length);
+                string cfg = MarkCfg(page);
                 IntPtr probe = ProbeAddress();
                 long stubAddr = page.ToInt64();
                 long probeAddr = probe.ToInt64();
@@ -287,27 +289,46 @@ static class RichEditRtf
 
     static string MarkCfg(IntPtr page)
     {
-        var mbi = new MemInfo();
-        if (VirtualQuery(page, out mbi, (UIntPtr)Marshal.SizeOf<MemInfo>()) == UIntPtr.Zero)
+        if (VirtualQuery(page, out var mbi, (UIntPtr)Marshal.SizeOf<MemInfo>()) == UIntPtr.Zero)
             return "virtualquery " + Marshal.GetLastWin32Error();
-        var tries = new (IntPtr Base, ulong Size)[]
-        {
-            (page, 4096),
-            (mbi.AllocationBase, mbi.RegionSize),
-            (mbi.AllocationBase, 65536),
-        };
         if (!TryResolveTargets(out var from)) return "export missing";
-        string last = "";
-        foreach (var (baseAddr, size) in tries)
+        ulong span = AllocationSpan(mbi.AllocationBase);
+        long offset = page.ToInt64() - mbi.AllocationBase.ToInt64();
+        if (offset < 0 || (offset & 15) != 0) return "bad offset " + offset;
+        var tries = new (IntPtr Base, ulong Size, ulong Off, ulong Flags)[]
         {
-            if (baseAddr == IntPtr.Zero || size == 0) continue;
-            var info = new CfgTarget { Offset = UIntPtr.Zero, Flags = (UIntPtr)1 };
-            int hr = CallTargets((IntPtr)(-1), baseAddr, (UIntPtr)size, 1, info);
+            (mbi.AllocationBase, span, (ulong)offset, 1),
+            (mbi.AllocationBase, span, (ulong)offset, 9),
+            (page, 4096, 0, 1),
+            (page, 4096, 0, 9),
+            (mbi.AllocationBase, 65536, (ulong)offset, 1),
+        };
+        string last = "no region";
+        foreach (var (baseAddr, size, off, flags) in tries)
+        {
+            if (baseAddr == IntPtr.Zero || size == 0 || off >= size) continue;
+            int hr = CallTargets((IntPtr)(-1), baseAddr, (UIntPtr)size, 1, new CfgTarget { Offset = (UIntPtr)off, Flags = (UIntPtr)flags });
             if (hr != 0)
-                return "ok via " + from + " base=0x" + baseAddr.ToInt64().ToString("X") + " size=" + size;
-            last = "err=" + Marshal.GetLastWin32Error() + " via " + from + " base=0x" + baseAddr.ToInt64().ToString("X") + " size=" + size;
+                return "ok via " + from + " base=0x" + baseAddr.ToInt64().ToString("X") + " size=" + size + " off=" + off + " flags=" + flags;
+            last = "err=" + Marshal.GetLastWin32Error() + " via " + from + " size=" + size + " off=" + off + " flags=" + flags;
         }
-        return last.Length == 0 ? "no region" : last;
+        return last;
+    }
+
+    static ulong AllocationSpan(IntPtr allocBase)
+    {
+        ulong total = 0;
+        long cursor = allocBase.ToInt64();
+        for (int i = 0; i < 64; i++)
+        {
+            if (VirtualQuery((IntPtr)cursor, out var q, (UIntPtr)Marshal.SizeOf<MemInfo>()) == UIntPtr.Zero) break;
+            if (q.AllocationBase != allocBase || q.RegionSize == 0) break;
+            total += q.RegionSize;
+            long next = cursor + (long)q.RegionSize;
+            if (next <= cursor) break;
+            cursor = next;
+        }
+        return total;
     }
 
     static SetTargetsFn? Targets;
