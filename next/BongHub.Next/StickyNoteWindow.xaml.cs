@@ -384,6 +384,13 @@ public partial class StickyNoteWindow : Window
         try
         {
             var host = new RichEditHost(file);
+            host.Edited += () =>
+            {
+                if (loading) return;
+                TextDirty = true;
+                textTimer.Stop();
+                textTimer.Start();
+            };
             EditorHost.Children.Add(host);
             AppEnv.Log($"richedit host window {Meta.Id} loaded={host.LoadedRtf}");
             if (!host.LoadedRtf)
@@ -394,6 +401,7 @@ public partial class StickyNoteWindow : Window
             }
             rich = host;
             UsesRichEdit = true;
+            host.Arm();
             try { host.SetPaper(NoteColors.SurfA(Meta.Color)); } catch { }
             host.SetReadOnly(AppEnv.ReadOnly);
             Editor.Visibility = Visibility.Collapsed;

@@ -6,8 +6,8 @@ namespace BongHub.Next;
 
 /// <summary>
 /// RichEdit 5 (<c>RICHEDIT50W</c> / msftedit) hosted in WPF. Created only when the WPF editor would drop a <c>\pict</c>.
-/// WinForms is not referenced. Load and save go through <see cref="RichEditRtf"/> so the EDITSTREAM callback is an
-/// <c>UnmanagedCallersOnly</c> function, not a <c>GetFunctionPointerForDelegate</c> thunk.
+/// WinForms is not referenced. Load prefers <c>EM_SETTEXTEX</c>. A save streams out only after an edit;
+/// until then the original file bytes are returned. The stream callback is a CFG-registered native stub.
 /// </summary>
 public sealed class RichEditHost : HwndHost
 {
@@ -16,11 +16,23 @@ public sealed class RichEditHost : HwndHost
     const int EmSetSel = 0x00B1, EmReplaceSel = 0x00C2, EmSetReadOnly = 0x00CF;
     const int EmSetBkgndColor = 0x0400 + 67;
 
-    byte[] initial = [];
-    IntPtr hwnd;
-    public bool LoadedRtf { get; private set; }
+    const int WmCommand = 0x0111, EnChange = 0x0300;
 
-    public RichEditHost(byte[] rtf) { initial = rtf ?? []; }
+    byte[] initial = [];
+    byte[] baseline = [];
+    IntPtr hwnd;
+    bool edited, armed;
+    public bool LoadedRtf { get; private set; }
+    public event Action? Edited;
+
+    public RichEditHost(byte[] rtf)
+    {
+        baseline = rtf ?? [];
+        initial = baseline;
+    }
+
+    /// <summary>Ignore load-time <c>EN_CHANGE</c>. Call after the control is parented and the file has been loaded.</summary>
+    public void Arm() { edited = false; armed = true; }
 
     protected override HandleRef BuildWindowCore(HandleRef hwndParent)
     {
@@ -32,7 +44,18 @@ public sealed class RichEditHost : HwndHost
         AppEnv.Log("richedit hwnd created");
         if (initial.Length > 0) LoadedRtf = RichEditRtf.TryLoad(hwnd, initial, AppEnv.Log, out _);
         initial = [];
+        edited = false;
         return new HandleRef(this, hwnd);
+    }
+
+    protected override IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (armed && msg == WmCommand && ((wParam.ToInt64() >> 16) & 0xFFFF) == EnChange)
+        {
+            edited = true;
+            Edited?.Invoke();
+        }
+        return base.WndProc(hwnd, msg, wParam, lParam, ref handled);
     }
 
     protected override void DestroyWindowCore(HandleRef hwnd)
@@ -60,12 +83,21 @@ public sealed class RichEditHost : HwndHost
         int n = RichEditRtf.CharCount(hwnd);
         SendMessage(hwnd, EmSetSel, new IntPtr(n), new IntPtr(n));
         SendMessageW(hwnd, EmReplaceSel, new IntPtr(1), text);
+        edited = true;
     }
 
     public byte[]? StreamOut()
     {
         if (hwnd == IntPtr.Zero) return null;
-        return RichEditRtf.TrySave(hwnd, out var bytes, AppEnv.Log) ? bytes : null;
+        if (!edited && baseline.Length > 0)
+        {
+            AppEnv.Log("richedit stream out kept file bytes=" + baseline.Length);
+            return (byte[])baseline.Clone();
+        }
+        if (!RichEditRtf.TrySave(hwnd, out var bytes, AppEnv.Log) || bytes.Length == 0) return null;
+        baseline = bytes;
+        edited = false;
+        return bytes;
     }
 
     public string Plain() => hwnd == IntPtr.Zero ? "" : RichEditRtf.Plain(hwnd);
