@@ -1990,6 +1990,20 @@ public static class HotkeyChord
         return string.Join("+", parts);
     }
 
+    public const string ListenPrompt = "키를 누르세요…";
+
+    /// <summary>Modifiers held during capture, drawn as key caps. The ellipsis waits for the key.</summary>
+    public static string Caps(bool win, bool ctrl, bool alt, bool shift)
+    {
+        var parts = new List<string>();
+        if (win) parts.Add("Win");
+        if (ctrl) parts.Add("Ctrl");
+        if (alt) parts.Add("Alt");
+        if (shift) parts.Add("Shift");
+        if (parts.Count == 0) return "";
+        return string.Join(" + ", parts) + " + …";
+    }
+
     static bool TryVk(string token, out uint vk)
     {
         vk = 0;
@@ -2256,7 +2270,7 @@ public static class ProfileChrome
 /// <summary>Names of the profile-page symbols drawn as vectors, not as a font glyph.</summary>
 public static class ProfileGlyph
 {
-    public static readonly string[] Kinds = { "ellipsis", "trash", "pencil", "pin", "min", "app", "eye", "eyeoff", "undo", "lock", "unlock", "power", "star" };
+    public static readonly string[] Kinds = { "ellipsis", "trash", "pencil", "pin", "min", "app", "eye", "eyeoff", "undo", "lock", "unlock", "power", "star", "expand" };
     public static bool Known(string? kind) => kind != null && Kinds.Contains(kind);
 }
 
@@ -2464,5 +2478,158 @@ public static class MonitorIdentify
         if (!real) return string.Join(",", nums);
         NativeCalls++;
         return "live:" + string.Join(",", nums);
+    }
+}
+
+/// <summary>Physical-pixel card on a monitor. No Win32 calls. Mixed DPI uses each monitor's own scale.</summary>
+public readonly record struct ScreenCard(int Number, bool Primary, int X, int Y, int W, int H);
+
+/// <summary>
+/// One line of canvas text that must not meet a badge, button, icon, or another line.
+/// An empty width means the line is hidden.
+/// </summary>
+public static class CanvasInk
+{
+    public readonly record struct Mark(string Kind, DipRect Box);
+
+    public static DipRect Line(DipRect host, IReadOnlyList<DipRect>? reserved, double lineH, double pad = 4)
+    {
+        if (host.W < 8 || host.H < 8 || lineH < 8) return new DipRect(host.X, host.Y, 0, 0);
+        double p = host.H < lineH + pad * 2 ? 1 : pad;
+        double x0 = host.X + p, y0 = host.Y + p, x1 = host.Right - p, y1 = host.Bottom - p;
+        if (x1 - x0 < 8 || y1 - y0 < lineH - 1)
+        {
+            if (p > 1) return Line(host, reserved, Math.Min(lineH, Math.Max(8, host.H - 2)), 1);
+            return new DipRect(host.X, host.Y, 0, 0);
+        }
+        var blocks = new List<DipRect>();
+        if (reserved != null)
+            foreach (var r in reserved)
+                if (r.W > 0.5 && r.H > 0.5 && host.Hits(r)) blocks.Add(r);
+        var candidates = new List<DipRect> { new(x0, y0, x1 - x0, lineH) };
+        foreach (var b in blocks)
+        {
+            double rx = Math.Max(x0, b.Right + 2);
+            if (x1 - rx >= 8) candidates.Add(new DipRect(rx, y0, x1 - rx, lineH));
+            double lx = Math.Min(x1, b.X - 2);
+            if (lx - x0 >= 8) candidates.Add(new DipRect(x0, y0, lx - x0, lineH));
+            double by = Math.Max(y0, b.Bottom + 2);
+            if (y1 - by >= lineH - 1 && x1 - x0 >= 8) candidates.Add(new DipRect(x0, by, x1 - x0, lineH));
+        }
+        DipRect best = default;
+        double score = -1;
+        foreach (var c in candidates)
+        {
+            double left = Math.Max(x0, c.X);
+            double top = Math.Max(y0, c.Y);
+            double right = Math.Min(x1, c.X + c.W);
+            double bottom = Math.Min(y1, c.Y + c.H);
+            var clipped = new DipRect(left, top, right - left, bottom - top);
+            if (clipped.W < 8 || clipped.H < lineH - 1) continue;
+            if (blocks.Any(b => clipped.Hits(b))) continue;
+            double s = clipped.W * 1000 - clipped.Y;
+            if (s > score) { score = s; best = clipped; }
+        }
+        return score < 0 ? new DipRect(host.X, host.Y, 0, 0) : best;
+    }
+
+    /// <summary>Fake canvas: number pill, chip text, ghost text, and a monitor line. Returned boxes do not meet each other or the pill.</summary>
+    public static List<Mark> Arrange(DipRect tile, bool primary, IReadOnlyList<DipRect> chips)
+    {
+        var marks = new List<Mark>();
+        var reserved = new List<DipRect> { ProfileChrome.NumberPill(tile.X, tile.Y, primary) };
+        foreach (var chip in chips)
+        {
+            if (chip.W >= 88 && chip.H >= 36)
+            {
+                double bw = Math.Min(36, chip.W * 0.4);
+                double bh = Math.Min(18, chip.H * 0.45);
+                reserved.Add(new DipRect(chip.Right - bw - 3, chip.Bottom - bh - 3, bw, bh));
+            }
+        }
+        var pill = reserved[0];
+        var labelHost = new DipRect(tile.X + 6, pill.Bottom + 2, Math.Max(0, tile.W - 12), 14);
+        var labelObs = new List<DipRect>(reserved);
+        labelObs.AddRange(chips);
+        var label = Line(labelHost, labelObs, 12, 1);
+        if (label.W >= 8) { marks.Add(new Mark("monitor", label)); reserved.Add(label); }
+        foreach (var chip in chips)
+        {
+            double line = Math.Min(14, Math.Max(8, chip.H - 4));
+            var text = Line(chip, reserved, line, chip.H < 30 ? 2 : 4);
+            if (text.W >= 8) { marks.Add(new Mark("chip", text)); reserved.Add(text); }
+        }
+        return marks;
+    }
+}
+
+public static class IdentifyLayout
+{
+    public const int BaseW = 220;
+    public const int BaseH = 148;
+    public const int BaseMargin = 72;
+
+    public static int Px(int dip, int scalePercent)
+    {
+        int s = scalePercent < 50 ? 100 : scalePercent;
+        return Math.Max(1, (int)Math.Round(dip * s / 100.0));
+    }
+
+    /// <summary>Bottom-left card inside the monitor, in the same physical pixels as <see cref="ProfileMonitor.X"/>.</summary>
+    public static ScreenCard Of(ProfileMonitor m)
+    {
+        int scale = m.Scale <= 0 ? 100 : m.Scale;
+        int w = Math.Min(Px(BaseW, scale), Math.Max(1, m.W));
+        int h = Math.Min(Px(BaseH, scale), Math.Max(1, m.H));
+        int margin = Math.Min(Px(BaseMargin, scale), Math.Max(0, Math.Min(m.W - w, m.H - h)));
+        int x = m.X + margin;
+        int y = m.Y + m.H - h - margin;
+        if (x + w > m.X + m.W) x = m.X + m.W - w;
+        if (y < m.Y) y = m.Y;
+        return new ScreenCard(m.Number, m.Primary, x, y, w, h);
+    }
+
+    /// <summary>Centered card, for the profile-switch overlay on one monitor.</summary>
+    public static ScreenCard Center(ProfileMonitor m, int baseW, int baseH)
+    {
+        int scale = m.Scale <= 0 ? 100 : m.Scale;
+        int w = Math.Min(Px(baseW, scale), Math.Max(1, m.W));
+        int h = Math.Min(Px(baseH, scale), Math.Max(1, m.H));
+        int x = m.X + Math.Max(0, (m.W - w) / 2);
+        int y = m.Y + Math.Max(0, (m.H - h) / 2);
+        return new ScreenCard(m.Number, m.Primary, x, y, w, h);
+    }
+
+    public static ProfileMonitor? HostOf(IReadOnlyList<ProfileMonitor>? monitors)
+    {
+        if (monitors == null || monitors.Count == 0) return null;
+        return monitors.FirstOrDefault(m => m.Primary) ?? monitors[0];
+    }
+}
+
+/// <summary>Where a dragged window or its snapped edges land. Canvas drawing is separate.</summary>
+public readonly record struct SnapCue(ProfileBox Box, bool Left, bool Right, bool Top, bool Bottom, string Kind);
+
+public static class SnapCueMath
+{
+    public static SnapCue Window(ProfileBox raw, ProfileBox monitor, IReadOnlyList<ProfileBox>? others, int grid, int edgeSlop, string? zoneKind, ProfileBox zoneBox)
+    {
+        if (!string.IsNullOrEmpty(zoneKind))
+        {
+            string k = zoneKind;
+            return new SnapCue(zoneBox,
+                k is "left" or "tl" or "bl",
+                k is "right" or "tr" or "br",
+                k is "top" or "tl" or "tr" or "max",
+                k is "bl" or "br",
+                k);
+        }
+        var snapped = ProfileSnap.SnapWindow(raw, monitor, others ?? Array.Empty<ProfileBox>(), grid < 1 ? 1 : grid, edgeSlop);
+        return new SnapCue(snapped,
+            snapped.X == monitor.X,
+            snapped.Right == monitor.Right,
+            snapped.Y == monitor.Y,
+            snapped.Bottom == monitor.Bottom,
+            "");
     }
 }

@@ -897,7 +897,7 @@ int painted = ProfileChrome.PaintedHeight(deskScene.Bounds.H, deskScene.Scale, 1
 var chipInset = ProfileChrome.ChipContent(underChip, 0, 0, 180, headerBand);
 var below = ProfileChrome.WindowChip(0, 1400, 800, 600, 3840, 2160, 0, 80, 180, 110);
 var belowInset = ProfileChrome.ChipContent(below, 0, 80, 180, 36);
-Check("small tiles drop detail and chips keep the real ratio", stage.Width == 700 && stage.FitHeight == 252 && narrowDetail.Length == 0 && midDetail == "2400×1350" && wideDetail.Contains("3840") && wideDetail.Contains("주") && Math.Abs(chipBox.W - 200) < 1.5 && Math.Abs(chipBox.H - 100) < 1.5 && chipBox.Y < 22 && iconDot.W == 6 && headerBand >= 60 && Math.Abs(underChip.W - 90) < 1.5 && underChip.Y < 2 && painted < stage.FitHeight && painted > 70 && ProfileGlyph.Kinds.Length == 13 && ProfileGlyph.Known("lock") && ProfileGlyph.Known("trash") && ProfileGlyph.Known("power") && ProfileGlyph.Known("star"));
+Check("small tiles drop detail and chips keep the real ratio", stage.Width == 700 && stage.FitHeight == 252 && narrowDetail.Length == 0 && midDetail == "2400×1350" && wideDetail.Contains("3840") && wideDetail.Contains("주") && Math.Abs(chipBox.W - 200) < 1.5 && Math.Abs(chipBox.H - 100) < 1.5 && chipBox.Y < 22 && iconDot.W == 6 && headerBand >= 60 && Math.Abs(underChip.W - 90) < 1.5 && underChip.Y < 2 && painted < stage.FitHeight && painted > 70 && ProfileGlyph.Kinds.Length == 14 && ProfileGlyph.Known("lock") && ProfileGlyph.Known("trash") && ProfileGlyph.Known("power") && ProfileGlyph.Known("star") && ProfileGlyph.Known("expand"));
 var swallowed = ProfileChrome.ChipContent(new DipRect(2, 2, 24, 18), 0, 0, 180, 70);
 var smokeDesk = new[]
 {
@@ -981,6 +981,91 @@ string noteStory = NoteLayout.TopologyStory();
 Check("display apply is one commit and keeps the owner desk", deskStory.Length == 0, deskStory);
 Check("leaving a profile restores that session", sessionStory.Length == 0, sessionStory);
 Check("restore uses workspace coordinates and stays on the monitor", placeStory.Length == 0, placeStory);
+var wideBefore = new[]
+{
+    new PlacementSpace.Monitor("L", -3840, 0, 3840, 2160),
+    new PlacementSpace.Monitor("P", 0, 0, 2560, 1440, true)
+};
+var primaryOnly = new[] { new PlacementSpace.Monitor("P", 0, 0, 1920, 1080, true) };
+var mixedAfter = new[]
+{
+    new PlacementSpace.Monitor("P", 0, 0, 1920, 1080, true),
+    new PlacementSpace.Monitor("R", 1920, 0, 2400, 1350)
+};
+var moved = new[]
+{
+    new PlacementSpace.Monitor("L", 1920, 0, 3840, 2160),
+    new PlacementSpace.Monitor("P", 0, 0, 1920, 1080, true)
+};
+var parked = new FakeWindowSurface { WorkOriginY = 40 };
+parked.Windows.Add(new TrackedWindow { Id = 4, Min = true, X = -32000, Y = -32000, W = 160, H = 28, NormalX = -3000, NormalY = 80, NormalW = 1600, NormalH = 900 });
+parked.Windows.Add(new TrackedWindow { Id = 5, Min = true, X = -32000, Y = -32000, W = 160, H = 28, NormalX = -5000, NormalY = -2000, NormalW = 3200, NormalH = 1800 });
+parked.Windows.Add(new TrackedWindow { Id = 6, X = 200, Y = 120, W = 800, H = 600, NormalX = 200, NormalY = 80, NormalW = 800, NormalH = 600 });
+parked.Windows.Add(new TrackedWindow { Id = 7, Max = true, X = -3840, Y = 0, W = 3840, H = 2160, NormalX = -2200, NormalY = 40, NormalW = 900, NormalH = 700, MaxX = -3840, MaxY = -40 });
+int settled = parked.Settle(wideBefore, primaryOnly);
+bool stillMin = parked.Windows.First(w => w.Id == 4).Min && parked.Windows.First(w => w.Id == 5).Min && parked.Windows.First(w => w.Id == 7).Max && !parked.Windows.First(w => w.Id == 7).Min;
+parked.ShowRestored(4);
+parked.ShowRestored(5);
+var backOn = parked.Windows.First(w => w.Id == 4);
+var shrunk = parked.Windows.First(w => w.Id == 5);
+var stayed = parked.Windows.First(w => w.Id == 6);
+var maxed = parked.Windows.First(w => w.Id == 7);
+bool backInside = backOn.X >= 0 && backOn.Y >= 0 && backOn.X + backOn.W <= 1920 && backOn.Y + backOn.H <= 1120 && backOn.W == 1600;
+bool sizeClamped = shrunk.W <= 1920 && shrunk.H <= 1080 && shrunk.X >= 0 && shrunk.Y >= 0 && shrunk.X + shrunk.W <= 1920 && shrunk.Y + shrunk.H <= 1120;
+bool untouched = stayed.NormalX == 200 && stayed.NormalY == 80 && stayed.Min == false;
+bool maxStayed = maxed.Max && !maxed.Min && maxed.MaxX == 0 && maxed.MaxY == 0;
+var ride = new FakeWindowSurface();
+ride.Windows.Add(new TrackedWindow { Id = 8, Min = true, X = -32000, Y = -32000, W = 160, H = 28, NormalX = -3000, NormalY = 100, NormalW = 800, NormalH = 600 });
+ride.Settle(wideBefore, moved);
+ride.ShowRestored(8);
+var rode = ride.Windows[0];
+bool rodeLeft = rode.X == 1920 + (-3000 - (-3840)) && rode.Y == 100 && rode.W == 800 && !rode.Min;
+var dpi = new FakeWindowSurface();
+dpi.Windows.Add(new TrackedWindow { Id = 9, Min = true, X = -32000, Y = -32000, W = 160, H = 28, NormalX = -2500, NormalY = 60, NormalW = 3000, NormalH = 1800 });
+dpi.Settle(wideBefore, mixedAfter);
+bool dpiStill = dpi.Windows[0].Min;
+dpi.ShowRestored(9);
+var dpiWin = dpi.Windows[0];
+bool dpiClamp = dpiStill && dpiWin.X >= 0 && dpiWin.W == 1920 && dpiWin.H == 1080 && dpiWin.X + dpiWin.W <= 1920 && dpiWin.Y + dpiWin.H <= 1080;
+var sliver = PlacementSpace.Settle(new PlacementSpace.Box(-1800, 40, 1920, 800), 0, 0, false, 0, 0, wideBefore, primaryOnly);
+bool halfOn = PlacementSpace.MostlyInside(new PlacementSpace.Box(-400, 40, 800, 600), primaryOnly);
+Check("minimized restores land on a live monitor and stay minimized until shown", settled >= 3 && stillMin && backInside && sizeClamped && untouched && maxStayed && rodeLeft && dpiClamp && sliver.Changed && sliver.Normal.X >= 0 && halfOn, $"settled={settled} back={backOn.X},{backOn.Y} {backOn.W}x{backOn.H} clamp={shrunk.X},{shrunk.Y} {shrunk.W}x{shrunk.H} max={maxed.MaxX},{maxed.MaxY} rode={rode.X},{rode.Y} dpi={dpiWin.X},{dpiWin.Y} {dpiWin.W}x{dpiWin.H} sliver={sliver.Normal.X}");
+var hiMon = new ProfileMonitor { Number = 1, X = 0, Y = 0, W = 3840, H = 2160, Scale = 125, Primary = true };
+var loMon = new ProfileMonitor { Number = 2, X = 3840, Y = 0, W = 1920, H = 1080, Scale = 100 };
+var cardHi = IdentifyLayout.Of(hiMon);
+var cardLo = IdentifyLayout.Of(loMon);
+var osdCard = IdentifyLayout.Center(hiMon, 360, 108);
+bool cardsIn = cardHi.X >= 0 && cardHi.Y >= 0 && cardHi.X + cardHi.W <= 3840 && cardHi.Y + cardHi.H <= 2160 && cardLo.X >= 3840 && cardLo.X + cardLo.W <= 5760 && cardLo.Y + cardLo.H <= 1080;
+bool cardsBig = cardHi.W > cardLo.W && cardHi.H > cardLo.H && cardHi.Y > 2160 / 2 && cardHi.X < 800;
+bool osdMid = Math.Abs((osdCard.X + osdCard.W / 2) - 1920) <= 2;
+Check("identify cards use each monitor's physical pixels", cardsIn && cardsBig && osdMid && cardHi.W == IdentifyLayout.Px(IdentifyLayout.BaseW, 125) && MonitorIdentify.NativeCalls == 0);
+int inkClash = 0;
+foreach (int tw in new[] { 40, 72, 110, 180, 260 })
+foreach (int th in new[] { 36, 64, 100, 150 })
+{
+    var tileInk = new DipRect(8, 12, tw, th);
+    var samples = new List<DipRect>
+    {
+        new(tileInk.X + 2, tileInk.Y + 2, Math.Max(8, Math.Min(78, tw - 4)), Math.Max(8, Math.Min(26, th - 4))),
+        ProfileChrome.WindowChip(40, 40, 900, 600, 1920, 1080, tileInk.X, tileInk.Y, tileInk.W, tileInk.H)
+    };
+    var marks = CanvasInk.Arrange(tileInk, tw > 140, samples);
+    var taken = new List<DipRect> { ProfileChrome.NumberPill(tileInk.X, tileInk.Y, tw > 140) };
+    foreach (var mark in marks)
+    {
+        foreach (var box in taken)
+            if (mark.Box.W > 1 && mark.Box.Hits(box)) inkClash++;
+        if (mark.Box.W > 1) taken.Add(mark.Box);
+    }
+}
+var ghostUnder = CanvasInk.Line(new DipRect(0, 0, 30, 22), new[] { ProfileChrome.NumberPill(0, 0) }, 12, 2);
+var ghostBeside = CanvasInk.Line(new DipRect(0, 0, 120, 36), new[] { ProfileChrome.NumberPill(0, 0) }, 12, 2);
+Check("canvas text never meets a badge or another line", inkClash == 0 && ghostUnder.W < 1 && ghostBeside.W >= 8 && !ghostBeside.Hits(ProfileChrome.NumberPill(0, 0)), "clash " + inkClash + " under " + ghostUnder.W + " beside " + ghostBeside.X);
+var snapZone = ProfileSnap.ZoneBox("left", new ProfileBox(0, 0, 1920, 1080));
+var snapCue = SnapCueMath.Window(new ProfileBox(12, 40, 400, 300), new ProfileBox(0, 0, 1920, 1080), null, 1, 8, "left", snapZone);
+var snapFlush = SnapCueMath.Window(new ProfileBox(3, 40, 400, 300), new ProfileBox(0, 0, 1920, 1080), null, 1, 8, "", default);
+Check("snap preview marks the zone and the flush edge", snapCue.Kind == "left" && snapCue.Left && snapCue.Box.W == 960 && snapFlush.Left && snapFlush.Box.X == 0);
+Check("hotkey capture shows held modifiers", HotkeyChord.Caps(false, true, true, false) == "Ctrl + Alt + …" && HotkeyChord.Caps(false, false, false, false).Length == 0 && HotkeyChord.ListenPrompt == "키를 누르세요…");
 Check("notes ignore a transient work area", noteStory.Length == 0, noteStory);
 string profileRoot = Path.Combine(Path.GetTempPath(), "bonghub_profile_" + Environment.ProcessId);
 try

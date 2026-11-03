@@ -66,8 +66,9 @@ public partial class MainWindow : Window
         SizeChanged += (_, e) =>
         {
             if (AppEnv.Smoke || AppEnv.NoteTest || AppEnv.Off || CurrentPage != "presets") return;
-            if (Math.Abs(e.NewSize.Width - e.PreviousSize.Width) < 12 && Math.Abs(e.NewSize.Height - e.PreviousSize.Height) < 12) return;
-            Dispatcher.BeginInvoke(() => { if (CurrentPage == "presets") Render("presets", false); });
+            if (Math.Abs(e.NewSize.Width - e.PreviousSize.Width) < 1 && Math.Abs(e.NewSize.Height - e.PreviousSize.Height) < 1) return;
+            ScaleProfileCanvas();
+            ScheduleProfileRebuild();
         };
         ApplyTabOrder(ConfigStore.TabOrder);
         RebuildNav();
@@ -303,32 +304,36 @@ public partial class MainWindow : Window
     }
 
     // ---------- building blocks (iOS inset grouped list) ----------
-    void Header(string text) => PageHost.Children.Add(new TextBlock { Text = text, Margin = new Thickness(16, 14, 0, 7), FontSize = 12.5, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Secondary") });
+    void Header(string text) => Header(PageHost, text);
+    void Header(Panel host, string text) => host.Children.Add(new TextBlock { Text = text, Margin = new Thickness(14, 8, 0, 4), FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Secondary") });
     void Footer(string text) { var t = new TextBlock { Text = text, Margin = new Thickness(16, 0, 16, 10), FontSize = 12.5, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Secondary") }; FirstSecondary ??= t; PageHost.Children.Add(t); }
-    StackPanel Group()
+    StackPanel Group() => Group(PageHost);
+    StackPanel Group(Panel host)
     {
         var sp = new StackPanel();
-        PageHost.Children.Add(new Border { Style = (Style)FindResource("Group"), Child = sp });
+        host.Children.Add(new Border { Style = (Style)FindResource("Group"), Child = sp });
         return sp;
     }
-    Border Row(StackPanel group, string? glyph, string? hex, string title, string? sub, UIElement? trailing, Action? click = null, bool wrap = false, ImageSource? icon = null)
+    Border Row(StackPanel group, string? glyph, string? hex, string title, string? sub, UIElement? trailing, Action? click = null, bool wrap = false, ImageSource? icon = null, bool tight = false)
     {
         bool lead = icon != null || glyph != null;
         if (group.Children.Count > 0)
             group.Children.Add(new Border { Height = 1, Background = (Brush)FindResource("Separator"), Margin = new Thickness(lead ? 58 : 16, 0, 0, 0) });
-        var g = new Grid { MinHeight = 50 };
+        bool tipOnly = tight && sub != null && sub.Length > 42;
+        var g = new Grid { MinHeight = tight ? 34 : 50 };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 140 });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = tight ? 80 : 140 });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        if (icon != null) g.Children.Add(new Border { Width = 30, Height = 30, CornerRadius = new CornerRadius(8), Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, ClipToBounds = true, Child = new Image { Source = icon, Width = 30, Height = 30, Stretch = Stretch.Uniform } });
-        else if (glyph != null) g.Children.Add(new Border { Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Child = Tile(glyph, hex ?? "8E8E93", 30, 8, 15) });
-        var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(lead ? 14 : 16, 9, 10, 9) };
-        var tt = new TextBlock { Text = title, FontSize = 14.5, TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap, TextTrimming = wrap ? TextTrimming.None : TextTrimming.CharacterEllipsis };
+        double tile = tight ? 22 : 30;
+        if (icon != null) g.Children.Add(new Border { Width = tile, Height = tile, CornerRadius = new CornerRadius(7), Margin = new Thickness(tight ? 10 : 14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, ClipToBounds = true, Child = new Image { Source = icon, Width = tile, Height = tile, Stretch = Stretch.Uniform } });
+        else if (glyph != null) g.Children.Add(new Border { Margin = new Thickness(tight ? 10 : 14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Child = Tile(glyph, hex ?? "8E8E93", tile, tight ? 6 : 8, tight ? 12 : 15) });
+        var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(lead ? (tight ? 10 : 14) : 16, tight ? 4 : 9, 8, tight ? 4 : 9) };
+        var tt = new TextBlock { Text = title, FontSize = tight ? 13 : 14.5, TextWrapping = wrap && !tight ? TextWrapping.Wrap : TextWrapping.NoWrap, TextTrimming = wrap && !tight ? TextTrimming.None : TextTrimming.CharacterEllipsis };
         texts.Children.Add(tt); FirstRowTitle ??= tt;
-        if (sub != null) { var st = new TextBlock { Text = sub, FontSize = 12.5, Margin = new Thickness(0, 2, 0, 0), Foreground = (Brush)FindResource("Secondary"), TextWrapping = TextWrapping.Wrap }; texts.Children.Add(st); FirstSecondary ??= st; }
+        if (sub != null && !tipOnly) { var st = new TextBlock { Text = sub, FontSize = tight ? 11 : 12.5, Margin = new Thickness(0, 1, 0, 0), Foreground = (Brush)FindResource("Secondary"), TextWrapping = tight ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis }; texts.Children.Add(st); FirstSecondary ??= st; }
         Grid.SetColumn(texts, 1); g.Children.Add(texts);
         if (trailing != null) { var b = new Border { Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center, Child = trailing }; Grid.SetColumn(b, 2); g.Children.Add(b); }
-        var row = new Border { Child = g, Background = Brushes.Transparent, CornerRadius = new CornerRadius(16) };
+        var row = new Border { Child = g, Background = Brushes.Transparent, CornerRadius = new CornerRadius(tight ? 12 : 16), ToolTip = tipOnly ? sub : null };
         if (click != null)
         {
             row.Cursor = Cursors.Hand;
@@ -397,14 +402,15 @@ public partial class MainWindow : Window
         {
             DisplayBlocks++;
             DisplayAction = "blocked";
-            if (ConfigStore.OverlayEnabled) ProfileOsd.Show(name);
+            var blockedProfile = Profiles.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
+            if (ConfigStore.OverlayEnabled) ProfileOsd.Show(name, blockedProfile?.Monitors);
             return;
         }
         var snap = ConfigStore.Presets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
         if (snap == null) { DisplayAction = "missing"; return; }
         var plan = PresetCodec.Clone(snap);
         var profile = Profiles.FirstOrDefault(p => string.Equals(p.Name, plan.Name, StringComparison.Ordinal));
-        if (ConfigStore.OverlayEnabled) ProfileOsd.Show(plan.Name);
+        if (ConfigStore.OverlayEnabled) ProfileOsd.Show(plan.Name, profile?.Monitors);
         StartLockedApply(profile, plan);
     }
 
@@ -496,7 +502,10 @@ public partial class MainWindow : Window
         SessionLayout.Restore(profile.Session, LiveWindowSurface.ReadProbes(), live, profile.Monitors);
         Thread.Sleep(250);
         var placed = SessionLayout.Restore(profile.Session, LiveWindowSurface.ReadProbes(), live, profile.Monitors);
-        live.AnchorRestores(placed, before, SessionLayout.MonitorsOf(profile.Monitors));
+        var after = SessionLayout.MonitorsOf(profile.Monitors);
+        live.AnchorRestores(placed, before, after);
+        live.SettleRestores(before, after);
+        settledMonitors = after;
     }
 
     bool holdUndo;
@@ -531,7 +540,10 @@ public partial class MainWindow : Window
             var open = live.List();
             var placed = new List<long>();
             ProfileDoc.Place(profile, live, placed);
-            live.AnchorRestores(placed, before, SessionLayout.MonitorsOf(profile.Monitors));
+            var after = SessionLayout.MonitorsOf(profile.Monitors);
+            live.AnchorRestores(placed, before, after);
+            live.SettleRestores(before, after);
+            settledMonitors = after;
             foreach (var path in ProfileDoc.MissingLaunches(profile, open))
             {
                 try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
@@ -668,13 +680,79 @@ public partial class MainWindow : Window
         }
     }
 
+    List<PlacementSpace.Monitor> settledMonitors = new();
+    DispatcherTimer? windowSettleTimer;
+    DispatcherTimer? profileResizeTimer;
+    bool profileSizing;
+    double profileCanvasWidth;
+    ProfileEditorWindow? profileEditor;
+
+    void ScaleProfileCanvas()
+    {
+        if (ProfileCanvasHost == null || profileCanvasWidth < 80) return;
+        double w = PageHost.ActualWidth;
+        if (w < 80) return;
+        double s = Math.Clamp(w / profileCanvasWidth, 0.72, 1.45);
+        ProfileCanvasHost.RenderTransformOrigin = new Point(0, 0);
+        ProfileCanvasHost.RenderTransform = new ScaleTransform(s, 1);
+    }
+
+    void ScheduleProfileRebuild()
+    {
+        profileResizeTimer ??= new DispatcherTimer();
+        profileResizeTimer.Interval = TimeSpan.FromMilliseconds(profileSizing ? 220 : 80);
+        profileResizeTimer.Stop();
+        profileResizeTimer.Tick -= OnProfileResizeSettled;
+        profileResizeTimer.Tick += OnProfileResizeSettled;
+        profileResizeTimer.Start();
+    }
+
+    void OnProfileResizeSettled(object? sender, EventArgs e)
+    {
+        profileResizeTimer?.Stop();
+        if (profileSizing || CurrentPage != "presets") return;
+        if (ProfileCanvasHost != null) ProfileCanvasHost.RenderTransform = Transform.Identity;
+        Render("presets", false);
+    }
+
+    /// <summary>A mode switch fires several times before the layout is the one Windows will keep.</summary>
+    void ScheduleWindowSettle()
+    {
+        if (!WindowGate.RealAllowed) return;
+        windowSettleTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        windowSettleTimer.Stop();
+        windowSettleTimer.Tick -= OnWindowSettle;
+        windowSettleTimer.Tick += OnWindowSettle;
+        windowSettleTimer.Start();
+    }
+
+    void OnWindowSettle(object? sender, EventArgs e)
+    {
+        windowSettleTimer?.Stop();
+        if (!WindowGate.RealAllowed) return;
+        try
+        {
+            using var live = new LiveWindowSurface();
+            var after = live.CurrentMonitors();
+            live.SettleRestores(settledMonitors, after);
+            settledMonitors = after;
+        }
+        catch (Exception ex) { AppEnv.Log("settle: " + ex.Message); }
+    }
+
     // ---------- pages ----------
     IntPtr OnDisplayMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == Win32.WM_DISPLAYCHANGE && DisplayGate.RealAllowed)
+        if (msg == Win32.WM_ENTERSIZEMOVE) profileSizing = true;
+        else if (msg == Win32.WM_EXITSIZEMOVE) { profileSizing = false; ScheduleProfileRebuild(); }
+        if (msg == Win32.WM_DISPLAYCHANGE)
         {
-            shownLive = "";
-            if (CurrentPage == "presets") Dispatcher.BeginInvoke(() => { if (CurrentPage == "presets") Render("presets", false); });
+            if (DisplayGate.RealAllowed)
+            {
+                shownLive = "";
+                if (CurrentPage == "presets") Dispatcher.BeginInvoke(() => { if (CurrentPage == "presets") Render("presets", false); });
+            }
+            if (WindowGate.RealAllowed) ScheduleWindowSettle();
         }
         return IntPtr.Zero;
     }
@@ -714,8 +792,9 @@ public partial class MainWindow : Window
         cmds.Children.Add(Small("추가", () => { var n = ProfileDoc.Add(Profiles); SelectedProfileId = n.Id; SaveProfiles(); ProfileHotkey.Bind(Profiles, ConfigStore.Notes.Hotkey); Render("presets", false); }));
         Row(g, null, null, "프로필", null, cmds);
         var selected = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId);
-        if (selected != null) BuildProfileEditor(selected);
-        Footer("모니터와 창, 아이콘은 지금 적용을 눌렀을 때만 바뀌어요. 시험·화면 밖·CI에서는 디스플레이, 실제 창, 탐색기를 열지 않아요. 모니터를 바꾼 뒤 Windows가 최소화된 창을 다시 그리는 경우가 있어요. 작업 표시줄을 맞추려고 탐색기를 끝내지는 않아요.");
+        if (selected != null) BuildProfileEditor(selected, PageHost);
+        Footer("지금 적용을 눌렀을 때만 화면이 바뀌어요. 시험에서는 디스플레이와 실제 창을 열지 않아요.");
+        profileEditor?.Redraw();
     }
 
     void PageNotes()
@@ -761,27 +840,36 @@ public partial class MainWindow : Window
         fontTrail.Children.Add(fontSlider);
         fontTrail.Children.Add(fontLabel);
         Row(g, "\uE8D2", "4C8AFE", "글자 크기", "7–48pt. 열린 메모에 바로 적용돼요.", fontTrail);
-        var hkBox = new TextBox { Text = ConfigStore.Notes.Hotkey, Width = 120, IsReadOnly = true, FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
-        hkBox.PreviewKeyDown += (sender, e) =>
+        var hkBox = new HotkeyField();
+        hkBox.SetValue(ConfigStore.Notes.Hotkey);
+        hkBox.IsEnabled = !ro;
+        hkBox.Gesture += gesture =>
         {
-            e.Handled = true;
-            if (ro || e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.System) return;
-            if (e.Key is Key.Escape or Key.Tab) return;
-            string text = FormatHotkey(e.Key, Keyboard.Modifiers);
-            // `out _` here would bind the lambda parameter if it were named `_` (object), not a discard.
-            if (text.Length == 0 || !NoteHotkey.TryParse(text, out uint _, out uint _)) return;
+            if (ro) return;
+            if (gesture is "escape") { hkBox.Cancel(); return; }
+            if (gesture is "back")
+            {
+                ConfigStore.Notes.Hotkey = "";
+                if (!ConfigStore.SetNotesValue("Hotkey", JsonValue.Create(""))) { ConfigStore.Load(); hkBox.SetValue(ConfigStore.Notes.Hotkey); return; }
+                NoteHotkey.Apply("", App.Instance.Tray);
+                hkBox.SetValue("");
+                return;
+            }
+            if (!NoteHotkey.TryParse(gesture, out uint _, out uint _)) { hkBox.Shake(); return; }
+            string text = HotkeyChord.Normalize(gesture);
             string prev = ConfigStore.Notes.Hotkey;
             ConfigStore.Notes.Hotkey = text;
-            if (!ConfigStore.SetNotesValue("Hotkey", JsonValue.Create(text))) { ConfigStore.Notes.Hotkey = prev; return; }
-            hkBox.Text = text;
+            if (!ConfigStore.SetNotesValue("Hotkey", JsonValue.Create(text))) { ConfigStore.Notes.Hotkey = prev; hkBox.Shake(); return; }
             NoteHotkey.Apply(text, App.Instance.Tray);
+            hkBox.SetValue(text);
+            hkBox.Confirm();
         };
         var hkClear = new Button { Content = "지우기", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(8, 0, 0, 0), IsEnabled = !ro };
         hkClear.Click += (_, _) =>
         {
             ConfigStore.Notes.Hotkey = "";
             if (!ConfigStore.SetNotesValue("Hotkey", JsonValue.Create(""))) { ConfigStore.Load(); return; }
-            hkBox.Text = "";
+            hkBox.SetValue("");
             NoteHotkey.Apply("", App.Instance.Tray);
         };
         var hkTrail = new StackPanel { Orientation = Orientation.Horizontal };
@@ -984,36 +1072,7 @@ public partial class MainWindow : Window
         if (!ConfigStore.SetNotesValue("DefaultColor", JsonValue.Create(key))) ConfigStore.Notes.DefaultColor = prev;
     }
 
-    static string FormatHotkey(Key key, ModifierKeys mods)
-    {
-        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.System or Key.None)
-            return "";
-        var parts = new List<string>();
-        if ((mods & ModifierKeys.Windows) == ModifierKeys.Windows) parts.Add("Win");
-        if ((mods & ModifierKeys.Control) == ModifierKeys.Control) parts.Add("Ctrl");
-        if ((mods & ModifierKeys.Alt) == ModifierKeys.Alt) parts.Add("Alt");
-        if ((mods & ModifierKeys.Shift) == ModifierKeys.Shift) parts.Add("Shift");
-        parts.Add(KeyToken(key));
-        return string.Join("+", parts);
-    }
-
-    static string KeyToken(Key key)
-    {
-        if (key >= Key.D0 && key <= Key.D9) return ((int)(key - Key.D0)).ToString();
-        if (key >= Key.NumPad0 && key <= Key.NumPad9) return "Num" + (int)(key - Key.NumPad0);
-        if (key >= Key.A && key <= Key.Z) return key.ToString();
-        if (key >= Key.F1 && key <= Key.F24) return key.ToString();
-        return key switch
-        {
-            Key.Space => "Space",
-            Key.Tab => "Tab",
-            Key.Escape => "Escape",
-            Key.Enter => "Enter",
-            Key.OemPlus => "Oemplus",
-            Key.OemMinus => "OemMinus",
-            _ => key.ToString(),
-        };
-    }
+    static string FormatHotkey(Key key, ModifierKeys mods) => HotkeyField.Format(key, mods);
 
     public string WindowAction { get; private set; } = "";
     public int WindowBlocks { get; private set; }

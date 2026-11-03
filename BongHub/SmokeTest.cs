@@ -761,6 +761,13 @@ public static class SmokeTest
         bool nudged = w.NudgeMonitor(locked.Number, 30, 0);
         t.Check("unlock allows a monitor drag", nudged && w.Profiles[0].Monitors.First(m => m.Number == locked.Number).X != movedX);
         AppSettings.SetMonitorLocked(true);
+        bool chipsOn = AppSettings.ChipsVisible;
+        AppSettings.SetChipsVisible(false);
+        bool chipsSaved = File.ReadAllText(AppEnv.SettingsPath).Contains("\"ChipsVisible\":false");
+        AppSettings.Load();
+        bool chipsLoaded = !AppSettings.ChipsVisible && AppSettings.MonitorLocked;
+        AppSettings.SetChipsVisible(true);
+        t.Check("chip visibility is stored in settings.json", chipsOn && chipsSaved && chipsLoaded && AppSettings.ChipsVisible);
         w.HoverChip(w.Profiles[0].Monitors[0].Number);
         t.Check("hover highlight", w.HoveredMonitor == w.Profiles[0].Monitors[0].Number);
         var chipApp = w.Profiles[0].Apps.FirstOrDefault();

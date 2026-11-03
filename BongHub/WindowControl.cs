@@ -174,8 +174,10 @@ public sealed class TrackedWindow
     public string Path = "";
     public int X, Y, W, H;
     public bool Max, Min, TopMost;
-    /// <summary>Restored rect from GetWindowPlacement. Used when <see cref="Max"/> or <see cref="Min"/> is set.</summary>
+    /// <summary>Restored rect from GetWindowPlacement, in workspace coordinates. Used when <see cref="Max"/> or <see cref="Min"/> is set.</summary>
     public int NormalX, NormalY, NormalW, NormalH;
+    /// <summary><c>ptMaxPosition</c> in workspace coordinates. Only meaningful while <see cref="Max"/> is set.</summary>
+    public int MaxX, MaxY;
 }
 
 public readonly record struct WorkRect(int X, int Y, int W, int H);
@@ -263,7 +265,34 @@ public sealed class FakeWindowSurface : IWindowSurface
     public void Pin(long id) { Find(id).TopMost = true; Ops.Add("pin " + id); }
     public void Dispose() { }
     TrackedWindow Find(long id) => Windows.First(w => w.Id == id);
-    static TrackedWindow Clone(TrackedWindow w) => new() { Id = w.Id, Process = w.Process, Title = w.Title, Class = w.Class, Path = w.Path, X = w.X, Y = w.Y, W = w.W, H = w.H, Max = w.Max, Min = w.Min, TopMost = w.TopMost, NormalX = w.NormalX, NormalY = w.NormalY, NormalW = w.NormalW, NormalH = w.NormalH };
+    /// <summary>
+    /// Rewrite <c>rcNormalPosition</c> when it would restore mostly off the current layout.
+    /// <see cref="TrackedWindow.Min"/> and <see cref="TrackedWindow.Max"/> stay as they are.
+    /// </summary>
+    public int Settle(IReadOnlyList<PlacementSpace.Monitor>? before, IReadOnlyList<PlacementSpace.Monitor>? after)
+    {
+        int n = 0;
+        foreach (var win in Windows)
+        {
+            bool min = win.Min, max = win.Max;
+            var old = new PlacementSpace.Box(win.NormalX, win.NormalY, win.NormalW, win.NormalH);
+            var fix = PlacementSpace.Settle(old, win.MaxX, win.MaxY, max, WorkOriginX, WorkOriginY, before, after);
+            if (!fix.Changed) continue;
+            win.NormalX = fix.Normal.X;
+            win.NormalY = fix.Normal.Y;
+            win.NormalW = fix.Normal.W;
+            win.NormalH = fix.Normal.H;
+            win.MaxX = fix.MaxX;
+            win.MaxY = fix.MaxY;
+            win.Min = min;
+            win.Max = max;
+            n++;
+        }
+        Ops.Add("settle " + n);
+        return n;
+    }
+
+    static TrackedWindow Clone(TrackedWindow w) => new() { Id = w.Id, Process = w.Process, Title = w.Title, Class = w.Class, Path = w.Path, X = w.X, Y = w.Y, W = w.W, H = w.H, Max = w.Max, Min = w.Min, TopMost = w.TopMost, NormalX = w.NormalX, NormalY = w.NormalY, NormalW = w.NormalW, NormalH = w.NormalH, MaxX = w.MaxX, MaxY = w.MaxY };
 }
 
 public static class RuleMatch
@@ -476,7 +505,7 @@ public static class WorkspacePlan
 public static class PlacementSpace
 {
     public readonly record struct Box(int X, int Y, int W, int H);
-    public readonly record struct Monitor(string Id, int X, int Y, int W, int H);
+    public readonly record struct Monitor(string Id, int X, int Y, int W, int H, bool Primary = false);
 
     public static Box ToWorkspace(Box screen, int originX, int originY)
         => new(screen.X - originX, screen.Y - originY, screen.W, screen.H);
@@ -520,6 +549,122 @@ public static class PlacementSpace
         var oldScreen = ToScreen(oldNormalWorkspace, originX, originY);
         if (oldScreen.W <= 0 || oldScreen.H <= 0) return screenNow;
         return Carry(oldScreen, before, after);
+    }
+
+    public readonly record struct Settled(Box Normal, int MaxX, int MaxY, bool Changed);
+
+    /// <summary>
+    /// <paramref name="normalWorkspace"/> is <c>rcNormalPosition</c>. <paramref name="maxX"/>/<paramref name="maxY"/> are <c>ptMaxPosition</c>.
+    /// Both are workspace coordinates. A rect that is mostly outside every current monitor is moved onto the monitor
+    /// it used to sit on (same device path) or, if that monitor is gone, the primary. Size is clamped. The show state is not part of this result.
+    /// </summary>
+    public static Settled Settle(Box normalWorkspace, int maxX, int maxY, bool maximized, int originX, int originY, IReadOnlyList<Monitor>? before, IReadOnlyList<Monitor>? after)
+    {
+        if (after == null || !after.Any(m => m.W > 0 && m.H > 0))
+            return new Settled(normalWorkspace, maxX, maxY, false);
+        var screen = ToScreen(normalWorkspace, originX, originY);
+        bool changed = false;
+        if (!MostlyInside(screen, after))
+        {
+            string prefer = HostId(screen, before);
+            Monitor oldHost = default;
+            bool had = false;
+            if (before != null && prefer.Length > 0)
+                foreach (var m in before)
+                    if (string.Equals(m.Id, prefer, StringComparison.OrdinalIgnoreCase) && m.W > 0 && m.H > 0)
+                    { oldHost = m; had = true; break; }
+            var host = Choose(after, prefer);
+            Box shifted = screen;
+            if (had && string.Equals(host.Id, prefer, StringComparison.OrdinalIgnoreCase))
+                shifted = new Box(host.X + (screen.X - oldHost.X), host.Y + (screen.Y - oldHost.Y), screen.W, screen.H);
+            else
+                shifted = new Box(host.X + 48, host.Y + 48, screen.W < 1 ? Math.Min(800, host.W) : screen.W, screen.H < 1 ? Math.Min(600, host.H) : screen.H);
+            screen = ClampTo(shifted, host);
+            changed = true;
+        }
+        int mx = maxX, my = maxY;
+        if (maximized)
+        {
+            int sx = maxX + originX, sy = maxY + originY;
+            if (!ContainsPoint(sx, sy, after))
+            {
+                var host = Choose(after, HostId(new Box(sx, sy, 1, 1), before));
+                if (host.Primary || (host.X <= originX && originX < host.X + host.W && host.Y <= originY && originY < host.Y + host.H))
+                { mx = 0; my = 0; }
+                else
+                { mx = host.X - originX; my = host.Y - originY; }
+                changed = true;
+            }
+        }
+        var ws = ToWorkspace(screen, originX, originY);
+        return new Settled(changed ? ws : normalWorkspace, mx, my, changed);
+    }
+
+    /// <summary>At least half the rect meets some monitor. A sliver on the edge does not count.</summary>
+    public static bool MostlyInside(Box screen, IReadOnlyList<Monitor>? monitors)
+    {
+        if (screen.W <= 0 || screen.H <= 0) return false;
+        if (monitors == null) return true;
+        long area = (long)screen.W * screen.H;
+        long best = 0;
+        foreach (var m in monitors)
+        {
+            if (m.W <= 0 || m.H <= 0) continue;
+            int w = Math.Min(screen.X + screen.W, m.X + m.W) - Math.Max(screen.X, m.X);
+            int h = Math.Min(screen.Y + screen.H, m.Y + m.H) - Math.Max(screen.Y, m.Y);
+            if (w > 0 && h > 0) best = Math.Max(best, (long)w * h);
+        }
+        return best * 2 >= area;
+    }
+
+    public static string HostId(Box screen, IReadOnlyList<Monitor>? monitors)
+    {
+        if (monitors == null || screen.W <= 0 || screen.H <= 0) return "";
+        int cx = screen.X + screen.W / 2;
+        int cy = screen.Y + screen.H / 2;
+        foreach (var m in monitors)
+            if (m.W > 0 && m.H > 0 && cx >= m.X && cy >= m.Y && cx < m.X + m.W && cy < m.Y + m.H)
+                return m.Id ?? "";
+        return "";
+    }
+
+    public static Monitor Choose(IReadOnlyList<Monitor> after, string? preferId)
+    {
+        if (!string.IsNullOrEmpty(preferId))
+            foreach (var m in after)
+                if (m.W > 0 && m.H > 0 && string.Equals(m.Id, preferId, StringComparison.OrdinalIgnoreCase))
+                    return m;
+        foreach (var m in after)
+            if (m.Primary && m.W > 0 && m.H > 0) return m;
+        foreach (var m in after)
+            if (m.W > 0 && m.H > 0 && m.X <= 0 && m.Y <= 0 && m.X + m.W > 0 && m.Y + m.H > 0)
+                return m;
+        foreach (var m in after)
+            if (m.W > 0 && m.H > 0) return m;
+        return after[0];
+    }
+
+    public static Box ClampTo(Box screen, Monitor m)
+    {
+        int limitW = Math.Max(1, m.W);
+        int limitH = Math.Max(1, m.H);
+        int w = screen.W < 1 ? Math.Min(800, limitW) : Math.Min(screen.W, limitW);
+        int h = screen.H < 1 ? Math.Min(600, limitH) : Math.Min(screen.H, limitH);
+        int x = screen.X;
+        int y = screen.Y;
+        if (x < m.X) x = m.X;
+        if (y < m.Y) y = m.Y;
+        if (x + w > m.X + m.W) x = m.X + m.W - w;
+        if (y + h > m.Y + m.H) y = m.Y + m.H - h;
+        return new Box(x, y, w, h);
+    }
+
+    public static bool ContainsPoint(int x, int y, IReadOnlyList<Monitor> monitors)
+    {
+        foreach (var m in monitors)
+            if (m.W > 0 && m.H > 0 && x >= m.X && y >= m.Y && x < m.X + m.W && y < m.Y + m.H)
+                return true;
+        return false;
     }
 
     /// <summary>Fake windows only. Empty means the restore rect survives a monitor move and a taskbar offset.</summary>
@@ -659,6 +804,57 @@ public sealed class LiveWindowSurface : IWindowSurface
             n++;
         }
         return n;
+    }
+
+    /// <summary>
+    /// Every top-level window, including minimized ones and ones the profile did not place.
+    /// Off-screen <c>rcNormalPosition</c> values are rewritten. <c>showCmd</c> is copied back unchanged.
+    /// Maximized windows also get <c>ptMaxPosition</c> pulled onto a monitor.
+    /// </summary>
+    public int SettleRestores(IReadOnlyList<PlacementSpace.Monitor>? before, IReadOnlyList<PlacementSpace.Monitor>? after)
+    {
+        after ??= CurrentMonitors();
+        var origin = PrimaryWorkOrigin();
+        int n = 0;
+        foreach (var pair in hwnds)
+        {
+            var hwnd = pair.Value;
+            var placed = new WINDOWPLACEMENT { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
+            if (!GetWindowPlacement(hwnd, ref placed)) continue;
+            uint show = placed.showCmd;
+            bool max = show == 3 || IsZoomed(hwnd);
+            var old = new PlacementSpace.Box(placed.normal.Left, placed.normal.Top, Math.Max(0, placed.normal.Right - placed.normal.Left), Math.Max(0, placed.normal.Bottom - placed.normal.Top));
+            var fix = PlacementSpace.Settle(old, placed.max.X, placed.max.Y, max, origin.X, origin.Y, before, after);
+            if (!fix.Changed) continue;
+            placed.length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>();
+            placed.showCmd = show;
+            placed.normal = new RECT { Left = fix.Normal.X, Top = fix.Normal.Y, Right = fix.Normal.X + fix.Normal.W, Bottom = fix.Normal.Y + fix.Normal.H };
+            if (max) { placed.max = new POINTL { X = fix.MaxX, Y = fix.MaxY }; }
+            SetWindowPlacement(hwnd, ref placed);
+            n++;
+        }
+        return n;
+    }
+
+    public List<PlacementSpace.Monitor> CurrentMonitors()
+    {
+        var list = new List<PlacementSpace.Monitor>();
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (m, _, ref rc, _) =>
+        {
+            var mx = new MONITORINFOEX { cbSize = Marshal.SizeOf<MONITORINFOEX>() };
+            if (!GetMonitorInfoEx(m, ref mx) || mx.rcMonitor.Right <= mx.rcMonitor.Left) return true;
+            string id = mx.device ?? "";
+            var dd = new DISPLAY_DEVICE { cb = Marshal.SizeOf<DISPLAY_DEVICE>() };
+            if (EnumDisplayDevices(mx.device, 0, ref dd, 0))
+            {
+                var parts = (dd.DeviceID ?? "").Split('\\');
+                if (parts.Length > 1 && parts[1].Length > 0) id = parts[1];
+            }
+            bool primary = (mx.flags & 1) != 0;
+            list.Add(new PlacementSpace.Monitor(id, mx.rcMonitor.Left, mx.rcMonitor.Top, mx.rcMonitor.Right - mx.rcMonitor.Left, mx.rcMonitor.Bottom - mx.rcMonitor.Top, primary));
+            return true;
+        }, IntPtr.Zero);
+        return list;
     }
 
     static (int X, int Y) PrimaryWorkOrigin()

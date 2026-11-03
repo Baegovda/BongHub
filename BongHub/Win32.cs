@@ -44,7 +44,29 @@ internal static class Win32
     }
     public static double SystemScale { get { try { return GetDpiForSystem() / 96.0; } catch { return 1; } } }
     public const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_NOOWNERZORDER = 0x200;
-    public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_FRAMECHANGED = 0x20;
+    public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_FRAMECHANGED = 0x20, SWP_SHOWWINDOW = 0x40;
+    public static readonly IntPtr HwndTopmost = new(-1);
+
+    /// <summary>Physical screen pixels. Per-monitor DPI aware, so this is not a DIP.</summary>
+    public static void PlaceTopmost(IntPtr h, int x, int y, int w, int hgt)
+    {
+        if (h == IntPtr.Zero || w < 1 || hgt < 1) return;
+        SetWindowPos(h, HwndTopmost, x, y, w, hgt, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    }
+
+    /// <summary>Keep a PerMonitorV2 window at a physical-pixel rect when WPF rewrites Left/Top in DIPs.</summary>
+    public static void ForcePhysical(IntPtr lp, int x, int y, int w, int hgt)
+    {
+        if (lp == IntPtr.Zero || w < 1 || hgt < 1) return;
+        var pos = Marshal.PtrToStructure<WINDOWPOS>(lp);
+        pos.hwndInsertAfter = HwndTopmost;
+        pos.x = x;
+        pos.y = y;
+        pos.cx = w;
+        pos.cy = hgt;
+        pos.flags &= ~(SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
+        Marshal.StructureToPtr(pos, lp, false);
+    }
     public const int WM_MOVE = 0x3, WM_SIZE = 0x5, WM_WINDOWPOSCHANGING = 0x0046, WM_GETMINMAXINFO = 0x0024, WM_EXITSIZEMOVE = 0x232, WM_ENTERSIZEMOVE = 0x231, WM_DISPLAYCHANGE = 0x007E, WM_MOUSEACTIVATE = 0x0021, WM_ACTIVATE = 0x0006;
     public const int MA_NOACTIVATE = 3;
     public const int SIZE_MINIMIZED = 1, SIZE_MAXIMIZED = 2;

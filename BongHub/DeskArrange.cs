@@ -273,7 +273,7 @@ public static class SessionLayout
         var list = new List<PlacementSpace.Monitor>();
         if (monitors == null) return list;
         foreach (var m in monitors)
-            list.Add(new PlacementSpace.Monitor(DeskArrange.Stable(m), m.X, m.Y, m.W, m.H));
+            list.Add(new PlacementSpace.Monitor(DeskArrange.Stable(m), m.X, m.Y, m.W, m.H, m.Primary));
         return list;
     }
 

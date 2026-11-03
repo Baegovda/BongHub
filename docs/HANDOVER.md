@@ -1,6 +1,6 @@
 # BongHub 인수인계
 
-지금 제품은 **BongHub 1.4.4** 하나예요. WPF 앱이고 실행 파일은 `BongHub.exe`예요. WinForms 3.4.x 소스(`app/`, `build.ps1`)는 저장소에 없어요. 메모·설정 파일과 `%LOCALAPPDATA%\BongHub`, `Local\BongHub_NotesWriter`는 3.4.x와 같이 읽혀요.
+지금 제품은 **BongHub 1.4.5** 하나예요. WPF 앱이고 실행 파일은 `BongHub.exe`예요. WinForms 3.4.x 소스(`app/`, `build.ps1`)는 저장소에 없어요. 메모·설정 파일과 `%LOCALAPPDATA%\BongHub`, `Local\BongHub_NotesWriter`는 3.4.x와 같이 읽혀요.
 
 이 문서가 절차의 기준이에요. 예전에 있던 `docs/HANDOFF.md`와 `docs/PORTING_PLAN.md`는 0.x 계획과 3.4.9 배포 기록이 섞여 있어서 뺐어요. 그 글은 git 기록에 있어요. 버전별 사용자 변화는 `CHANGELOG.md`예요.
 
@@ -94,7 +94,7 @@ dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Relea
 
 `.github/workflows/repo-check.yml`
 
-- `ubuntu-latest`: `check-versions.sh` (csproj `Version` / `FileVersion`, `AppEnv.Version`, `AppInfo.Version`이 **1.4.4** / **1.4.4.0**으로 같은지), PR에서 `sync:`가 아닌 `data/` 변경이 있으면 실패, PatchTests.
+- `ubuntu-latest`: `check-versions.sh` (csproj `Version` / `FileVersion`, `AppEnv.Version`, `AppInfo.Version`이 **1.4.5** / **1.4.5.0**으로 같은지), PR에서 `sync:`가 아닌 `data/` 변경이 있으면 실패, PatchTests.
 - `windows-latest`: 게시 후 스모크, 그다음 노트 시험. 노트 시험 단계는 `if: always()`라서 스모크가 실패해도 돌아요. 프로세스는 `Start-Process -Wait -PassThru`로 기다리고 종료 코드로 판단해요. 로그는 `--out`과 exe 옆을 둘 다 봐요. 산출물은 `wpf-tests`로 올라가요.
 
 Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI가 담당이에요.
@@ -136,7 +136,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 
 `data/`는 클라우드가 `sync: <기기> yyyy-MM-dd HH:mm:ss`로 커밋해요. PR에서 그 접두사가 아닌 커밋이 `data/`를 바꾸면 CI가 실패해요.
 
-## 6. 버전 1.0.0–1.4.4
+## 6. 버전 1.0.0–1.4.5
 
 번호는 사용자에게 나간 WPF 앱이에요. 0.x는 `CHANGELOG.md`의 이식 단계예요.
 
@@ -156,6 +156,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 | 1.4.2 | 번호 배지가 칩 아이콘을 피해요. 최소화 복원은 작업 영역 좌표예요. 카톡 다크 오버레이는 인자로 나가지 않아요. 메모 색은 덜 진하고, 제목은 제목 막대에 있어요. | 152 / 149 |
 | 1.4.3 | 화면 밖 설정 창은 포커스를 받지 않아요. 첫 프레임 뒤에 다시 돌려요. 번호에 가려지는 작은 창은 번호 옆에 두고 단추는 남겨요. | 152 / 149 |
 | 1.4.4 | 프로필 캔버스가 화면 설정에 더 가깝고, 자리비움과 전환 카드가 돌아와요. | 154 / 149 |
+| 1.4.5 | 식별 카드는 모니터 픽셀에 붙고, 최소화된 창은 현재 화면 안으로 돌아와요. 프로필 페이지는 칸이 나뉘고 창 크기를 바꿀 때 캔버스를 다시 그리지 않아요. | 155 / 149 |
 
 ## 7. 시험할 때 지키면 안 되는 것
 
