@@ -23,7 +23,7 @@ public partial class MainWindow
     public FrameworkElement? ProfileWindowList { get; private set; }
     public bool PreviewIcons { get; private set; }
 
-    UIElement VectorButton(string kind, string tip, Action click, string? keep = null, double box = 26)
+    FrameworkElement VectorButton(string kind, string tip, Action click, string? keep = null, double box = 26)
     {
         var icon = ProfileMarks.Icon(kind, box >= 24 ? 14 : 11);
         var b = new Button
