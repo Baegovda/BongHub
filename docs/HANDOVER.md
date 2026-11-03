@@ -1,6 +1,6 @@
 # BongHub 인수인계
 
-지금 제품은 **BongHub 1.3.2** 하나예요. WPF 앱이고 실행 파일은 `BongHub.exe`예요. WinForms 3.4.x 소스(`app/`, `build.ps1`)는 저장소에 없어요. 메모·설정 파일과 `%LOCALAPPDATA%\BongHub`, `Local\BongHub_NotesWriter`는 3.4.x와 같이 읽혀요.
+지금 제품은 **BongHub 1.4.0** 하나예요. WPF 앱이고 실행 파일은 `BongHub.exe`예요. WinForms 3.4.x 소스(`app/`, `build.ps1`)는 저장소에 없어요. 메모·설정 파일과 `%LOCALAPPDATA%\BongHub`, `Local\BongHub_NotesWriter`는 3.4.x와 같이 읽혀요.
 
 이 문서가 절차의 기준이에요. 예전에 있던 `docs/HANDOFF.md`와 `docs/PORTING_PLAN.md`는 0.x 계획과 3.4.9 배포 기록이 섞여 있어서 뺐어요. 그 글은 git 기록에 있어요. 버전별 사용자 변화는 `CHANGELOG.md`예요.
 
@@ -37,7 +37,7 @@
 
 ### 모니터 프로필 캔버스
 
-`ProfilePage.cs`의 `DrawProfileCanvas`가 설정 창 안에 모니터 사각형과 창 타일을 그려요. 실제 디스플레이로 창을 옮기는 코드가 아니에요. 창이 겹치면 머리줄(28px) 간격으로 내려 이름이 보이게 해요. 번호는 Windows `\\.\DISPLAYn`을 따라요. 끊긴 화면은 흐리게 두고 창 목록은 남겨요. 저장은 `%LOCALAPPDATA%\BongHub\profiles.json`이에요. `config.json`의 3.4.x 필드는 지우지 않아요.
+`ProfilePage.cs`의 `DrawProfileCanvas`가 설정 창 안에 모니터와 창, 바탕화면 아이콘을 그려요. 그림은 지금 Windows 화면 구성을 따라요. 위치, 해상도, 배율, 방향, 식별 번호(`\\.\DISPLAYn`)가 같고, 화면 구성이 바뀌면(`WM_DISPLAYCHANGE`) 다시 맞춰요. 프로필은 그 그림에서 고치는 목표 배치예요. "저장된 구성과 달라요" 안내는 없어요. 끊긴 화면은 흐리게 두고 지우는 단추는 없어요. 모니터를 끌면 맞닿은 변이 선분으로 겹치고 안내선이 나와요. 창은 실제 비율이고, 이웃과는 4px, 절반·최대는 변의 18%예요. 변과 모서리, 숫자로 크기를 고쳐요. 단축키는 키를 누르는 칸이고 `RegisterHotKey`(id 910부터)예요. 전역 후크는 없어요. 저장은 `%LOCALAPPDATA%\BongHub\profiles.json`이에요. 없는 필드는 기본값이라 예전 파일도 읽혀요. `config.json`의 3.4.x 필드는 지우지 않아요.
 
 ### 서비스와 가짜
 
@@ -70,7 +70,7 @@ dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Relea
 
 | 명령 | 결과 |
 |---|---|
-| `--smoketest` | **123 PASS**. 임시 폴더만 써요. `--data`와 `BONGHUB_DATA`는 무시해요. |
+| `--smoketest` | **139 PASS**. 임시 폴더만 써요. `--data`와 `BONGHUB_DATA`는 무시해요. |
 | `--notetest --data <복사본>` | **144 PASS**. `data/` 원본이 아니라 복사본만 넘겨요. |
 | PatchTests | `RESULT PASS` |
 | RichEditTests | 1×1 `\pngblip` 왕복 `RESULT PASS` |
@@ -94,7 +94,7 @@ dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Relea
 
 `.github/workflows/repo-check.yml`
 
-- `ubuntu-latest`: `check-versions.sh` (csproj `Version` / `FileVersion`, `AppEnv.Version`, `AppInfo.Version`이 **1.3.2** / **1.3.2.0**으로 같은지), PR에서 `sync:`가 아닌 `data/` 변경이 있으면 실패, PatchTests.
+- `ubuntu-latest`: `check-versions.sh` (csproj `Version` / `FileVersion`, `AppEnv.Version`, `AppInfo.Version`이 **1.4.0** / **1.4.0.0**으로 같은지), PR에서 `sync:`가 아닌 `data/` 변경이 있으면 실패, PatchTests.
 - `windows-latest`: 게시 후 스모크, 그다음 노트 시험. 노트 시험 단계는 `if: always()`라서 스모크가 실패해도 돌아요. 프로세스는 `Start-Process -Wait -PassThru`로 기다리고 종료 코드로 판단해요. 로그는 `--out`과 exe 옆을 둘 다 봐요. 산출물은 `wpf-tests`로 올라가요.
 
 Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI가 담당이에요.
@@ -110,7 +110,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 3. 지금 폴더를 `backup\<시각>`으로 옮긴 뒤, `backup\`에는 **가장 최근 백업만** 남겨요. 더 오래된 백업 폴더는 지워요.
 4. 위의 게시 결과를 배포 폴더에 복사해요. 런타임은 그 폴더 안에 같이 있어요. `coreclr.dll`이 있어야 자기 포함 게시가 맞아요.
 
-배포 폴더의 exe는 파일 버전 **1.3.1.0**으로 확인됐어요. 1.3.2를 복사하기 전에 떠 있는 프로세스를 끝내고, 덮어쓰기 전에 파일 버전을 다시 봐요.
+1.3.2를 적을 때 배포 폴더의 exe는 파일 버전 **1.3.1.0**이었어요. 1.4.0을 복사하기 전에 떠 있는 프로세스를 끝내고, 덮어쓰기 전에 파일 버전을 다시 봐요.
 
 ## 5. 데이터 호환
 
@@ -136,7 +136,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 
 `data/`는 클라우드가 `sync: <기기> yyyy-MM-dd HH:mm:ss`로 커밋해요. PR에서 그 접두사가 아닌 커밋이 `data/`를 바꾸면 CI가 실패해요.
 
-## 6. 버전 1.0.0–1.3.2
+## 6. 버전 1.0.0–1.4.0
 
 번호는 사용자에게 나간 WPF 앱이에요. 0.x는 `CHANGELOG.md`의 이식 단계예요.
 
@@ -151,6 +151,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 | 1.3.0 | 링크는 화면에만 칠해요. 복사가 클립보드에 남아요. 대비가 부족한 중간 색만 조금 밝혀요. 옛 기본 글자색은 자동 글씨로 바꿔요. 그림을 다 못 담으면 pending에 남겨요. | 123 / 127 |
 | 1.3.1 | Run·Paragraph 클릭이 예외를 던지지 않아요. | 123 / 128 |
 | 1.3.2 | 접힌·최소·최대 크기가 복원 크기를 덮지 않아요. 그림 가드는 화면에 남은 그림만 봐요. 게시는 자기 포함 `win-x64`예요. | 123 / 144 |
+| 1.4.0 | 모니터 프로필을 화면 설정처럼 깊게 고쳤어요. 라이브 배치, 가장자리 스냅, 창 크기, 조준, 단축키, 아이콘 미리보기. | 139 / 144 |
 
 ## 7. 시험할 때 지키면 안 되는 것
 
@@ -159,7 +160,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 - GUI 시험은 숨긴 데스크톱에서, 창은 화면 밖 (-30000, -30000)에서만 해요. 포커스를 가져가지 않아요.
 - 노트 시험의 `--data`는 **복사본**만 받아요. `%LOCALAPPDATA%\BongHub`를 넘기지 않아요.
 - `data/`는 고치지 않아요. 클라우드 커밋이 아닌 PR에 그 차이가 들어가면 안 돼요.
-- AutoHotkey를 쓰지 않아요. 전역 후킹(`SetWindowsHookEx`)도 메모 단축키에 쓰지 않아요. 메모 단축키는 `RegisterHotKey`이고, 시험은 그 API를 호출하지 않아요.
+- AutoHotkey를 쓰지 않아요. 전역 후킹(`SetWindowsHookEx`)도 단축키에 쓰지 않아요. 메모 단축키와 프로필 단축키는 `RegisterHotKey`이고, 시험은 그 API를 호출하지 않아요.
 - 스모크·노트 시험·`--off`·CI는 git, GitHub, 카톡 창, `BongAd.exe`, 탐색기 목록, DDC/CI를 실행하지 않아요.
 
 ## 8. 알려진 문제와 남은 일
@@ -167,5 +168,5 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 - 동기화된 `data/notes` 일부는 아직 한계 밖의 크기를 갖고 있어요. 1.3.2는 그 파일을 열 때 고치지 않아요. 창만 최소·최대로 맞추고, 사용자가 옮기면 그 한계 안의 크기를 저장해요.
 - 가드가 막은 저장을 다시 열면 pending이 더 새로워서 그 내용이 보여요. 화면 그림 수와 맞는 다음 저장은 rtf를 갱신하고 pending을 지워요.
 - 실제 모니터·밝기·아이콘·카톡·git 경로는 자동화 시험이 없어요. 목과 “호출하면 예외”만 확인해요.
-- 프로필 캔버스에서 창 이름이 머리줄 밖으로 나가면, 타일 높이와 28px 계단을 `DrawProfileCanvas`에서 보면 돼요. 1.3.0에서 계단을 머리줄에 맞췄어요.
+- 프로필 캔버스의 창은 모니터 픽셀 비율이에요. 이웃 창 스냅은 4px, 절반·최대 영역은 변의 18%예요. 끊긴 모니터는 흐린 채로 남아요.
 - 클라우드 `sync:` 커밋이 `main`에 자주 올라와요. 문서 PR은 그 커밋 위에 두고, `data/`는 끌어오지 않은 채로 충돌을 만들지 않아요.

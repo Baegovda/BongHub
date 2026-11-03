@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
 
@@ -49,6 +50,18 @@ public partial class MainWindow : Window
         };
         if (AppEnv.Off) { ShowActivated = false; WindowStartupLocation = WindowStartupLocation.Manual; Left = -30000; Top = -30000; }
         ContentRendered += (_, _) => EverShown = true;
+        SourceInitialized += (_, _) =>
+        {
+            var src = HwndSource.FromHwnd(Win32.Handle(this));
+            src?.AddHook(OnDisplayMessage);
+        };
+        ProfileHotkey.Fired = id => Dispatcher.BeginInvoke(() => RequestApplyProfile(id));
+        SizeChanged += (_, e) =>
+        {
+            if (AppEnv.Smoke || AppEnv.NoteTest || AppEnv.Off || CurrentPage != "presets") return;
+            if (Math.Abs(e.NewSize.Width - e.PreviousSize.Width) < 12 && Math.Abs(e.NewSize.Height - e.PreviousSize.Height) < 12) return;
+            Dispatcher.BeginInvoke(() => { if (CurrentPage == "presets") Render("presets", false); });
+        };
         ApplyTabOrder(ConfigStore.TabOrder);
         RebuildNav();
         MinBtn.Click += (_, _) => WindowState = WindowState.Minimized;
@@ -279,9 +292,7 @@ public partial class MainWindow : Window
         }
         try
         {
-            using var live = new LiveWindowSurface();
-            var listed = live.List();
-            var hit = WindowPicker.Hit(listed, x, y) ?? listed.FirstOrDefault();
+            var hit = WindowPicker.Choose(LiveWindowSurface.ReadProbes(), x, y);
             if (hit != null) LastPick = WindowPicker.From(hit);
         }
         catch (Exception ex) { DisplayAction = ex.Message; }
@@ -310,6 +321,8 @@ public partial class MainWindow : Window
         if (Interlocked.CompareExchange(ref displayBusy, 1, 0) != 0) { DisplayAction = "busy"; return; }
         var plan = PresetCodec.Clone(snap);
         var profile = Profiles.FirstOrDefault(p => string.Equals(p.Name, plan.Name, StringComparison.Ordinal));
+        if (profile != null && !holdUndo) ProfileUndo.Remember(profile);
+        holdUndo = false;
         DisplayAction = "applying";
         ThreadPool.QueueUserWorkItem(_ =>
         {
@@ -343,6 +356,8 @@ public partial class MainWindow : Window
         }
         if (Interlocked.CompareExchange(ref displayBusy, 1, 0) != 0) { DisplayAction = "busy"; return; }
         var plan = ProfileDoc.ToPreset(profile);
+        if (!holdUndo) ProfileUndo.Remember(profile);
+        holdUndo = false;
         DisplayAction = "applying";
         ThreadPool.QueueUserWorkItem(_ =>
         {
@@ -352,13 +367,42 @@ public partial class MainWindow : Window
         });
     }
 
+    bool holdUndo;
+
+    public void UndoLastApply()
+    {
+        if (ProfileUndo.Last == null) return;
+        if (!DisplayGate.RealAllowed)
+        {
+            DisplayBlocks++;
+            DisplayAction = "blocked";
+            return;
+        }
+        var shot = ProfileUndo.Take();
+        if (shot == null) return;
+        int at = Profiles.FindIndex(p => p.Id == shot.Id);
+        if (at >= 0) Profiles[at] = shot;
+        else Profiles.Add(shot);
+        SelectedProfileId = shot.Id;
+        ActivePreset = "";
+        SaveProfiles();
+        holdUndo = true;
+        RequestApplyProfile(shot.Id);
+    }
+
     void PlaceProfile(MonitorProfile? profile)
     {
         if (profile == null) return;
         if (WindowGate.RealAllowed)
         {
             using var live = new LiveWindowSurface();
+            var open = live.List();
             ProfileDoc.Place(profile, live);
+            foreach (var path in ProfileDoc.MissingLaunches(profile, open))
+            {
+                try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+                catch (Exception ex) { AppEnv.Log("launch: " + ex.Message); }
+            }
         }
         if (DesktopGate.RealAllowed && profile.Icons.Count > 0)
         {
@@ -488,9 +532,20 @@ public partial class MainWindow : Window
     }
 
     // ---------- pages ----------
+    IntPtr OnDisplayMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == Win32.WM_DISPLAYCHANGE && DisplayGate.RealAllowed)
+        {
+            shownLive = "";
+            if (CurrentPage == "presets") Dispatcher.BeginInvoke(() => { if (CurrentPage == "presets") Render("presets", false); });
+        }
+        return IntPtr.Zero;
+    }
+
     void PagePresets()
     {
         EnsureProfiles();
+        AdoptLiveGeometry();
         Header("모니터 프로필");
         var g = Group();
         string[] hexes = { "4C8AFE", "FF9500", "FF2D55", "34C759", "AF52DE" };
@@ -508,14 +563,19 @@ public partial class MainWindow : Window
             if (!string.IsNullOrEmpty(item.Hotkey)) trail.Children.Add(Keycap(item.Hotkey));
             apply.Margin = new Thickness(item.Hotkey.Length > 0 ? 8 : 0, 0, 0, 0);
             trail.Children.Add(apply);
+            if (item.Id == SelectedProfileId && ProfileUndo.Last != null)
+            {
+                var undo = VectorButton("undo", "마지막 적용 되돌리기", UndoLastApply);
+                undo.Margin = new Thickness(6, 0, 0, 0);
+                trail.Children.Add(undo);
+            }
+            trail.Children.Add(ProfileMenu(item));
             var row = Row(g, "\uE7F4", hexes[i++ % hexes.Length], item.Name.Length > 0 ? item.Name : "(이름 없음)", sub, trail, () => SelectProfile(item.Id));
             if (item.Id == SelectedProfileId) row.Background = new SolidColorBrush(Color.FromArgb(0x22, 0x4C, 0x8A, 0xFE));
         }
         var cmds = new StackPanel { Orientation = Orientation.Horizontal };
-        cmds.Children.Add(Small("추가", () => { var n = ProfileDoc.Add(Profiles); SelectedProfileId = n.Id; SaveProfiles(); Render("presets", false); }));
-        cmds.Children.Add(Small("복제", () => { var n = ProfileDoc.Duplicate(Profiles, SelectedProfileId); if (n != null) { SelectedProfileId = n.Id; SaveProfiles(); Render("presets", false); } }));
-        cmds.Children.Add(Small("삭제", () => { if (ProfileDoc.Delete(Profiles, SelectedProfileId)) { SelectedProfileId = Profiles.FirstOrDefault()?.Id ?? ""; SaveProfiles(); Render("presets", false); } }));
-        Row(g, null, null, "목록", null, cmds);
+        cmds.Children.Add(Small("추가", () => { var n = ProfileDoc.Add(Profiles); SelectedProfileId = n.Id; SaveProfiles(); ProfileHotkey.Bind(Profiles, ConfigStore.Notes.Hotkey); Render("presets", false); }));
+        Row(g, null, null, "프로필", null, cmds);
         var selected = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId);
         if (selected != null) BuildProfileEditor(selected);
         Footer("모니터와 창, 아이콘은 지금 적용을 눌렀을 때만 바뀌어요. 시험·화면 밖·CI에서는 디스플레이, 실제 창, 탐색기를 열지 않아요. 모니터를 바꾼 뒤 Windows가 최소화된 창을 다시 그리는 경우가 있어요. 작업 표시줄을 맞추려고 탐색기를 끝내지는 않아요.");

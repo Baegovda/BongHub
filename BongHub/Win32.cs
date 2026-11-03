@@ -16,6 +16,7 @@ internal static class Win32
     [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(POINT p, uint f);
     [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFO mi);
     [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
+    public static POINT Cursor() { GetCursorPos(out var p); return p; }
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] public static extern bool EnableWindow(IntPtr hWnd, bool enable);
@@ -270,7 +271,9 @@ internal static class Win32
                     W = mi.rcMonitor.Width, H = mi.rcMonitor.Height,
                     X = mi.rcMonitor.Left, Y = mi.rcMonitor.Top,
                     Primary = (mi.dwFlags & 1) != 0,
-                    Device = device
+                    Device = device,
+                    Scale = DpiPercent(m),
+                    Orientation = OrientationOf(device)
                 };
                 list.Add(info);
                 if (device.Length > 0) byDevice[device] = info;
@@ -310,6 +313,37 @@ internal static class Win32
         foreach (var info in list)
             if (info.Number <= 0) info.Number = 1000 + fallback++;
         return list;
+    }
+
+    [DllImport("shcore.dll")] static extern int GetDpiForMonitor(IntPtr monitor, int kind, out uint dpiX, out uint dpiY);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "EnumDisplaySettingsW")] static extern bool EnumDisplaySettings(string device, int mode, IntPtr devMode);
+
+    static int DpiPercent(IntPtr monitor)
+    {
+        try
+        {
+            if (GetDpiForMonitor(monitor, 0, out uint dpiX, out _) == 0 && dpiX >= 96)
+                return (int)Math.Round(dpiX * 100.0 / 96.0);
+        }
+        catch { }
+        return 100;
+    }
+
+    /// <summary>DEVMODEW display orientation at the documented offset. 0 when the call fails. Only used from <see cref="DisplayIdentities"/>.</summary>
+    static int OrientationOf(string device)
+    {
+        if (string.IsNullOrEmpty(device)) return 0;
+        IntPtr buf = Marshal.AllocHGlobal(256);
+        try
+        {
+            for (int i = 0; i < 256; i++) Marshal.WriteByte(buf, i, 0);
+            Marshal.WriteInt16(buf, 68, 256);
+            if (!EnumDisplaySettings(device, -1, buf)) return 0;
+            int code = Marshal.ReadInt32(buf, 84);
+            return code is 1 or 2 or 3 ? code * 90 : 0;
+        }
+        catch { return 0; }
+        finally { Marshal.FreeHGlobal(buf); }
     }
 }
 

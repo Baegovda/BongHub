@@ -81,6 +81,13 @@ public partial class App : Application
         if (!AppEnv.Off)
         {
             NoteHotkey.Start(tray);
+            try
+            {
+                string path = System.IO.Path.Combine(AppEnv.DataDir, "profiles.json");
+                string? json = File.Exists(path) ? File.ReadAllText(path) : null;
+                ProfileHotkey.Bind(ProfileDoc.Migrate(ConfigStore.Presets, ConfigStore.WindowRules, json, null), ConfigStore.Notes.Hotkey);
+            }
+            catch { }
             DesktopGate.Arm(); WindowGate.Arm(); PtGate.Arm(); DisplayGate.Arm(); DisplayNative.Install();
             KakaoGate.Arm();
             KakaoNative.Install();
@@ -193,6 +200,7 @@ public partial class App : Application
     {
         if (!ShuttingDown) { ShuttingDown = true; try { NoteManager.FlushAll(); } catch { } }
         try { NoteHotkey.Stop(); } catch { }
+        try { ProfileHotkey.Stop(); } catch { }
         try { if (KakaoNative.Launched) KakaoNative.Restore(); } catch { }
         try { cloudTimer?.Dispose(); } catch { }
         tray?.Dispose();
