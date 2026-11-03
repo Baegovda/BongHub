@@ -506,6 +506,18 @@ public static class NoteTest
             int titleCaret = host.ReadCaret();
             bool titleEntered = host.MoveToBody();
             t.Check("enter in the title moves to the body start", titleEntered && titleCaret > 0 && host.ReadCaret() == 0);
+            string blocks = NoteBlocks.Story();
+            t.Check("note blocks keep a plain note and read slash, markdown, and enter", blocks.Length == 0, blocks);
+            string heading = host.Feed("## 회의");
+            string plainBlock = host.Feed("오늘 할 일");
+            string bold = host.Feed("**굵게**");
+            t.Check("markdown shortcuts become blocks without keeping the marker", heading.StartsWith("H2|회의") && !heading.Contains('#') && plainBlock == "Text|오늘 할 일" && bold.StartsWith("Text|굵게") && bold.Contains("|bold"), heading + " / " + plainBlock + " / " + bold);
+            string menu = host.Feed("/할");
+            bool made = menu.Contains("할 일") && host.SlashOpen && host.CommitSlash();
+            string todo = host.BlockNow();
+            t.Check("slash command turns the line into a to-do", made && todo.StartsWith("Todo|☐"), menu + " -> " + todo);
+            string narrow = host.CaptionFitReport(StickyNoteWindow.NoteMinWidth);
+            t.Check("narrow note keeps the title and toolbar inside the caption", narrow.Length == 0, narrow);
             host.Editor.Document.Blocks.Clear();
             for (int line = 0; line < 40; line++)
                 host.Editor.Document.Blocks.Add(new Paragraph(new Run("줄 " + line + " 스크롤 유지")) { FontSize = 28 });

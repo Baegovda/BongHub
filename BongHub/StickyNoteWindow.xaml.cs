@@ -1,6 +1,7 @@
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -164,6 +165,8 @@ public partial class StickyNoteWindow : Window
         ListBtn.Click += (_, _) => ShowList();
         PinBtn.Click += (_, _) => SetTopMost(!Meta.TopMost);
         CloseBtn.Click += (_, _) => CloseNote();
+        MoreBtn.Click += (_, _) => ShowHiddenTools();
+        SizeChanged += (_, _) => FitCaption();
         BoldBtn.Click += (_, _) => EditingCommands.ToggleBold.Execute(null, Editor);
         ItalicBtn.Click += (_, _) => EditingCommands.ToggleItalic.Execute(null, Editor);
         UnderBtn.Click += (_, _) => EditingCommands.ToggleUnderline.Execute(null, Editor);
@@ -398,9 +401,36 @@ public partial class StickyNoteWindow : Window
             if (loading) return;
             TextDirty = true;
             RefreshLinks();
+            if (pendingEnter is { } plan)
+            {
+                pendingEnter = null;
+                var born = box.CaretPosition?.Paragraph;
+                if (born != null)
+                {
+                    blockLock = true;
+                    try { Stamp(born, plan.Next, plan.Exit); }
+                    finally { blockLock = false; }
+                }
+            }
+            else if (!blockLock) SyncBlock(box.CaretPosition?.Paragraph);
             if (sizing) return;
             textTimer.Stop();
             textTimer.Start();
+        };
+        box.PreviewKeyDown += (_, e) =>
+        {
+            if (SlashOpen)
+            {
+                if (e.Key == Key.Down) { slashIndex = Math.Min(slashHits.Count - 1, slashIndex + 1); PaintSlash(); e.Handled = true; return; }
+                if (e.Key == Key.Up) { slashIndex = Math.Max(0, slashIndex - 1); PaintSlash(); e.Handled = true; return; }
+                if (e.Key == Key.Enter || e.Key == Key.Tab) { e.Handled = true; CommitSlash(); return; }
+                if (e.Key == Key.Escape) { e.Handled = true; CloseSlash(); return; }
+            }
+            if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                var para = box.CaretPosition?.Paragraph;
+                if (para != null) pendingEnter = NoteBlocks.OnEnter(KindOf(para), ParagraphText(para));
+            }
         };
         box.PreviewDragOver += (_, e) => { if (CanDrop(e.Data)) { e.Effects = DragDropEffects.Copy; e.Handled = true; } };
         box.Drop += (_, e) => { if (AcceptDrop(e.Data)) e.Handled = true; };
@@ -846,7 +876,7 @@ public partial class StickyNoteWindow : Window
         TitleBox.FontSize = size;
         TitleHint.Foreground = body;
         TitleHint.FontSize = size;
-        foreach (var button in new[] { NewBtn, FontBtn, ColorBtn, ListBtn, CloseBtn }) button.Foreground = body;
+        foreach (var button in new[] { NewBtn, FontBtn, ColorBtn, ListBtn, CloseBtn, MoreBtn }) button.Foreground = body;
         if (editor != null)
         {
             editor.Foreground = body;
@@ -1194,6 +1224,378 @@ public partial class StickyNoteWindow : Window
         textTimer.Stop();
         textTimer.Start();
     }
+
+    bool blockLock;
+    EnterPlan? pendingEnter;
+    Popup? slashPop;
+    int slashIndex;
+    string slashQuery = "";
+    List<NoteCommand> slashHits = new();
+    Paragraph? slashPara;
+    public bool SlashOpen { get; private set; }
+
+    public string Feed(string text)
+    {
+        var ed = EnsureEditor();
+        blockLock = true;
+        try
+        {
+            ed.Document.Blocks.Clear();
+            var para = new Paragraph(new Run(text ?? ""));
+            ed.Document.Blocks.Add(para);
+            ed.CaretPosition = para.ContentEnd;
+        }
+        finally { blockLock = false; }
+        SyncBlock(ed.CaretPosition?.Paragraph);
+        return BlockNow();
+    }
+
+    public string BlockNow()
+    {
+        var para = FirstParagraph();
+        return para == null ? "" : Describe(para);
+    }
+
+    public bool CommitSlash()
+    {
+        if (!SlashOpen || slashHits.Count == 0 || AppEnv.ReadOnly) return false;
+        var command = slashHits[Math.Clamp(slashIndex, 0, slashHits.Count - 1)];
+        var para = slashPara ?? editor?.CaretPosition?.Paragraph;
+        CloseSlash();
+        if (para == null) return false;
+        blockLock = true;
+        try
+        {
+            string seed = command.Kind switch
+            {
+                NoteBlockKind.Todo => "☐ ",
+                NoteBlockKind.Quote => "│ ",
+                NoteBlockKind.Divider => "———",
+                _ => ""
+            };
+            SetParagraphText(para, seed);
+            Stamp(para, command.Kind, exit: false);
+        }
+        finally { blockLock = false; }
+        TextDirty = true;
+        return true;
+    }
+
+    /// <summary>Empty when the title and the tools both sit in the caption and inside <paramref name="width"/>.</summary>
+    public string CaptionFitReport(double width)
+    {
+        int metaW = Meta.W;
+        double saved = Width;
+        Width = width;
+        UpdateLayout();
+        FitCaption();
+        UpdateLayout();
+        double titleW = TitleBox.ActualWidth;
+        double barRight = Bar.TranslatePoint(new Point(Math.Max(0, Bar.ActualWidth), 0), this).X;
+        double titleRight = TitleBox.TranslatePoint(new Point(Math.Max(0, TitleBox.ActualWidth), 0), this).X;
+        double barLeft = Bar.TranslatePoint(new Point(0, 0), this).X;
+        double titleTop = TitleBox.TranslatePoint(new Point(0, 0), this).Y;
+        double titleBottom = TitleBox.TranslatePoint(new Point(0, TitleBox.ActualHeight), this).Y;
+        double barTop = Bar.TranslatePoint(new Point(0, 0), this).Y;
+        double barBottom = Bar.TranslatePoint(new Point(0, Bar.ActualHeight), this).Y;
+        bool close = CloseBtn.Visibility == Visibility.Visible && CloseBtn.ActualWidth >= 16;
+        bool room = titleW >= 32;
+        bool inside = barRight <= ActualWidth + 1.5 && titleRight <= ActualWidth + 1.5;
+        bool beside = titleRight <= barLeft + 2;
+        bool band = titleTop >= barTop - 10 && titleBottom <= barBottom + 10;
+        Width = saved;
+        Meta.W = metaW;
+        UpdateLayout();
+        if (room && inside && beside && close && band) return "";
+        return "w=" + ActualWidth.ToString("0") + " title=" + titleW.ToString("0") + " barR=" + barRight.ToString("0") + " titleR=" + titleRight.ToString("0") + " barL=" + barLeft.ToString("0");
+    }
+
+    void FitCaption()
+    {
+        var tools = new[] { NewBtn, FontBtn, ColorBtn, ListBtn, PinBtn, CloseBtn };
+        foreach (var button in tools)
+        {
+            button.Visibility = Visibility.Visible;
+            button.Width = 30;
+            button.Height = 30;
+        }
+        MoreBtn.Visibility = Visibility.Collapsed;
+        MoreBtn.Width = 30;
+        MoreBtn.Height = 30;
+        if (FormatTools != null) FormatTools.MaxWidth = Math.Max(80, ActualWidth - 20);
+        double inner = Math.Max(0, ActualWidth - 20);
+        if (inner < 1) return;
+        const double titleMin = 36;
+        double Used()
+        {
+            double w = 0;
+            foreach (var button in tools)
+                if (button.Visibility == Visibility.Visible) w += button.Width;
+            if (MoreBtn.Visibility == Visibility.Visible) w += MoreBtn.Width;
+            return w;
+        }
+        if (Used() + titleMin <= inner) return;
+        foreach (var button in tools) { button.Width = 22; button.Height = 22; }
+        MoreBtn.Width = 22;
+        MoreBtn.Height = 22;
+        if (Used() + titleMin <= inner) return;
+        foreach (var button in new[] { NewBtn, FontBtn, ColorBtn, ListBtn, PinBtn })
+        {
+            button.Visibility = Visibility.Collapsed;
+            MoreBtn.Visibility = Visibility.Visible;
+            if (Used() + titleMin <= inner) return;
+        }
+    }
+
+    void ShowHiddenTools()
+    {
+        var menu = new ContextMenu { PlacementTarget = MoreBtn, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        void Add(Button button, string label, Action act)
+        {
+            if (button.Visibility == Visibility.Visible) return;
+            var item = new MenuItem { Header = label };
+            item.Click += (_, _) => act();
+            menu.Items.Add(item);
+        }
+        Add(NewBtn, "새 메모", () => NoteManager.NewNote());
+        Add(FontBtn, "서식", ToggleFormatBar);
+        Add(ColorBtn, "색", ShowPalette);
+        Add(ListBtn, "메모 목록", ShowList);
+        Add(PinBtn, "항상 위", () => SetTopMost(!Meta.TopMost));
+        if (menu.Items.Count == 0) return;
+        menu.IsOpen = true;
+    }
+
+    void SyncBlock(Paragraph? para)
+    {
+        if (para == null || blockLock || loading || AppEnv.ReadOnly) return;
+        if (ParagraphHasImage(para)) { CloseSlash(); return; }
+        string text = ParagraphText(para);
+        if (NoteBlocks.TryShortcut(text, out var shortcut))
+        {
+            blockLock = true;
+            try
+            {
+                string body = shortcut.Kind switch
+                {
+                    NoteBlockKind.Todo => "☐ " + shortcut.Rest,
+                    NoteBlockKind.Quote => "│ " + shortcut.Rest,
+                    NoteBlockKind.Divider => "———",
+                    _ => shortcut.Rest
+                };
+                SetParagraphText(para, body);
+                Stamp(para, shortcut.Kind, exit: false);
+            }
+            finally { blockLock = false; }
+            CloseSlash();
+            return;
+        }
+        if (NoteBlocks.TryInline(text, out var inline))
+        {
+            blockLock = true;
+            try { PaintInline(para, text, inline); }
+            finally { blockLock = false; }
+        }
+        if (NoteBlocks.TrySlash(text, out string query)) OpenSlash(para, query);
+        else CloseSlash();
+    }
+
+    void Stamp(Paragraph para, NoteBlockKind kind, bool exit)
+    {
+        if (exit) kind = NoteBlockKind.Text;
+        var ui = (FontFamily)FindResource("UiFont");
+        var live = para;
+        if (kind is NoteBlockKind.Text or NoteBlockKind.H1 or NoteBlockKind.H2 or NoteBlockKind.H3 or NoteBlockKind.Todo or NoteBlockKind.Quote or NoteBlockKind.Divider or NoteBlockKind.Code)
+            live = LeaveList(para);
+        switch (kind)
+        {
+            case NoteBlockKind.H1: StyleHeading(live, 24, ui); break;
+            case NoteBlockKind.H2: StyleHeading(live, 20, ui); break;
+            case NoteBlockKind.H3: StyleHeading(live, 16, ui); break;
+            case NoteBlockKind.Bullet: live = EnsureList(live, numbered: false); break;
+            case NoteBlockKind.Number: live = EnsureList(live, numbered: true); break;
+            case NoteBlockKind.Code:
+                live.ClearValue(TextElement.FontSizeProperty);
+                live.ClearValue(TextElement.FontWeightProperty);
+                live.FontFamily = new FontFamily("Consolas");
+                break;
+            default:
+                live.ClearValue(TextElement.FontSizeProperty);
+                live.ClearValue(TextElement.FontWeightProperty);
+                live.FontFamily = ui;
+                if (exit) SetParagraphText(live, "");
+                break;
+        }
+        if (editor != null) editor.CaretPosition = live.ContentEnd;
+    }
+
+    static void StyleHeading(Paragraph para, double pt, FontFamily family)
+    {
+        para.FontFamily = family;
+        para.FontWeight = FontWeights.Bold;
+        para.FontSize = PointsToDip(pt);
+    }
+
+    Paragraph LeaveList(Paragraph para)
+    {
+        if (para.Parent is not ListItem item || item.Parent is not List list) return para;
+        var fresh = new Paragraph();
+        while (para.Inlines.FirstInline != null) fresh.Inlines.Add(para.Inlines.FirstInline);
+        CopyBlockLook(para, fresh);
+        if (list.Parent is not FlowDocument doc) return fresh;
+        list.ListItems.Remove(item);
+        if (list.ListItems.Count == 0)
+        {
+            doc.Blocks.InsertAfter(list, fresh);
+            doc.Blocks.Remove(list);
+        }
+        else doc.Blocks.InsertAfter(list, fresh);
+        return fresh;
+    }
+
+    Paragraph EnsureList(Paragraph para, bool numbered)
+    {
+        if (para.Parent is ListItem item && item.Parent is List existing)
+        {
+            existing.MarkerStyle = numbered ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc;
+            return para;
+        }
+        if (para.Parent is not FlowDocument doc) return para;
+        var list = new List { MarkerStyle = numbered ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc, Margin = new Thickness(0), Padding = new Thickness(12, 0, 0, 0) };
+        var fresh = new Paragraph();
+        while (para.Inlines.FirstInline != null) fresh.Inlines.Add(para.Inlines.FirstInline);
+        list.ListItems.Add(new ListItem(fresh));
+        doc.Blocks.InsertAfter(para, list);
+        doc.Blocks.Remove(para);
+        return fresh;
+    }
+
+    static void CopyBlockLook(Paragraph from, Paragraph to)
+    {
+        if (from.ReadLocalValue(TextElement.FontSizeProperty) != DependencyProperty.UnsetValue) to.FontSize = from.FontSize;
+        if (from.ReadLocalValue(TextElement.FontWeightProperty) != DependencyProperty.UnsetValue) to.FontWeight = from.FontWeight;
+        if (from.ReadLocalValue(TextElement.FontFamilyProperty) != DependencyProperty.UnsetValue) to.FontFamily = from.FontFamily;
+    }
+
+    void SetParagraphText(Paragraph para, string text)
+    {
+        para.Inlines.Clear();
+        para.Inlines.Add(new Run(text ?? ""));
+    }
+
+    void PaintInline(Paragraph para, string text, NoteInline inline)
+    {
+        string before = text[..inline.Start];
+        string after = text[(inline.Start + inline.Length)..];
+        para.Inlines.Clear();
+        if (before.Length > 0) para.Inlines.Add(new Run(before));
+        var run = new Run(inline.Text);
+        switch (inline.Style)
+        {
+            case "bold": run.FontWeight = FontWeights.Bold; break;
+            case "italic": run.FontStyle = FontStyles.Italic; break;
+            case "strike": run.TextDecorations = TextDecorations.Strikethrough; break;
+            case "code": run.FontFamily = new FontFamily("Consolas"); break;
+        }
+        para.Inlines.Add(run);
+        if (after.Length > 0) para.Inlines.Add(new Run(after));
+        if (editor != null) editor.CaretPosition = run.ContentEnd;
+    }
+
+    void OpenSlash(Paragraph para, string query)
+    {
+        var hits = NoteBlocks.Match(query);
+        if (hits.Count == 0) { CloseSlash(); return; }
+        if (!string.Equals(query, slashQuery, StringComparison.Ordinal)) slashIndex = 0;
+        slashQuery = query;
+        slashHits = hits;
+        slashPara = para;
+        SlashOpen = true;
+        slashPop ??= new Popup
+        {
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            PlacementTarget = EditorHost,
+            StaysOpen = true,
+            AllowsTransparency = true,
+            IsHitTestVisible = false
+        };
+        PaintSlash();
+        slashPop.IsOpen = true;
+    }
+
+    void PaintSlash()
+    {
+        if (slashPop == null) return;
+        var stack = new StackPanel();
+        for (int i = 0; i < slashHits.Count; i++)
+        {
+            var command = slashHits[i];
+            bool on = i == slashIndex;
+            stack.Children.Add(new Border
+            {
+                Background = on ? new SolidColorBrush(Color.FromArgb(0x33, 0x8F, 0xB4, 0xFF)) : Brushes.Transparent,
+                Padding = new Thickness(10, 6, 10, 6),
+                Child = new TextBlock { Text = command.Title + "   " + command.Hint, Foreground = Brushes.White, FontSize = 13 }
+            });
+        }
+        slashPop.Child = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x1D, 0x26)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(4),
+            Child = stack
+        };
+    }
+
+    void CloseSlash()
+    {
+        SlashOpen = false;
+        slashHits.Clear();
+        slashPara = null;
+        slashQuery = "";
+        if (slashPop != null) slashPop.IsOpen = false;
+    }
+
+    Paragraph? FirstParagraph()
+    {
+        if (editor == null) return null;
+        foreach (var block in editor.Document.Blocks)
+        {
+            if (block is Paragraph para) return para;
+            if (block is List list)
+                foreach (var item in list.ListItems)
+                    foreach (var inner in item.Blocks)
+                        if (inner is Paragraph ip) return ip;
+        }
+        return null;
+    }
+
+    static string ParagraphText(Paragraph para)
+        => new TextRange(para.ContentStart, para.ContentEnd).Text.Replace("\r", "").Replace("\n", "");
+
+    static bool ParagraphHasImage(Paragraph para)
+        => para.Inlines.Any(inline => inline is InlineUIContainer { Child: Image });
+
+    NoteBlockKind KindOf(Paragraph para)
+    {
+        string text = ParagraphText(para);
+        bool list = para.Parent is ListItem;
+        bool numbered = list && para.Parent is ListItem item && item.Parent is List host && host.MarkerStyle == TextMarkerStyle.Decimal;
+        double font = para.FontSize;
+        double pt = double.IsNaN(font) ? ConfigStore.Notes.FontSize : font * 72.0 / 96.0;
+        string family = para.FontFamily?.Source ?? "";
+        return NoteBlocks.Classify(text, list, numbered, pt, ConfigStore.Notes.FontSize, family.Contains("Consolas", StringComparison.OrdinalIgnoreCase));
+    }
+
+    string Describe(Paragraph para)
+    {
+        string style = para.Inlines.FirstInline is Run run && run.ReadLocalValue(TextElement.FontWeightProperty) is FontWeight weight && weight == FontWeights.Bold ? "|bold" : "";
+        string menu = SlashOpen ? "|" + string.Join(",", slashHits.Select(hit => hit.Title)) : "";
+        return KindOf(para) + "|" + ParagraphText(para) + style + menu;
+    }
+
     public void ShowPalette() { BuildSwatches(); CustomColor.Load(Meta.Color); Palette.IsOpen = true; }
     public void ClosePalette() { Palette.IsOpen = false; CustomColor.ClosePicker(); }
     public void ApplyHeading(double pt)

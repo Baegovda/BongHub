@@ -577,6 +577,8 @@ public static class SmokeTest
             t.Check($"note title contrast [{key}] ≥ 7", c.ratio >= 7, $"{c.ratio:0.0}:1 ({c.fg} on {c.bg})");
         }
         note.SetColor("g:aurora");
+        string narrowNote = note.CaptionFitReport(StickyNoteWindow.NoteMinWidth);
+        t.Check("narrow note title and toolbar stay inside the caption", narrowNote.Length == 0, narrowNote);
         note.Editor.Document.Blocks.Clear();
         for (int line = 0; line < 40; line++)
             note.Editor.Document.Blocks.Add(new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run("줄 " + line + " 스크롤 유지")) { FontSize = 28 });
