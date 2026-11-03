@@ -708,14 +708,26 @@ public partial class MainWindow
             string shownName = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
             string chipText = shownName.Length > 0 ? shownName : "창";
             bool countOnly = false;
-            if (chip.W < 2 || chip.H < 2 || !contentInset.Show) continue;
-            if (chipSpots.TryGetValue(home.Number, out var spots)) spots.Add(chip);
+            bool parked = false;
+            if (chip.W < 2 || chip.H < 2) continue;
+            if (!contentInset.Show)
+            {
+                // The real rectangle sits under the identify number. Keep a compact chip beside it so the
+                // edit buttons stay on the canvas, without covering the number or the resolution line.
+                var parkedBox = ProfileChrome.ParkedChip(homeView.X, homeView.Y, homeView.W, homeView.H);
+                if (parkedBox.W < 2 || parkedBox.H < 2) continue;
+                chip = parkedBox;
+                contentInset = new ProfileChrome.ChipInk(true, 2, 1, 13);
+                parked = true;
+            }
+            // A parked chip shares the number's row and does not cover the info line, so it must not dim that line.
+            if (!parked && chipSpots.TryGetValue(home.Number, out var spots)) spots.Add(chip);
             bool selectedTile = app.Id == selectedAppId;
             var tile = new Border
             {
                 Width = chip.W,
                 Height = chip.H,
-                CornerRadius = new CornerRadius(10),
+                CornerRadius = new CornerRadius(parked ? 8 : 10),
                 Background = new SolidColorBrush(Color.FromArgb(0xE6, 0x1C, 0x1C, 0x1E)),
                 BorderBrush = selectedTile ? (Brush)FindResource("Accent") : new SolidColorBrush(Color.FromArgb(0x66, 255, 255, 255)),
                 BorderThickness = new Thickness(selectedTile ? 2 : 1),
@@ -752,9 +764,12 @@ public partial class MainWindow
                 Margin = new Thickness(4, 0, 2, 0),
                 IsHitTestVisible = false
             };
-            Grid.SetColumn(nameBlock, 1);
-            head.Children.Add(nameBlock);
-            var body = new Grid { Margin = new Thickness(6 + contentInset.Left, 3 + contentInset.Top, 4, 2) };
+            if (!parked)
+            {
+                Grid.SetColumn(nameBlock, 1);
+                head.Children.Add(nameBlock);
+            }
+            var body = new Grid { Margin = parked ? new Thickness(3, 1, 2, 1) : new Thickness(6 + contentInset.Left, 3 + contentInset.Top, 4, 2) };
             var lines = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
             lines.Children.Add(head);
             bool roomForSize = chip.H >= 48 && chip.W >= 72;
@@ -773,10 +788,11 @@ public partial class MainWindow
                 lines.Children.Add(size);
             }
             body.Children.Add(lines);
-            bool showTools = selectedTile || fallbackTools == null;
+            bool showTools = parked || selectedTile || fallbackTools == null;
             var chipTools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = showTools ? Visibility.Visible : Visibility.Hidden, IsHitTestVisible = showTools, Tag = "chip-tools" };
-            chipTools.Children.Add(VectorButton("pencil", "수치로 고치기", () => { selectedAppId = app.Id; selectedMonitorNumber = app.Monitor; Render("presets", false); }, "keep:edit:" + app.Id, 20));
-            chipTools.Children.Add(VectorButton("trash", "창 빼기", () => RemoveApp(profile, app), "keep:trash:" + app.Id, 20));
+            double toolBox = parked ? 16 : 20;
+            chipTools.Children.Add(VectorButton("pencil", "수치로 고치기", () => { selectedAppId = app.Id; selectedMonitorNumber = app.Monitor; Render("presets", false); }, "keep:edit:" + app.Id, toolBox));
+            chipTools.Children.Add(VectorButton("trash", "창 빼기", () => RemoveApp(profile, app), "keep:trash:" + app.Id, toolBox));
             body.Children.Add(chipTools);
             tile.ClipToBounds = true;
             tile.Child = body;

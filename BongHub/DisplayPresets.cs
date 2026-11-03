@@ -2221,6 +2221,29 @@ public static class ProfileChrome
         return new ChipInk(false, 0, 0, 0);
     }
 
+    /// <summary>
+    /// A window whose real rectangle is swallowed by the identify number. The compact chip sits in the
+    /// number's row, to the right of <see cref="NumberPill"/>, and stops above the info line (frame margin 28)
+    /// so the number and the resolution text stay readable. Empty when the tile has no room for the edit buttons.
+    /// </summary>
+    public static DipRect ParkedChip(double tileX, double tileY, double tileW, double tileH)
+    {
+        var pill = NumberPill(tileX, tileY);
+        const double gap = 4;
+        const double edge = 4;
+        double x = pill.Right + gap;
+        double roomW = tileX + tileW - edge - x;
+        if (roomW < 56 || tileH < 36) return new DipRect(x, pill.Y, 0, 0);
+        double y = pill.Y + 2;
+        double bottomLimit = Math.Min(tileY + tileH - edge, tileY + 26);
+        double h = Math.Min(20, bottomLimit - y);
+        if (h < 18) return new DipRect(x, y, 0, 0);
+        double w = Math.Min(72, roomW);
+        var chip = new DipRect(x, y, w, h);
+        if (chip.Hits(pill)) return new DipRect(x, y, 0, 0);
+        return chip;
+    }
+
     /// <summary>Icon dot at the icon's real position on the tile.</summary>
     public static DipRect IconDot(int iconX, int iconY, int monX, int monY, int monW, int monH, double tileX, double tileY, double tileW, double tileH)
     {
