@@ -440,16 +440,16 @@ var kakaoCmds = KakaoPlan.Commands(talk, true);
 Check("kakao plan hides only the kakao ad", kakaoCmds.Contains("hide 2") && !kakaoCmds.Any(c => c.Contains(" 9")) && kakaoCmds.Contains("place 3 0 30 400 669") && kakaoCmds.Contains("place 6 8 129 360 414"));
 Check("ad title matches the helper list", KakaoArgs.IsAdTitle("하단 광고") && KakaoArgs.IsAdTitle("BannerAd") && KakaoArgs.IsAdTitle("MOMENT") && !KakaoArgs.IsAdTitle("친구") && !KakaoArgs.IsKakaoProcess("notepad.exe"));
 var host = new FakeKakaoHost();
-KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = true, Dark = false });
+KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = true });
 Check("start compact -> 1 helper", host.Running == 1 && host.LastArgs == "" && KakaoArgs.Format(new KakaoSettings { AdBlock = true, Compact = true }) == "");
-KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = false, Dark = true });
-Check("restart /nocompact /dark stays one helper", host.Running == 1 && host.LastArgs == "/nocompact /dark");
+KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = false });
+Check("restart /nocompact stays one helper", host.Running == 1 && host.LastArgs == "/nocompact" && !host.LastArgs.Contains("dark"));
 KakaoSync.Apply(host, new KakaoSettings { AdBlock = false });
 Check("restore stops the helper", host.Running == 0 && host.LastArgs == null && host.Log[host.Log.Count - 1] == "restore");
-KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = true, Dark = false });
+KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = true });
 Check("sync on starts the helper", host.Running == 1 && host.LastArgs == "");
 int starts = host.Log.Count(x => x.StartsWith("start ", StringComparison.Ordinal));
-KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = true, Dark = false });
+KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = true });
 Check("sync again does not restart", host.Running == 1 && host.Log.Count(x => x.StartsWith("start ", StringComparison.Ordinal)) == starts);
 KakaoSync.Apply(host, new KakaoSettings { AdBlock = false });
 Check("final restore stops the helper", host.Running == 0);
@@ -459,7 +459,7 @@ Check("kakao gate stays shut", kakaoThrew && !KakaoGate.RealAllowed && KakaoSyst
 if (repo != null)
 {
     string kakaoLogic = File.ReadAllText(Path.Combine(repo, "BongHub", "KakaoLogic.cs"));
-    Check("kakao logic file does not call windows", !kakaoLogic.Contains("DllImport") && !kakaoLogic.Contains("Process.Start") && !kakaoLogic.Contains("GetProcessesByName") && !kakaoLogic.Contains("FindWindow") && !kakaoLogic.Contains("EnumWindows") && !kakaoLogic.Contains("ShowWindow") && !kakaoLogic.Contains("SetWindowPos"));
+    Check("kakao logic file does not call windows", !kakaoLogic.Contains("DllImport") && !kakaoLogic.Contains("Process.Start") && !kakaoLogic.Contains("GetProcessesByName") && !kakaoLogic.Contains("FindWindow") && !kakaoLogic.Contains("EnumWindows") && !kakaoLogic.Contains("ShowWindow") && !kakaoLogic.Contains("SetWindowPos") && !kakaoLogic.Contains("/dark"));
     string helperPath = Path.Combine(repo, "BongHub", "res", "BongAd.exe");
     byte[] helper = File.ReadAllBytes(helperPath);
     string hash;
@@ -893,15 +893,21 @@ var underChip = ProfileChrome.WindowChip(0, 0, 1920, 1080, 3840, 2160, 0, 0, 180
 var wideBoxes = ownerDesk.Select(s => new ProfileBox(s.X, s.Y, s.W, s.H)).ToList();
 var deskScene = ProfileSnap.Fit(wideBoxes, stage.Width, stage.FitHeight, 16);
 int painted = ProfileChrome.PaintedHeight(deskScene.Bounds.H, deskScene.Scale, 16);
+var chipInset = ProfileChrome.ChipContent(underChip, 0, 0, 180, headerBand);
+var below = ProfileChrome.WindowChip(0, 1400, 800, 600, 3840, 2160, 0, 80, 180, 110);
+var belowInset = ProfileChrome.ChipContent(below, 0, 80, 180, 36);
 Check("small tiles drop detail and chips keep the real ratio", stage.Width == 700 && stage.FitHeight == 252 && narrowDetail.Length == 0 && midDetail == "2400×1350" && wideDetail.Contains("3840") && wideDetail.Contains("주") && Math.Abs(chipBox.W - 200) < 1.5 && Math.Abs(chipBox.H - 100) < 1.5 && chipBox.Y < 22 && iconDot.W == 6 && headerBand >= 60 && Math.Abs(underChip.W - 90) < 1.5 && underChip.Y < 2 && painted < stage.FitHeight && painted > 70 && ProfileGlyph.Kinds.Length == 11 && ProfileGlyph.Known("lock") && ProfileGlyph.Known("trash"));
+Check("chip icon clears the identify band", (chipInset.Top >= headerBand - 1 || chipInset.Left >= 24) && belowInset.Left == 0 && belowInset.Top == 0, $"inset {chipInset.Left:0},{chipInset.Top:0} below {below.Y:0} {belowInset.Left:0},{belowInset.Top:0}");
 var loose = ProfileSnap.SnapWindow(new ProfileBox(6, 40, 100, 80), new ProfileBox(0, 0, 800, 600), Array.Empty<ProfileBox>(), 1);
 var corner = ProfileSnap.SnapMonitorWithGuide(new ProfileBox(1890, 1050, 400, 300), new[] { new ProfileBox(0, 0, 1920, 1080), new ProfileBox(1920, 0, 1920, 1080), new ProfileBox(0, 1080, 1920, 800) }, 40);
 Check("window edge magnet is tiny and corners snap on both axes", loose.X == 6 && corner.Box.X == 1920 && corner.Box.Y == 1080 && corner.Guide.Corner && !ProfileSnap.ArmZone("left", "left", true) && ProfileSnap.ArmZone("", "left", true), $"loose={loose.X} corner={corner.Box.X},{corner.Box.Y} guide={corner.Guide.X1},{corner.Guide.Y1}-{corner.Guide.X2},{corner.Guide.Y2}/{corner.Guide.X3},{corner.Guide.Y3}-{corner.Guide.X4},{corner.Guide.Y4}");
 string deskStory = ProfileSwitch.DisplayStory();
 string sessionStory = ProfileSwitch.SessionStory();
+string placeStory = PlacementSpace.Story();
 string noteStory = NoteLayout.TopologyStory();
 Check("display apply is one commit and keeps the owner desk", deskStory.Length == 0, deskStory);
 Check("leaving a profile restores that session", sessionStory.Length == 0, sessionStory);
+Check("restore uses workspace coordinates and stays on the monitor", placeStory.Length == 0, placeStory);
 Check("notes ignore a transient work area", noteStory.Length == 0, noteStory);
 string profileRoot = Path.Combine(Path.GetTempPath(), "bonghub_profile_" + Environment.ProcessId);
 try

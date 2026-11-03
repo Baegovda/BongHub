@@ -233,6 +233,16 @@ public static class NoteTest
         host.GrowFont(100);
         var grown = host.Editor.Selection.GetPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty);
         t.Check("grow clamps at 48pt", grown is double g && Math.Abs(g - StickyNoteWindow.PointsToDip(48)) < 0.3);
+        ConfigStore.Notes.FontSize = 13;
+        host.ApplyFontSize();
+        host.Editor.Selection.Select(host.Editor.Document.ContentStart, host.Editor.Document.ContentEnd);
+        host.GrowFont(4);
+        var bumped = host.Editor.Selection.GetPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty);
+        host.ResetFontSize();
+        var reset = host.Editor.Selection.GetPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty);
+        t.Check("reset font size uses the note default", bumped is double up && up > StickyNoteWindow.PointsToDip(13) + 1 && reset is double back && Math.Abs(back - StickyNoteWindow.PointsToDip(13)) < 0.4);
+        ConfigStore.Notes.FontSize = 11;
+        host.ApplyFontSize();
 
         int writes = host.MetaWrites;
         string saved = host.Meta.Color;
@@ -491,6 +501,12 @@ public static class NoteTest
             var titleIdx = titleOrder.Select(k => titleRaw.IndexOf("\"" + k + "\":", StringComparison.Ordinal)).ToArray();
             t.Check("title persists and old meta ignores it", host.TitleHint.Text == "제목" && titleBack != null && titleBack.Title == "회의록" && titleRaw.Contains("\"Title\":\"회의록\"") && titleRaw.IndexOf("\"Modified\":", StringComparison.Ordinal) < titleRaw.IndexOf("\"Title\":", StringComparison.Ordinal) && titleIdx.All(i => i >= 0) && titleIdx.Zip(titleIdx.Skip(1)).All(p => p.First < p.Second) && titleOld != null && titleOld.Title.Length == 0);
             host.Editor.Document.Blocks.Clear();
+            host.Editor.Document.Blocks.Add(new Paragraph(new Run("본문시작")));
+            host.Editor.CaretPosition = host.Editor.Document.ContentEnd;
+            int titleCaret = host.ReadCaret();
+            bool titleEntered = host.MoveToBody();
+            t.Check("enter in the title moves to the body start", titleEntered && titleCaret > 0 && host.ReadCaret() == 0);
+            host.Editor.Document.Blocks.Clear();
             for (int line = 0; line < 40; line++)
                 host.Editor.Document.Blocks.Add(new Paragraph(new Run("줄 " + line + " 스크롤 유지")) { FontSize = 28 });
             host.UpdateLayout();
@@ -528,6 +544,7 @@ public static class NoteTest
         {
             t.Check("toolbar stays visible", false, "no note");
             t.Check("title persists and old meta ignores it", false, "no note");
+            t.Check("enter in the title moves to the body start", false, "no note");
             t.Check("scroll and caret survive focus loss", false, "no note");
             t.Check("selection copy keeps text and image", false, "no note");
         }
@@ -596,6 +613,12 @@ public static class NoteTest
             inkOk = false;
             inkBad = "mist";
         }
+        NoteColors.Raw("g:blocks", out var blocksA, out _);
+        NoteColors.Raw("g:lemon", out var lemonRaw, out _);
+        NoteColors.Raw("yellow", out var yellowRaw, out _);
+        static int Chroma(System.Windows.Media.Color c) => Math.Max(c.R, Math.Max(c.G, c.B)) - Math.Min(c.R, Math.Min(c.G, c.B));
+        static int Mean(System.Windows.Media.Color c) => (c.R + c.G + c.B) / 3;
+        t.Check("preset colors are softer", inkOk && Chroma(blocksA) < 150 && Mean(blocksA) < 200 && Chroma(lemonRaw) < 120 && Mean(lemonRaw) < 200 && Chroma(yellowRaw) < 120 && Mean(yellowRaw) < 210);
         t.Check("note ink clears 7 on light and dark colors", inkOk, inkBad);
         var legacy = NoteStore.Create("g:lemon", 120, 120, 280, 240);
         legacy.Color = "g:lemon";

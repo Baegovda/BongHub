@@ -426,6 +426,7 @@ public partial class MainWindow : Window
             }
         }
         var leaving = profile == null ? null : Profiles.FirstOrDefault(p => p.Id == lastAppliedId && p.Id != profile.Id);
+        var beforeMonitors = SessionLayout.MonitorsOf(leaving?.Monitors);
         if (leaving != null && leaving.RememberWindows && WindowGate.RealAllowed)
         {
             try
@@ -448,8 +449,8 @@ public partial class MainWindow : Window
             {
                 ApplyPresetNow(plan, profile);
                 bool session = profile != null && profile.RememberWindows && profile.Session.Count > 0;
-                if (session) RestoreProfileWindows(profile!);
-                PlaceProfile(profile, windows: !session);
+                if (session) RestoreProfileWindows(profile!, beforeMonitors);
+                PlaceProfile(profile, windows: !session, beforeMonitors);
                 ActivePreset = plan.Name;
                 if (profile != null) lastAppliedId = profile.Id;
                 DisplayAction = "applied " + plan.Name;
@@ -463,14 +464,15 @@ public partial class MainWindow : Window
         });
     }
 
-    void RestoreProfileWindows(MonitorProfile profile)
+    void RestoreProfileWindows(MonitorProfile profile, IReadOnlyList<PlacementSpace.Monitor> before)
     {
         if (!WindowGate.RealAllowed) return;
         Thread.Sleep(400);
         using var live = new LiveWindowSurface();
         SessionLayout.Restore(profile.Session, LiveWindowSurface.ReadProbes(), live, profile.Monitors);
         Thread.Sleep(250);
-        SessionLayout.Restore(profile.Session, LiveWindowSurface.ReadProbes(), live, profile.Monitors);
+        var placed = SessionLayout.Restore(profile.Session, LiveWindowSurface.ReadProbes(), live, profile.Monitors);
+        live.AnchorRestores(placed, before, SessionLayout.MonitorsOf(profile.Monitors));
     }
 
     bool holdUndo;
@@ -496,14 +498,16 @@ public partial class MainWindow : Window
         RequestApplyProfile(shot.Id);
     }
 
-    void PlaceProfile(MonitorProfile? profile, bool windows = true)
+    void PlaceProfile(MonitorProfile? profile, bool windows = true, IReadOnlyList<PlacementSpace.Monitor>? before = null)
     {
         if (profile == null) return;
         if (windows && WindowGate.RealAllowed)
         {
             using var live = new LiveWindowSurface();
             var open = live.List();
-            ProfileDoc.Place(profile, live);
+            var placed = new List<long>();
+            ProfileDoc.Place(profile, live, placed);
+            live.AnchorRestores(placed, before, SessionLayout.MonitorsOf(profile.Monitors));
             foreach (var path in ProfileDoc.MissingLaunches(profile, open))
             {
                 try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
@@ -1087,7 +1091,6 @@ public partial class MainWindow : Window
         var g = Group();
         KakaoSwitch(g, "AdBlock", "광고 숨김", "켜야 도우미가 시작해요.", ConfigStore.KakaoAdBlock, "FFCC00");
         KakaoSwitch(g, "Compact", "목록 간격 줄이기", "끄면 인자는 /nocompact 예요.", ConfigStore.KakaoCompact, "5AC8FA");
-        KakaoSwitch(g, "Dark", "다크 오버레이", "켜면 인자는 /dark 예요.", ConfigStore.KakaoDark, "8E8E93");
         KakaoSwitch(g, "AutoApply", "시작할 때 적용", "광고 숨김이 켜져 있을 때만 일반 실행에서 시작해요.", ConfigStore.KakaoAutoApply, "34C759");
     }
 

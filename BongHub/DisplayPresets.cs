@@ -1291,7 +1291,7 @@ public static class ProfileDoc
         return profile;
     }
 
-    public static int Place(MonitorProfile profile, IWindowSurface surface)
+    public static int Place(MonitorProfile profile, IWindowSurface surface, List<long>? placed = null)
     {
         var live = surface.List();
         int n = 0;
@@ -1311,6 +1311,7 @@ public static class ProfileDoc
                 surface.Place(hit.Id, box.X, box.Y, box.W, box.H);
             }
             if (app.TopMost && app.State != "min") surface.Pin(hit.Id);
+            placed?.Add(hit.Id);
             n++;
         }
         return n;
@@ -2161,7 +2162,7 @@ public static class ProfileChrome
         return new DipRect(tileX + 6, top, w, h);
     }
 
-    /// <summary>Window chip at the real rectangle's scale on the tile. The number may sit underneath.</summary>
+    /// <summary>Window chip at the real rectangle's scale on the tile. The frame may cover the number; <see cref="ChipContent"/> keeps the icon clear of it.</summary>
     public static DipRect WindowChip(int localX, int localY, int localW, int localH, int monW, int monH, double tileX, double tileY, double tileW, double tileH)
     {
         if (monW < 1) monW = 1;
@@ -2179,6 +2180,24 @@ public static class ProfileChrome
         h = bottom - y;
         if (w < 1 || h < 1) return new DipRect(x, y, 0, 0);
         return new DipRect(x, y, w, h);
+    }
+
+    /// <summary>
+    /// Extra left and top inset for the chip icon and title. The frame stays on <paramref name="chip"/>.
+    /// Content drops below <see cref="BadgeBand"/> when the chip is tall enough, otherwise it slides past the number pill.
+    /// </summary>
+    public static (double Left, double Top) ChipContent(DipRect chip, double tileX, double tileY, double tileW, double badgeH)
+    {
+        if (chip.W < 2 || chip.H < 2 || badgeH <= 0) return (0, 0);
+        double overlap = tileY + badgeH - chip.Y;
+        if (overlap <= 0.5) return (0, 0);
+        double room = chip.H - overlap;
+        if (room >= 16) return (0, overlap);
+        double pill = Math.Min(42, Math.Max(28, tileW * 0.22));
+        double shift = tileX + pill - chip.X;
+        if (shift <= 0.5) return (0, 0);
+        if (chip.W - shift < 16) return (0, Math.Min(overlap, Math.Max(0, chip.H - 14)));
+        return (shift, 0);
     }
 
     /// <summary>Icon dot at the icon's real position on the tile.</summary>

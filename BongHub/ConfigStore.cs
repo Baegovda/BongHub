@@ -28,6 +28,7 @@ public static class ConfigStore
     public static List<WorkspaceSnapshot> Workspaces { get; } = new();
     public static bool KakaoAdBlock { get; private set; }
     public static bool KakaoCompact { get; private set; } = true;
+    /// <summary>Read and written so a 3.4.x config keeps the key. The helper is never started with it.</summary>
     public static bool KakaoDark { get; private set; }
     public static bool KakaoAutoApply { get; private set; } = true;
     public static bool CloudEnabled { get; private set; }
@@ -215,7 +216,7 @@ public static class ConfigStore
         }
         catch (Exception e) { AppEnv.Log("config patch failed: " + e.Message); return false; }
     }
-    public static KakaoSettings Kakao() => new() { AdBlock = KakaoAdBlock, Compact = KakaoCompact, Dark = KakaoDark, AutoApply = KakaoAutoApply };
+    public static KakaoSettings Kakao() => new() { AdBlock = KakaoAdBlock, Compact = KakaoCompact, AutoApply = KakaoAutoApply };
     public static CloudSettings Cloud() => new() { Enabled = CloudEnabled, Repo = CloudRepo, Branch = CloudBranch, PullMinutes = CloudPullMinutes };
     public static bool SetCloudEnabled(bool enabled)
     {
