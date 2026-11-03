@@ -1289,7 +1289,7 @@ public partial class StickyNoteWindow : Window
         }
         m.Items.Add(new Separator());
         var del = new MenuItem { Header = "이 메모 삭제" }; del.Click += (_, _) => AskDelete(); m.Items.Add(del);
-        var all = new MenuItem { Header = "모든 메모 보기" }; all.Click += (_, _) => App.Instance.ShowSettings("notes"); m.Items.Add(all);
+        var all = new MenuItem { Header = "모든 메모 보기" }; all.Click += (_, _) => App.Instance.ShowSettings("notes", user: true); m.Items.Add(all);
         m.IsOpen = true;
     }
 

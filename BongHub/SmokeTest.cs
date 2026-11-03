@@ -66,7 +66,8 @@ public static class SmokeTest
         firstFrameWhite = TestKit.WhitePercent(frame); firstFrameMeanLum = TestKit.MeanLum(frame);
         double dom = TestKit.DominantLum(frame);
         t.Check("settings frame not white", firstFrameWhite < 1 && firstFrameMeanLum < 0.12 && dom < 0.05, $"pure-white {firstFrameWhite:0.00}%, mean luminance {firstFrameMeanLum:0.000}, background luminance {dom:0.000}");
-        t.Check("settings did not take focus", TestKit.NotForeground(w));
+        string? settingsFocus = await TestKit.WaitNotForeground(w);
+        t.Check("settings did not take focus", settingsFocus == null, settingsFocus ?? "");
         t.Check("theme font applied", w.FontFamily.Source.StartsWith("Segoe UI Variable"), w.FontFamily.Source);
         t.Check("theme foreground applied", w.Foreground is SolidColorBrush b && NoteColors.Lum(b.Color) > 0.8, (w.Foreground as SolidColorBrush)?.Color.ToString() ?? "?");
         TestKit.SavePng(w, DarkUnder, "settings_presets.png");

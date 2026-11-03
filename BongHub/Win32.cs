@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -35,7 +37,8 @@ internal static class Win32
     public static double SystemScale { get { try { return GetDpiForSystem() / 96.0; } catch { return 1; } } }
     public const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_NOOWNERZORDER = 0x200;
     public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_FRAMECHANGED = 0x20;
-    public const int WM_MOVE = 0x3, WM_SIZE = 0x5, WM_WINDOWPOSCHANGING = 0x0046, WM_GETMINMAXINFO = 0x0024, WM_EXITSIZEMOVE = 0x232, WM_ENTERSIZEMOVE = 0x231, WM_DISPLAYCHANGE = 0x007E, WM_MOUSEACTIVATE = 0x0021;
+    public const int WM_MOVE = 0x3, WM_SIZE = 0x5, WM_WINDOWPOSCHANGING = 0x0046, WM_GETMINMAXINFO = 0x0024, WM_EXITSIZEMOVE = 0x232, WM_ENTERSIZEMOVE = 0x231, WM_DISPLAYCHANGE = 0x007E, WM_MOUSEACTIVATE = 0x0021, WM_ACTIVATE = 0x0006;
+    public const int MA_NOACTIVATE = 3;
     public const int SIZE_MINIMIZED = 1, SIZE_MAXIMIZED = 2;
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
     [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
@@ -146,6 +149,102 @@ internal static class Win32
         try { return GetWindowLongPtrW(h, GWL_EXSTYLE).ToInt64(); }
         catch { return 0; }
     }
+
+    /// <summary>How many times the last passive show tried to hand focus back, and what the foreground was.</summary>
+    public static int PassiveTries { get; private set; }
+    public static string PassiveNote { get; private set; } = "";
+    public static IntPtr PassivePrevious { get; private set; }
+
+    public static void ResetPassive(IntPtr previous)
+    {
+        PassiveTries = 0;
+        PassiveNote = "";
+        PassivePrevious = previous;
+    }
+
+    public static void NotePassive(int n, long ms, bool hot)
+    {
+        PassiveTries = n;
+        string bit = ms + "ms:" + (hot ? "hot" : "idle");
+        PassiveNote = PassiveNote.Length == 0 ? bit : PassiveNote + " " + bit;
+    }
+
+    /// <summary>Class, title, and process of a window, for the smoke log when focus does not settle.</summary>
+    public static string Describe(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return "hwnd=0";
+        var title = new StringBuilder(240);
+        var cls = new StringBuilder(128);
+        GetWindowText(hwnd, title, title.Capacity);
+        GetClassName(hwnd, cls, cls.Capacity);
+        GetWindowThreadProcessId(hwnd, out uint pid);
+        string name;
+        try { name = Process.GetProcessById((int)pid).ProcessName; }
+        catch { name = "exited"; }
+        return "hwnd=" + hwnd + " class=" + cls + " title=\"" + title + "\" pid=" + pid + " process=" + name;
+    }
+
+    public static string FocusEvidence(Window w, long waitedMs)
+    {
+        var self = Handle(w);
+        var fg = GetForegroundWindow();
+        long ex = self == IntPtr.Zero ? 0 : ExStyle(self);
+        return "waited " + waitedMs + " ms, tries " + PassiveTries + " [" + PassiveNote + "] previous " + Describe(PassivePrevious)
+            + " self=" + self + " ex=0x" + ex.ToString("X") + " active=" + w.IsActive + " showActivated=" + w.ShowActivated
+            + " fg " + Describe(fg);
+    }
+
+    /// <summary>
+    /// A passive show (process start, <c>--off</c>, smoke) must not become the foreground window.
+    /// If the shell handed us the foreground anyway, give it back. Does not set <c>WS_EX_NOACTIVATE</c>,
+    /// so a later user open can still activate.
+    /// </summary>
+    public static void ReleaseIfStole(IntPtr self, IntPtr previous)
+    {
+        if (self == IntPtr.Zero || previous == IntPtr.Zero || previous == self) return;
+        if (GetForegroundWindow() != self) return;
+        uint prevThread = GetWindowThreadProcessId(previous, out _);
+        uint appThread = GetCurrentThreadId();
+        bool attached = prevThread != 0 && prevThread != appThread && AttachThreadInput(prevThread, appThread, true);
+        try { SetForegroundWindow(previous); }
+        finally { if (attached) AttachThreadInput(prevThread, appThread, false); }
+    }
+
+    /// <summary>
+    /// User opened settings (tray, second instance, menu). Another app may own the foreground,
+    /// so attach to its thread before <c>SetForegroundWindow</c>. Never call this from <c>--off</c> or smoke.
+    /// </summary>
+    public static void BringToForeground(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || AppEnv.Off) return;
+        AllowActivate(hwnd);
+        IntPtr fg = GetForegroundWindow();
+        uint foreThread = fg == IntPtr.Zero ? 0 : GetWindowThreadProcessId(fg, out _);
+        uint appThread = GetCurrentThreadId();
+        bool attached = false;
+        if (foreThread != 0 && foreThread != appThread)
+            attached = AttachThreadInput(foreThread, appThread, true);
+        try
+        {
+            AllowSetForegroundWindow(-1);
+            if (IsIconic(hwnd)) ShowWindow(hwnd, 9);
+            else ShowWindow(hwnd, 5);
+            SetForegroundWindow(hwnd);
+        }
+        finally
+        {
+            if (attached) AttachThreadInput(foreThread, appThread, false);
+        }
+    }
+
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder text, int count);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder text, int count);
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int processId);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
 
     /// <summary>3.4.9 clears WS_EX_NOACTIVATE right after show so the first drag is not deferred.</summary>
     public static void AllowActivate(IntPtr h)
