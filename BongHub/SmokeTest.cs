@@ -418,7 +418,8 @@ public static class SmokeTest
         var middle = ProfileSnap.PreviewAt(960, 540, new ProfileBox(0, 0, 1920, 1080));
         var cornerResize = ProfileSnap.Resize(new ProfileBox(100, 100, 400, 300), new ProfileBox(0, 0, 1920, 1080), "nw", -30, -20, 120);
         var seResize = ProfileSnap.Resize(new ProfileBox(100, 100, 400, 300), new ProfileBox(0, 0, 1920, 1080), "se", 15, 10, 120);
-        t.Check("window snap is a few pixels and edge zones are generous", nearWin.X == 208 && farWin.X == 190 && generous.Kind == "left" && generous.Box.W == 960 && middle.Kind.Length == 0 && cornerResize.X == 70 && cornerResize.Y == 80 && cornerResize.W == 430 && cornerResize.H == 320 && seResize.W == 415 && seResize.H == 310);
+        var docked = ProfileSnap.SnapWindow(new ProfileBox(1510, 770, 400, 300), new ProfileBox(0, 0, 1920, 1080), Array.Empty<ProfileBox>(), 1, 16);
+        t.Check("window snap is a few pixels and edge zones are generous", nearWin.X == 208 && farWin.X == 190 && generous.Kind.Length == 0 && middle.Kind.Length == 0 && docked.W == 400 && docked.H == 300 && docked.Right == 1920 && docked.Bottom == 1080 && cornerResize.X == 70 && cornerResize.Y == 80 && cornerResize.W == 430 && cornerResize.H == 320 && seResize.W == 415 && seResize.H == 310);
         bool chord = HotkeyChord.TryParse("Ctrl+Alt+1", out uint chordMods, out uint chordVk) && chordMods == (HotkeyChord.Ctrl | HotkeyChord.Alt) && chordVk == 0x31;
         var recorded = HotkeyEdit.Apply("", "ctrl+alt+1", null, "Ctrl+Alt+N");
         var cancelled = HotkeyEdit.Apply("Ctrl+Alt+1", "escape", null, null);
@@ -763,6 +764,14 @@ public static class SmokeTest
         bool grew = chipApp != null && w.ResizeChipLive(chipApp.Id, "e", 80, 0) && chipApp.W >= appW + 80;
         t.Check("live resize", grew, chipApp == null ? "no app" : chipApp.W + " from " + appW);
         t.Check("chip buttons exist and are Path-based", UiOverflow.Paths(w.ProfileStage) >= 2 && ProfileGlyph.Known("trash") && ProfileGlyph.Known("pencil") && ProfileGlyph.Known("lock"));
+        int identifyCalls = MonitorIdentify.NativeCalls;
+        w.RequestIdentify();
+        t.Check("identify stays off real monitors", w.IdentifyNote.Length > 0 && !w.IdentifyNote.StartsWith("live:") && MonitorIdentify.NativeCalls == identifyCalls && DisplaySystem.NativeCalls == displaysBefore);
+        ProfileOsd.Show("자리비움");
+        bool osdOff = false;
+        foreach (Window osd in Application.Current.Windows)
+            if ((osd.Tag as string) == "profile-osd" && osd.Left <= -20000 && !osd.ShowActivated) osdOff = true;
+        t.Check("profile osd stays off-screen", osdOff);
         int iconNatives = ExplorerIconSurface.NativeCalls;
         IconPreview.Source = () => new[] { new DeskIcon { Name = "휴지통", X = 12, Y = 24 }, new DeskIcon { Name = "문서", X = 40, Y = 80 } };
         w.RequestCaptureProfileIcons();

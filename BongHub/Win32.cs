@@ -20,6 +20,14 @@ internal static class Win32
     [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
     public static POINT Cursor() { GetCursorPos(out var p); return p; }
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [StructLayout(LayoutKind.Sequential)] struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
+    [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+    public static long LastInputAgeMs()
+    {
+        var info = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() };
+        if (!GetLastInputInfo(ref info)) return 0;
+        return unchecked((uint)Environment.TickCount - info.dwTime);
+    }
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] public static extern bool EnableWindow(IntPtr hWnd, bool enable);
     [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr hWnd);
@@ -247,6 +255,12 @@ internal static class Win32
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
 
     /// <summary>3.4.9 clears WS_EX_NOACTIVATE right after show so the first drag is not deferred.</summary>
+    public static void SetExStyle(IntPtr h, long ex)
+    {
+        if (h == IntPtr.Zero) return;
+        try { SetWindowLongPtrW(h, GWL_EXSTYLE, new IntPtr(ex)); } catch { }
+    }
+
     public static void AllowActivate(IntPtr h)
     {
         if (h == IntPtr.Zero) return;

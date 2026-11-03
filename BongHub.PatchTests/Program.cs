@@ -801,7 +801,8 @@ var generous = ProfileSnap.PreviewAt(300, 540, new ProfileBox(0, 0, 1920, 1080))
 var middle = ProfileSnap.PreviewAt(960, 540, new ProfileBox(0, 0, 1920, 1080));
 var cornerResize = ProfileSnap.Resize(new ProfileBox(100, 100, 400, 300), new ProfileBox(0, 0, 1920, 1080), "nw", -30, -20, 120);
 var seResize = ProfileSnap.Resize(new ProfileBox(100, 100, 400, 300), new ProfileBox(0, 0, 1920, 1080), "se", 15, 10, 120);
-Check("window snap is a few pixels and edge zones are generous", nearWin.X == 208 && farWin.X == 190 && generous.Kind == "left" && middle.Kind.Length == 0 && cornerResize.X == 70 && cornerResize.W == 430 && cornerResize.H == 320 && seResize.W == 415 && seResize.H == 310);
+var docked = ProfileSnap.SnapWindow(new ProfileBox(1510, 770, 400, 300), new ProfileBox(0, 0, 1920, 1080), Array.Empty<ProfileBox>(), 1, 16);
+Check("window snap is a few pixels and edge zones are small", nearWin.X == 208 && farWin.X == 190 && generous.Kind.Length == 0 && middle.Kind.Length == 0 && docked.W == 400 && docked.H == 300 && docked.Right == 1920 && docked.Bottom == 1080 && cornerResize.X == 70 && cornerResize.W == 430 && cornerResize.H == 320 && seResize.W == 415 && seResize.H == 310);
 bool chord = HotkeyChord.TryParse("Ctrl+Alt+1", out uint chordMods, out uint chordVk) && chordMods == (HotkeyChord.Ctrl | HotkeyChord.Alt) && chordVk == 0x31;
 var recorded = HotkeyEdit.Apply("", "ctrl+alt+1", null, "Ctrl+Alt+N");
 var cancelled = HotkeyEdit.Apply("Ctrl+Alt+1", "escape", null, null);
@@ -896,7 +897,7 @@ int painted = ProfileChrome.PaintedHeight(deskScene.Bounds.H, deskScene.Scale, 1
 var chipInset = ProfileChrome.ChipContent(underChip, 0, 0, 180, headerBand);
 var below = ProfileChrome.WindowChip(0, 1400, 800, 600, 3840, 2160, 0, 80, 180, 110);
 var belowInset = ProfileChrome.ChipContent(below, 0, 80, 180, 36);
-Check("small tiles drop detail and chips keep the real ratio", stage.Width == 700 && stage.FitHeight == 252 && narrowDetail.Length == 0 && midDetail == "2400×1350" && wideDetail.Contains("3840") && wideDetail.Contains("주") && Math.Abs(chipBox.W - 200) < 1.5 && Math.Abs(chipBox.H - 100) < 1.5 && chipBox.Y < 22 && iconDot.W == 6 && headerBand >= 60 && Math.Abs(underChip.W - 90) < 1.5 && underChip.Y < 2 && painted < stage.FitHeight && painted > 70 && ProfileGlyph.Kinds.Length == 11 && ProfileGlyph.Known("lock") && ProfileGlyph.Known("trash"));
+Check("small tiles drop detail and chips keep the real ratio", stage.Width == 700 && stage.FitHeight == 252 && narrowDetail.Length == 0 && midDetail == "2400×1350" && wideDetail.Contains("3840") && wideDetail.Contains("주") && Math.Abs(chipBox.W - 200) < 1.5 && Math.Abs(chipBox.H - 100) < 1.5 && chipBox.Y < 22 && iconDot.W == 6 && headerBand >= 60 && Math.Abs(underChip.W - 90) < 1.5 && underChip.Y < 2 && painted < stage.FitHeight && painted > 70 && ProfileGlyph.Kinds.Length == 13 && ProfileGlyph.Known("lock") && ProfileGlyph.Known("trash") && ProfileGlyph.Known("power") && ProfileGlyph.Known("star"));
 var swallowed = ProfileChrome.ChipContent(new DipRect(2, 2, 24, 18), 0, 0, 180, 70);
 var smokeDesk = new[]
 {
@@ -938,6 +939,35 @@ var parkedChip = ProfileChrome.ParkedChip(0, 0, 180, 100);
 var parkedPill = ProfileChrome.NumberPill(0, 0);
 var parkedTight = ProfileChrome.ParkedChip(0, 0, 48, 40);
 Check("chip icon clears the identify band", chipInset.Show && (chipInset.Top >= headerBand - 1 || chipInset.Left >= 24) && belowInset.Show && belowInset.Left == 0 && belowInset.Top == 0 && !swallowed.Show && parkedChip.W >= 56 && parkedChip.H >= 18 && parkedChip.X >= parkedPill.Right + 3 && !parkedChip.Hits(parkedPill) && parkedChip.Bottom <= 26 && parkedChip.Right <= 176 && parkedTight.W == 0, $"inset {chipInset.Left:0},{chipInset.Top:0} show={chipInset.Show} below {below.Y:0} {belowInset.Left:0},{belowInset.Top:0} swallowed={swallowed.Show} parked {parkedChip.X:0},{parkedChip.Y:0} {parkedChip.W:0}x{parkedChip.H:0} tight={parkedTight.W:0}");
+var iconMon = new List<ProfileMonitor>
+{
+    new() { Number = 3, X = -3840, Y = -1440, W = 3840, H = 2160, Scale = 100, Primary = false },
+    new() { Number = 2, X = 0, Y = 0, W = 3840, H = 2160, Scale = 125, Primary = true }
+};
+var iconFrame = IconMap.Frame(iconMon);
+var shifted = IconMap.ToScreen(3237, 1188, iconFrame.Left, iconFrame.Top, iconFrame.Scale);
+var topLeft = IconMap.ToScreen(32, 24, iconFrame.Left, iconFrame.Top, iconFrame.Scale);
+Check("icon list maps from the virtual desktop through primary DPI", iconFrame.Left == -3840 && iconFrame.Top == -1440 && iconFrame.Scale == 125 && shifted.X > 0 && shifted.X < 400 && shifted.Y > 0 && shifted.Y < 200 && topLeft.X < -3700 && topLeft.Y < -1400, $"frame {iconFrame.Left},{iconFrame.Top} @{iconFrame.Scale} shifted {shifted.X},{shifted.Y} top {topLeft.X},{topLeft.Y}");
+var savedDiscord = new ProfileApp { Process = "Discord.exe", Class = "Chrome_WidgetWin_1", Title = "옛서버 - Discord" };
+var renamed = new TrackedWindow { Id = 1, Process = "Discord", Class = "Chrome_WidgetWin_1", Title = "새서버 - Discord" };
+var other = new TrackedWindow { Id = 2, Process = "Discord", Class = "Chrome_WidgetWin_1", Title = "다른 - Discord" };
+var exact = new TrackedWindow { Id = 3, Process = "Discord", Class = "Chrome_WidgetWin_1", Title = "옛서버 - Discord" };
+var chrome = new TrackedWindow { Id = 4, Process = "chrome", Class = "Chrome_WidgetWin_1", Title = "옛서버 - Discord", W = 800, H = 600 };
+var best = WindowIdentity.Best(savedDiscord, new[] { other, renamed, chrome });
+var exactHit = WindowIdentity.Best(savedDiscord, new[] { other, exact, renamed });
+Check("discord title changes still match the exe and class", WindowIdentity.Suffix("옛서버 - Discord") == "Discord" && WindowIdentity.Score(savedDiscord, renamed) >= WindowIdentity.MatchFloor && WindowIdentity.Score(savedDiscord, chrome) == 0 && best != null && best.Id != 4 && exactHit != null && exactHit.Id == 3);
+var aimMon = new List<ProfileMonitor> { new() { Number = 2, X = 100, Y = 40, W = 1920, H = 1080 } };
+var aimed = AimPlace.Of(180, 90, 640, 480, aimMon);
+Check("aim keeps the window's current rectangle", aimed.Monitor == 2 && aimed.X == 80 && aimed.Y == 50 && aimed.W == 640 && aimed.H == 480);
+var ghosts = GhostWindows.Unregistered(new[] { renamed, chrome, new TrackedWindow { Process = "BongHub", Class = "Window", Title = "BongHub", W = 800, H = 600 } }, new[] { savedDiscord });
+int tintA = GhostWindows.Argb("Discord|Chrome_WidgetWin_1");
+int tintB = GhostWindows.Argb("chrome|Chrome_WidgetWin_1");
+Check("unregistered windows stay ghosts with a stable tint", ghosts.Count == 1 && ghosts[0].Id == 4 && tintA == GhostWindows.Argb("Discord|Chrome_WidgetWin_1") && tintA != tintB);
+var away = IdlePlan.Tick(true, 15, "자리비움", "작업", "작업", 15 * 60_000, false);
+var hold = IdlePlan.Tick(true, 15, "자리비움", "자리비움", "작업", 15 * 60_000, true);
+var back = IdlePlan.Tick(true, 15, "자리비움", "자리비움", "작업", 1000, true);
+var quiet = IdlePlan.Tick(false, 15, "자리비움", "작업", "", 15 * 60_000, false);
+Check("idle plan switches away and back without applying", away.Action == "away" && away.Preset == "자리비움" && hold.Action == "none" && back.Action == "back" && back.Preset == "작업" && quiet.Action == "none" && MonitorIdentify.Plan(iconMon, false) == "3,2" && MonitorIdentify.NativeCalls == 0);
 var loose = ProfileSnap.SnapWindow(new ProfileBox(6, 40, 100, 80), new ProfileBox(0, 0, 800, 600), Array.Empty<ProfileBox>(), 1);
 var corner = ProfileSnap.SnapMonitorWithGuide(new ProfileBox(1890, 1050, 400, 300), new[] { new ProfileBox(0, 0, 1920, 1080), new ProfileBox(1920, 0, 1920, 1080), new ProfileBox(0, 1080, 1920, 800) }, 40);
 Check("window edge magnet is tiny and corners snap on both axes", loose.X == 6 && corner.Box.X == 1920 && corner.Box.Y == 1080 && corner.Guide.Corner && !ProfileSnap.ArmZone("left", "left", true) && ProfileSnap.ArmZone("", "left", true), $"loose={loose.X} corner={corner.Box.X},{corner.Box.Y} guide={corner.Guide.X1},{corner.Guide.Y1}-{corner.Guide.X2},{corner.Guide.Y2}/{corner.Guide.X3},{corner.Guide.Y3}-{corner.Guide.X4},{corner.Guide.Y4}");

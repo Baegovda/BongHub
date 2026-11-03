@@ -85,6 +85,22 @@ public partial class MainWindow : Window
         AppEnv.Mark("presets_begin");
         Navigate("presets");
         AppEnv.Mark("presets_end");
+        var idle = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
+        idle.Tick += (_, _) => OnIdleTick();
+        idle.Start();
+    }
+
+    bool idleAway;
+    string idlePrevious = "";
+
+    void OnIdleTick()
+    {
+        long age = IdleClock.AgeMs != null ? IdleClock.AgeMs() : (AppEnv.Off || AppEnv.Smoke || AppEnv.NoteTest ? 0 : Win32.LastInputAgeMs());
+        var decision = IdlePlan.Tick(ConfigStore.IdleEnabled, ConfigStore.IdleMinutes, ConfigStore.IdlePreset, ActivePreset, idlePrevious, age, idleAway);
+        if (decision.Action == "none" || !DisplayGate.RealAllowed) return;
+        if (decision.Action == "away") { idlePrevious = ActivePreset; idleAway = true; }
+        else idleAway = false;
+        RequestApplyPreset(decision.Preset);
     }
 
     /// <summary>Decorative radial glows. Shown after the first frame is recorded so the software raster of the first paint skips them.</summary>
@@ -375,12 +391,14 @@ public partial class MainWindow : Window
         {
             DisplayBlocks++;
             DisplayAction = "blocked";
+            if (ConfigStore.OverlayEnabled) ProfileOsd.Show(name);
             return;
         }
         var snap = ConfigStore.Presets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
         if (snap == null) { DisplayAction = "missing"; return; }
         var plan = PresetCodec.Clone(snap);
         var profile = Profiles.FirstOrDefault(p => string.Equals(p.Name, plan.Name, StringComparison.Ordinal));
+        if (ConfigStore.OverlayEnabled) ProfileOsd.Show(plan.Name);
         StartLockedApply(profile, plan);
     }
 
@@ -1148,7 +1166,7 @@ public partial class MainWindow : Window
     {
         Header("자리를 비우면");
         var idle = Group();
-        Row(idle, "\uE823", "FF9500", "자동 전환", "입력 없으면 고른 모니터 프리셋 이름만 저장해요. 전환은 하지 않아요.", Switch(ConfigStore.IdleEnabled, v =>
+        Row(idle, "\uE823", "FF9500", "자동 전환", "입력이 없으면 고른 프로필로 바꿔요. 다시 움직이면 이전 프로필로 돌아와요.", Switch(ConfigStore.IdleEnabled, v =>
         {
             if (!ConfigStore.SetSectionValue("General", "IdleEnabled", JsonValue.Create(v))) return;
             ConfigStore.SetIdle(v, ConfigStore.IdleMinutes, ConfigStore.IdlePreset);
@@ -1166,12 +1184,23 @@ public partial class MainWindow : Window
         var minuteTrail = new StackPanel { Orientation = Orientation.Horizontal };
         minuteTrail.Children.Add(minutes); minuteTrail.Children.Add(minuteLabel);
         Row(idle, "\uE823", "8E8E93", "대기 분", "1–180", minuteTrail);
-        string preset = ConfigStore.IdlePreset.Length > 0 ? ConfigStore.IdlePreset : (ConfigStore.Presets.FirstOrDefault()?.Name ?? "");
-        Row(idle, "\uE7F4", "4C8AFE", "실행할 프리셋", preset.Length > 0 ? preset : "없음", null);
+        var picker = new ComboBox { MinWidth = 150, IsEnabled = !AppEnv.ReadOnly };
+        foreach (var p in ConfigStore.Presets)
+            if (p.Name.Length > 0) picker.Items.Add(p.Name);
+        string preset = ConfigStore.IdlePreset.Length > 0 ? ConfigStore.IdlePreset : (picker.Items.Count > 0 ? picker.Items[0]?.ToString() ?? "" : "");
+        picker.SelectedItem = preset.Length > 0 ? preset : null;
+        picker.SelectionChanged += (_, _) =>
+        {
+            string v = picker.SelectedItem as string ?? "";
+            if (v.Length == 0 || v == ConfigStore.IdlePreset) return;
+            if (!ConfigStore.SetSectionValue("General", "IdlePreset", JsonValue.Create(v))) return;
+            ConfigStore.SetIdle(ConfigStore.IdleEnabled, ConfigStore.IdleMinutes, v);
+        };
+        Row(idle, "\uE7F4", "4C8AFE", "실행할 프리셋", "자리를 비울 때 적용할 프로필이에요.", picker);
 
         Header("전환 화면");
         var ov = Group();
-        Row(ov, "\uE7F4", "5856D6", "로딩 화면", "모든 모니터 프리셋. 지금은 띄우지 않아요.", Switch(ConfigStore.OverlayEnabled, v =>
+        Row(ov, "\uE7F4", "5856D6", "로딩 화면", "프로필을 바꾸면 이름 카드를 잠깐 띄워요.", Switch(ConfigStore.OverlayEnabled, v =>
         {
             if (!ConfigStore.SetSectionValue("General", "OverlayEnabled", JsonValue.Create(v))) return;
             ConfigStore.SetOverlay(v, ConfigStore.OverlayOpacity);

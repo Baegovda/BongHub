@@ -332,7 +332,8 @@ public static class ProfileSnap
     /// <summary>Window-to-window attraction. A few physical pixels, so tiles do not jump across a gap.</summary>
     public const int WindowSnap = 4;
     /// <summary>How deep a half / maximize zone reaches into the monitor, as a percent of that side.</summary>
-    public const int ZonePercent = 18;
+    /// <summary>Half, maximize, and quarter only inside this thin edge band. The rest of an edge keeps the window's size and docks flush.</summary>
+    public const int ZonePercent = 6;
     /// <summary>Window-to-monitor-edge magnet, in virtual pixels. A couple of canvas pixels at most.</summary>
     public const int MonitorEdgeSnap = 2;
 
@@ -1295,10 +1296,12 @@ public static class ProfileDoc
     {
         var live = surface.List();
         int n = 0;
+        var used = new HashSet<long>();
         foreach (var app in profile.Apps)
         {
-            var hit = live.FirstOrDefault(w => AppMatch(app, w) && !SessionLayout.OwnProcess(w));
+            var hit = WindowIdentity.Best(app, live.Where(w => !used.Contains(w.Id) && !SessionLayout.OwnProcess(w)));
             if (hit == null) continue;
+            used.Add(hit.Id);
             var mon = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors.FirstOrDefault();
             if (mon == null) continue;
             if (app.State is "top" or "max") surface.Maximize(hit.Id, new WorkRect(mon.X, mon.Y, mon.W, mon.H));
@@ -1339,17 +1342,7 @@ public static class ProfileDoc
         return abs;
     }
 
-    static bool AppMatch(ProfileApp app, TrackedWindow window)
-    {
-        if (app.Process.Length > 0)
-        {
-            string want = app.Process.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? app.Process[..^4] : app.Process;
-            if (!string.Equals(want, window.Process, StringComparison.OrdinalIgnoreCase)) return false;
-        }
-        if (app.Class.Length > 0 && !string.Equals(app.Class, window.Class, StringComparison.OrdinalIgnoreCase)) return false;
-        if (app.Title.Length > 0 && window.Title.IndexOf(app.Title, StringComparison.OrdinalIgnoreCase) < 0) return false;
-        return app.Process.Length > 0 || app.Class.Length > 0 || app.Title.Length > 0;
-    }
+    static bool AppMatch(ProfileApp app, TrackedWindow window) => WindowIdentity.Matches(app, window);
 
     public static string ToJson(IEnumerable<MonitorProfile> profiles)
     {
@@ -2238,7 +2231,7 @@ public static class ProfileChrome
         double bottomLimit = Math.Min(tileY + tileH - edge, tileY + 26);
         double h = Math.Min(20, bottomLimit - y);
         if (h < 18) return new DipRect(x, y, 0, 0);
-        double w = Math.Min(72, roomW);
+        double w = Math.Min(128, roomW);
         var chip = new DipRect(x, y, w, h);
         if (chip.Hits(pill)) return new DipRect(x, y, 0, 0);
         return chip;
@@ -2262,6 +2255,213 @@ public static class ProfileChrome
 /// <summary>Names of the profile-page symbols drawn as vectors, not as a font glyph.</summary>
 public static class ProfileGlyph
 {
-    public static readonly string[] Kinds = { "ellipsis", "trash", "pencil", "pin", "min", "app", "eye", "eyeoff", "undo", "lock", "unlock" };
+    public static readonly string[] Kinds = { "ellipsis", "trash", "pencil", "pin", "min", "app", "eye", "eyeoff", "undo", "lock", "unlock", "power", "star" };
     public static bool Known(string? kind) => kind != null && Kinds.Contains(kind);
+}
+
+/// <summary>
+/// Desktop list-view points are logical pixels whose origin is the top-left of the virtual desktop,
+/// not physical screen pixels and not "whatever monitor.X happens to be". Monitor rectangles are physical.
+/// </summary>
+public static class IconMap
+{
+    public static (int X, int Y) ToScreen(int clientX, int clientY, int virtualLeft, int virtualTop, int scalePercent)
+    {
+        double s = scalePercent < 50 ? 1 : scalePercent / 100.0;
+        return (virtualLeft + (int)Math.Round(clientX * s), virtualTop + (int)Math.Round(clientY * s));
+    }
+
+    public static (int X, int Y) ToClient(int screenX, int screenY, int virtualLeft, int virtualTop, int scalePercent)
+    {
+        double s = scalePercent < 50 ? 1 : scalePercent / 100.0;
+        return ((int)Math.Round((screenX - virtualLeft) / s), (int)Math.Round((screenY - virtualTop) / s));
+    }
+
+    public static (int Left, int Top, int Scale) Frame(IReadOnlyList<ProfileMonitor>? monitors)
+    {
+        if (monitors == null || monitors.Count == 0) return (0, 0, 100);
+        int left = monitors.Min(m => m.X);
+        int top = monitors.Min(m => m.Y);
+        var primary = monitors.FirstOrDefault(m => m.Primary) ?? monitors[0];
+        int scale = primary.Scale <= 0 ? 100 : primary.Scale;
+        return (left, top, scale);
+    }
+}
+
+/// <summary>Executable and window class identify a window. The title only breaks ties, so a Discord server rename still matches.</summary>
+public static class WindowIdentity
+{
+    public const int MatchFloor = 100;
+
+    public static string Suffix(string? title)
+    {
+        string t = title ?? "";
+        int i = t.LastIndexOf(" - ", StringComparison.Ordinal);
+        return i >= 0 ? t[(i + 3)..].Trim() : t.Trim();
+    }
+
+    public static string ProcessKey(string? process)
+    {
+        string p = process ?? "";
+        if (p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) p = p[..^4];
+        return p;
+    }
+
+    public static bool SameProcess(string? a, string? b)
+    {
+        string pa = ProcessKey(a), pb = ProcessKey(b);
+        return pa.Length > 0 && pb.Length > 0 && string.Equals(pa, pb, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static int Score(ProfileApp app, TrackedWindow window)
+    {
+        if (app == null || window == null) return 0;
+        bool wantProc = ProcessKey(app.Process).Length > 0;
+        bool wantClass = (app.Class ?? "").Length > 0;
+        if (wantProc && !SameProcess(app.Process, window.Process)) return 0;
+        if (wantClass && !string.Equals(app.Class, window.Class ?? "", StringComparison.OrdinalIgnoreCase)) return 0;
+        if (!wantProc && !wantClass)
+        {
+            if ((app.Title ?? "").Length == 0) return 0;
+            string title = app.Title ?? "";
+            return title.Length > 0 && window.Title != null && window.Title.Contains(title, StringComparison.OrdinalIgnoreCase) ? 40 : 0;
+        }
+        int score = (wantProc ? 100 : 0) + (wantClass ? 40 : 0);
+        score += TitleTie(app.Title, window.Title);
+        return score;
+    }
+
+    public static int TitleTie(string? saved, string? live)
+    {
+        string s = saved ?? "", l = live ?? "";
+        if (s.Length == 0 || l.Length == 0) return 0;
+        if (string.Equals(s, l, StringComparison.OrdinalIgnoreCase)) return 30;
+        string ss = Suffix(s), ls = Suffix(l);
+        if (ss.Length > 0 && string.Equals(ss, ls, StringComparison.OrdinalIgnoreCase)) return 20;
+        if (s.Length > 0 && l.Contains(s, StringComparison.OrdinalIgnoreCase)) return 10;
+        return 0;
+    }
+
+    public static bool Matches(ProfileApp app, TrackedWindow window) => Score(app, window) >= (ProcessKey(app.Process).Length == 0 && (app.Class ?? "").Length == 0 ? 40 : MatchFloor);
+
+    public static TrackedWindow? Best(ProfileApp app, IEnumerable<TrackedWindow>? windows)
+    {
+        TrackedWindow? best = null;
+        int score = 0;
+        if (windows == null) return null;
+        foreach (var w in windows)
+        {
+            int s = Score(app, w);
+            if (s > score) { score = s; best = w; }
+        }
+        return score >= MatchFloor || (best != null && ProcessKey(app.Process).Length == 0 && (app.Class ?? "").Length == 0 && score >= 40) ? best : null;
+    }
+}
+
+public readonly record struct AimSpot(int Monitor, int X, int Y, int W, int H);
+
+public static class AimPlace
+{
+    public static AimSpot Of(int x, int y, int w, int h, IReadOnlyList<ProfileMonitor> monitors)
+    {
+        if (w < 1) w = 800;
+        if (h < 1) h = 600;
+        if (monitors == null || monitors.Count == 0) return new AimSpot(1, x, y, w, h);
+        int cx = x + Math.Max(1, w) / 2;
+        int cy = y + Math.Max(1, h) / 2;
+        var host = monitors.FirstOrDefault(m => cx >= m.X && cy >= m.Y && cx < m.X + m.W && cy < m.Y + m.H) ?? monitors[0];
+        int lx = Math.Clamp(x - host.X, 0, Math.Max(0, host.W - 1));
+        int ly = Math.Clamp(y - host.Y, 0, Math.Max(0, host.H - 1));
+        int lw = Math.Clamp(w, 120, Math.Max(120, host.W - lx));
+        int lh = Math.Clamp(h, 80, Math.Max(80, host.H - ly));
+        return new AimSpot(host.Number, lx, ly, lw, lh);
+    }
+}
+
+/// <summary>Open windows that are not already stored on the profile. Callers supply the list; this does not enumerate.</summary>
+public static class GhostWindows
+{
+    public static Func<IReadOnlyList<TrackedWindow>>? Source;
+
+    public static int Argb(string? key)
+    {
+        int h = 17;
+        foreach (char c in key ?? "") h = unchecked(h * 31 + c);
+        double hue = Math.Abs(h % 360);
+        return Hsv(hue, 0.42, 0.55, 0.55);
+    }
+
+    public static List<TrackedWindow> Unregistered(IReadOnlyList<TrackedWindow>? open, IReadOnlyList<ProfileApp>? apps)
+    {
+        var list = new List<TrackedWindow>();
+        foreach (var w in open ?? Array.Empty<TrackedWindow>())
+        {
+            if (w == null || w.W < 40 || w.H < 40) continue;
+            if (SessionLayout.OwnProcess(w)) continue;
+            bool known = false;
+            foreach (var app in apps ?? Array.Empty<ProfileApp>())
+                if (WindowIdentity.Score(app, w) >= WindowIdentity.MatchFloor) { known = true; break; }
+            if (!known) list.Add(w);
+        }
+        return list;
+    }
+
+    static int Hsv(double hue, double sat, double val, double alpha)
+    {
+        double c = val * sat;
+        double x = c * (1 - Math.Abs(hue / 60 % 2 - 1));
+        double m = val - c;
+        double r = 0, g = 0, b = 0;
+        if (hue < 60) { r = c; g = x; }
+        else if (hue < 120) { r = x; g = c; }
+        else if (hue < 180) { g = c; b = x; }
+        else if (hue < 240) { g = x; b = c; }
+        else if (hue < 300) { r = x; b = c; }
+        else { r = c; b = x; }
+        int R = (int)Math.Round((r + m) * 255);
+        int G = (int)Math.Round((g + m) * 255);
+        int B = (int)Math.Round((b + m) * 255);
+        int A = (int)Math.Round(alpha * 255);
+        return (A << 24) | (R << 16) | (G << 8) | B;
+    }
+}
+
+/// <summary>Fake idle age for tests. Null means the app may read the system clock outside tests.</summary>
+public static class IdleClock
+{
+    public static Func<long>? AgeMs;
+}
+
+/// <summary>Idle auto-switch decision. It never applies a profile.</summary>
+public readonly record struct IdleDecision(string Action, string Preset);
+
+public static class IdlePlan
+{
+    public static IdleDecision Tick(bool enabled, int minutes, string? away, string? current, string? previous, long idleMs, bool awayActive)
+    {
+        string target = away ?? "";
+        if (!enabled || target.Length == 0 || minutes < 1) return new IdleDecision("none", "");
+        long need = (long)minutes * 60_000L;
+        if (idleMs >= need)
+        {
+            if (awayActive || string.Equals(current ?? "", target, StringComparison.OrdinalIgnoreCase)) return new IdleDecision("none", "");
+            return new IdleDecision("away", target);
+        }
+        if (awayActive && !string.IsNullOrEmpty(previous)) return new IdleDecision("back", previous!);
+        return new IdleDecision("none", "");
+    }
+}
+
+/// <summary>Identify plan. <paramref name="real"/> false never touches a monitor.</summary>
+public static class MonitorIdentify
+{
+    public static int NativeCalls;
+
+    public static string Plan(IReadOnlyList<ProfileMonitor>? monitors, bool real)
+    {
+        var nums = (monitors ?? Array.Empty<ProfileMonitor>()).Select(m => m.Number).ToList();
+        if (!real) return string.Join(",", nums);
+        NativeCalls++;
+        return "live:" + string.Join(",", nums);
+    }
 }
