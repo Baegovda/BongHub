@@ -3,5 +3,5 @@ namespace BongHub;
 /// <summary>Same version token as <see cref="AppEnv.Version"/>.</summary>
 public static class AppInfo
 {
-    public const string Version = "1.6.0";
+    public const string Version = "1.7.0";
 }

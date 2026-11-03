@@ -340,6 +340,8 @@ public static class AppSettings
     public static bool MonitorLocked { get; private set; } = true;
     /// <summary>Registered window chips on the profile canvas. Missing JSON means on. Ghost chips stay either way.</summary>
     public static bool ChipsVisible { get; private set; } = true;
+    /// <summary>Remap the pointer along a shared monitor edge by EDID millimetres. Missing JSON means off.</summary>
+    public static bool CursorCross { get; private set; }
     public static void Load()
     {
         try
@@ -349,10 +351,12 @@ public static class AppSettings
                 ReduceMotion = o["ReduceMotion"]?.GetValue<bool>() ?? false;
                 MonitorLocked = o["MonitorLocked"] == null || (o["MonitorLocked"]?.GetValue<bool>() ?? true);
                 ChipsVisible = o["ChipsVisible"] == null || (o["ChipsVisible"]?.GetValue<bool>() ?? true);
+                CursorCross = o["CursorCross"]?.GetValue<bool>() ?? false;
             }
         }
         catch { }
         Fx.Enabled = !ReduceMotion;
+        CursorCrossService.Sync();
     }
     public static void SetReduceMotion(bool v)
     {
@@ -369,12 +373,18 @@ public static class AppSettings
         ChipsVisible = v;
         Write();
     }
+    public static void SetCursorCross(bool v)
+    {
+        CursorCross = v;
+        Write();
+        CursorCrossService.Sync();
+    }
     static void Write()
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(AppEnv.SettingsPath)!);
-            File.WriteAllText(AppEnv.SettingsPath, new JsonObject { ["ReduceMotion"] = ReduceMotion, ["MonitorLocked"] = MonitorLocked, ["ChipsVisible"] = ChipsVisible }.ToJsonString());
+            File.WriteAllText(AppEnv.SettingsPath, new JsonObject { ["ReduceMotion"] = ReduceMotion, ["MonitorLocked"] = MonitorLocked, ["ChipsVisible"] = ChipsVisible, ["CursorCross"] = CursorCross }.ToJsonString());
         }
         catch { }
     }
