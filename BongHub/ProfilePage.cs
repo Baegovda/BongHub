@@ -17,6 +17,7 @@ public partial class MainWindow
 
     public Canvas? ProfileStage { get; private set; }
     readonly Dictionary<int, Border> monitorFrames = new();
+    double profileSceneScale = 0.1;
     public int HoveredMonitor { get; private set; }
     public string IconSaveNote { get; private set; } = "";
     public FrameworkElement? ProfileWindowList { get; private set; }
@@ -566,6 +567,7 @@ public partial class MainWindow
         const int pad = 16;
         var boxes = profile.Monitors.Select(m => m.Box).ToList();
         var scene = ProfileSnap.Fit(boxes, cw, fitH, pad);
+        profileSceneScale = scene.Scale < 0.02 || double.IsNaN(scene.Scale) ? 0.02 : scene.Scale;
         int ch = ProfileChrome.PaintedHeight(scene.Bounds.H, scene.Scale, pad);
         var stage = new Canvas { Width = cw, Height = ch, Margin = new Thickness(0, 0, 0, 6), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Top, SnapsToDevicePixels = true, UseLayoutRounding = true, Background = Brushes.Transparent };
         ProfileStage = stage;
@@ -622,18 +624,7 @@ public partial class MainWindow
             Canvas.SetLeft(frame, box.X);
             Canvas.SetTop(frame, box.Y);
             string detail = ProfileChrome.Detail(box.W, box.H, mon.W, mon.H, mon.Scale, mon.Orientation, mon.Primary, mon.Connected);
-            double numberSize = ProfileChrome.NumberSize(box.W, box.H);
-            var badge = new StackPanel { IsHitTestVisible = false, Margin = new Thickness(8, 6, 8, 0) };
-            badge.Children.Add(new TextBlock
-            {
-                Text = mon.Number.ToString(),
-                Foreground = Brushes.White,
-                FontSize = numberSize,
-                FontWeight = FontWeights.Bold,
-                TextWrapping = TextWrapping.NoWrap,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                Tag = "monitor-label"
-            });
+            var badge = new StackPanel { IsHitTestVisible = false, Margin = new Thickness(8, 28, 8, 0) };
             if (detail.Length > 0)
                 badge.Children.Add(new TextBlock
                 {
@@ -726,7 +717,7 @@ public partial class MainWindow
             Canvas.SetLeft(tile, chip.X);
             Canvas.SetTop(tile, chip.Y);
             Canvas.SetZIndex(tile, selectedTile ? 40 : 20);
-            var head = new Grid { Margin = new Thickness(6, 3, 4, 0) };
+            var head = new Grid();
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             head.ColumnDefinitions.Add(new ColumnDefinition());
             if (!countOnly)
@@ -749,26 +740,30 @@ public partial class MainWindow
             };
             Grid.SetColumn(nameBlock, 1);
             head.Children.Add(nameBlock);
-            var body = new Grid();
-            body.Children.Add(head);
-            var chipTools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = selectedTile ? Visibility.Visible : Visibility.Collapsed, Tag = "chip-tools" };
-            chipTools.Children.Add(VectorButton("pencil", "수치로 고치기", () => { selectedAppId = app.Id; selectedMonitorNumber = app.Monitor; Render("presets", false); }, "keep:edit:" + app.Id, 20));
-            chipTools.Children.Add(VectorButton("trash", "창 빼기", () => RemoveApp(profile, app), "keep:trash:" + app.Id, 20));
-            body.Children.Add(chipTools);
-            if (chip.H >= 40)
+            var body = new Grid { Margin = new Thickness(6, 3, 4, 2) };
+            var lines = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
+            lines.Children.Add(head);
+            bool roomForSize = chip.H >= 48 && chip.W >= 72;
+            if (roomForSize)
             {
                 var size = new TextBlock
                 {
                     Text = app.W + "×" + app.H,
                     Foreground = (Brush)FindResource("Secondary"),
                     FontSize = 11,
-                    Margin = new Thickness(8, 22, 6, 0),
+                    Margin = new Thickness(chip.W < 96 ? 0 : 20, 1, 2, 0),
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
                     IsHitTestVisible = false
                 };
-                body.Children.Add(size);
+                lines.Children.Add(size);
             }
+            body.Children.Add(lines);
+            var chipTools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = selectedTile ? Visibility.Visible : Visibility.Collapsed, Tag = "chip-tools" };
+            chipTools.Children.Add(VectorButton("pencil", "수치로 고치기", () => { selectedAppId = app.Id; selectedMonitorNumber = app.Monitor; Render("presets", false); }, "keep:edit:" + app.Id, 20));
+            chipTools.Children.Add(VectorButton("trash", "창 빼기", () => RemoveApp(profile, app), "keep:trash:" + app.Id, 20));
+            body.Children.Add(chipTools);
+            tile.ClipToBounds = true;
             tile.Child = body;
             tile.MouseEnter += (_, _) => { chipTools.Visibility = Visibility.Visible; Canvas.SetZIndex(tile, 50); };
             tile.MouseLeave += (_, _) => { if (app.Id != selectedAppId) chipTools.Visibility = Visibility.Collapsed; };
@@ -933,22 +928,71 @@ public partial class MainWindow
                 if (spots.Any(s => s.Hits(badge.Box))) { covered = true; break; }
             badge.El.Opacity = covered ? 0.28 : 1;
         }
-        var lockBtn = VectorButton(AppSettings.MonitorLocked ? "lock" : "unlock", AppSettings.MonitorLocked ? "모니터 위치가 잠겨 있어요" : "모니터 위치를 잠글 수 있어요", () =>
+        foreach (var mon in profile.Monitors)
         {
-            AppSettings.SetMonitorLocked(!AppSettings.MonitorLocked);
-            Render("presets", false);
-        }, "monitor-lock", 28);
-        Canvas.SetLeft(lockBtn, Math.Max(8, cw - 44));
-        Canvas.SetTop(lockBtn, 8);
-        Canvas.SetZIndex(lockBtn, 80);
-        stage.Children.Add(lockBtn);
+            var box = ProfileSnap.ToCanvas(mon.Box, scene, 8, 8);
+            var number = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(0xD0, 0x1C, 0x1C, 0x1E)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x66, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(6, 1, 6, 1),
+                IsHitTestVisible = false,
+                Tag = "monitor-number",
+                Child = new TextBlock
+                {
+                    Text = mon.Number.ToString(),
+                    Foreground = Brushes.White,
+                    FontSize = 12,
+                    FontWeight = FontWeights.Bold,
+                    IsHitTestVisible = false,
+                    Tag = "monitor-label"
+                }
+            };
+            Canvas.SetLeft(number, box.X + 6);
+            Canvas.SetTop(number, box.Y + 6);
+            Canvas.SetZIndex(number, 75);
+            stage.Children.Add(number);
+        }
         Canvas.SetZIndex(guideLine, 90);
         Canvas.SetZIndex(guideLine2, 90);
         Canvas.SetZIndex(preview, 5);
         stage.Children.Add(guideLine);
         stage.Children.Add(guideLine2);
         stage.Children.Add(preview);
-        PageHost.Children.Add(stage);
+        var card = new DockPanel { Margin = new Thickness(0, 0, 0, 6), LastChildFill = true };
+        var bar = new Grid { Height = 34, Margin = new Thickness(2, 0, 2, 4) };
+        var lockPill = new Button
+        {
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(8, 3, 10, 3),
+            ToolTip = AppSettings.MonitorLocked ? "모니터 위치가 잠겨 있어요" : "모니터 위치를 잠글 수 있어요",
+            Tag = "monitor-lock"
+        };
+        var lockRow = new StackPanel { Orientation = Orientation.Horizontal };
+        lockRow.Children.Add(ProfileMarks.Icon(AppSettings.MonitorLocked ? "lock" : "unlock", 14));
+        lockRow.Children.Add(new TextBlock
+        {
+            Text = "위치 잠금",
+            Margin = new Thickness(6, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 12.5,
+            Foreground = (Brush)FindResource(AppSettings.MonitorLocked ? "Text" : "Secondary")
+        });
+        lockPill.Content = lockRow;
+        lockPill.Click += (_, _) =>
+        {
+            AppSettings.SetMonitorLocked(!AppSettings.MonitorLocked);
+            Render("presets", false);
+        };
+        bar.Children.Add(lockPill);
+        DockPanel.SetDock(bar, Dock.Top);
+        card.Children.Add(bar);
+        stage.Margin = new Thickness(0);
+        card.Children.Add(stage);
+        PageHost.Children.Add(card);
     }
 
     static string ZoneName(string kind) => kind switch
@@ -1134,8 +1178,12 @@ public partial class MainWindow
         var profile = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId) ?? Profiles.FirstOrDefault();
         var mon = profile?.Monitors.FirstOrDefault(m => m.Number == number);
         if (profile == null || mon == null) return false;
+        double scale = profileSceneScale < 0.02 ? 0.02 : profileSceneScale;
+        int vdx = (int)Math.Round(dx / scale);
+        int vdy = (int)Math.Round(dy / scale);
+        int reach = Math.Max(48, (int)Math.Round(16 / scale));
         var others = profile.Monitors.Where(m => m != mon).Select(m => m.Box).ToList();
-        var snapped = ProfileSnap.SnapMonitor(new ProfileBox(mon.X + dx, mon.Y + dy, mon.W, mon.H), others, 48);
+        var snapped = ProfileSnap.SnapMonitor(new ProfileBox(mon.X + vdx, mon.Y + vdy, mon.W, mon.H), others, reach);
         mon.X = snapped.X;
         mon.Y = snapped.Y;
         SaveProfiles();
