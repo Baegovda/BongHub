@@ -152,11 +152,12 @@ public sealed class TestKit
         return (best, "#" + bestK.ToString("X6"), "#" + bgk.ToString("X6"));
     }
 
-    public static bool NotForeground(Window w) => Win32.GetForegroundWindow() != Win32.Handle(w) && !w.IsActive;
+    /// <summary>The real foreground window must not be ours. WPF <c>IsActive</c> is not the check.</summary>
+    public static bool NotForeground(Window w) => Win32.GetForegroundWindow() != Win32.Handle(w);
 
     /// <summary>
-    /// Passive shows must not be foreground. Waits through the uncloak race, then returns
-    /// null on success or a foreground/class/title/process/exstyle line on failure.
+    /// Passive shows must not take the real foreground. Returns null on success, or class and process
+    /// (no window titles) when <see cref="GetForegroundWindow"/> is ours.
     /// </summary>
     public static async Task<string?> WaitNotForeground(Window w, int timeoutMs = 500)
     {
