@@ -791,6 +791,7 @@ public partial class MainWindow : Window
         var cmds = new StackPanel { Orientation = Orientation.Horizontal };
         cmds.Children.Add(Small("추가", () => { var n = ProfileDoc.Add(Profiles); SelectedProfileId = n.Id; SaveProfiles(); ProfileHotkey.Bind(Profiles, ConfigStore.Notes.Hotkey); Render("presets", false); }));
         Row(g, null, null, "프로필", null, cmds);
+        DrawProfileSwitchSettings();
         var selected = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId);
         if (selected != null) BuildProfileEditor(selected, PageHost);
         Footer("지금 적용을 눌렀을 때만 화면이 바뀌어요. 시험에서는 디스플레이와 실제 창을 열지 않아요.");
@@ -1227,7 +1228,7 @@ public partial class MainWindow : Window
             }
     }
 
-    void PageGeneral()
+    void DrawProfileSwitchSettings()
     {
         Header("자리를 비우면");
         var idle = Group();
@@ -1235,7 +1236,7 @@ public partial class MainWindow : Window
         {
             if (!ConfigStore.SetSectionValue("General", "IdleEnabled", JsonValue.Create(v))) return;
             ConfigStore.SetIdle(v, ConfigStore.IdleMinutes, ConfigStore.IdlePreset);
-        }, !AppEnv.ReadOnly));
+        }, !AppEnv.ReadOnly), tight: true);
         var minutes = new Slider { Minimum = 1, Maximum = 180, Width = 140, IsEnabled = !AppEnv.ReadOnly, IsSnapToTickEnabled = true, TickFrequency = 1, Value = ConfigStore.IdleMinutes };
         var minuteLabel = Value(((int)minutes.Value).ToString());
         minutes.ValueChanged += (_, _) =>
@@ -1248,8 +1249,8 @@ public partial class MainWindow : Window
         };
         var minuteTrail = new StackPanel { Orientation = Orientation.Horizontal };
         minuteTrail.Children.Add(minutes); minuteTrail.Children.Add(minuteLabel);
-        Row(idle, "\uE823", "8E8E93", "대기 분", "1–180", minuteTrail);
-        var picker = new ComboBox { MinWidth = 150, IsEnabled = !AppEnv.ReadOnly };
+        Row(idle, "\uE823", "8E8E93", "대기 분", "1–180", minuteTrail, tight: true);
+        var picker = new ComboBox { MinWidth = 140, IsEnabled = !AppEnv.ReadOnly };
         foreach (var p in ConfigStore.Presets)
             if (p.Name.Length > 0) picker.Items.Add(p.Name);
         string preset = ConfigStore.IdlePreset.Length > 0 ? ConfigStore.IdlePreset : (picker.Items.Count > 0 ? picker.Items[0]?.ToString() ?? "" : "");
@@ -1261,15 +1262,15 @@ public partial class MainWindow : Window
             if (!ConfigStore.SetSectionValue("General", "IdlePreset", JsonValue.Create(v))) return;
             ConfigStore.SetIdle(ConfigStore.IdleEnabled, ConfigStore.IdleMinutes, v);
         };
-        Row(idle, "\uE7F4", "4C8AFE", "실행할 프리셋", "자리를 비울 때 적용할 프로필이에요.", picker);
+        Row(idle, "\uE7F4", "4C8AFE", "실행할 프로필", "자리를 비울 때 적용할 프로필이에요.", picker, tight: true);
 
-        Header("전환 화면");
+        Header("전환하면");
         var ov = Group();
-        Row(ov, "\uE7F4", "5856D6", "로딩 화면", "프로필을 바꾸면 이름 카드를 잠깐 띄워요.", Switch(ConfigStore.OverlayEnabled, v =>
+        Row(ov, "\uE7F4", "5856D6", "이름 카드", "프로필을 바꾸면 이름 카드를 잠깐 띄워요.", Switch(ConfigStore.OverlayEnabled, v =>
         {
             if (!ConfigStore.SetSectionValue("General", "OverlayEnabled", JsonValue.Create(v))) return;
             ConfigStore.SetOverlay(v, ConfigStore.OverlayOpacity);
-        }, !AppEnv.ReadOnly));
+        }, !AppEnv.ReadOnly), tight: true);
         var op = new Slider { Minimum = 20, Maximum = 100, Width = 140, IsEnabled = !AppEnv.ReadOnly, Value = ConfigStore.OverlayOpacity };
         var opLabel = Value(ConfigStore.OverlayOpacity.ToString());
         op.ValueChanged += (_, _) =>
@@ -1282,8 +1283,11 @@ public partial class MainWindow : Window
         };
         var opTrail = new StackPanel { Orientation = Orientation.Horizontal };
         opTrail.Children.Add(op); opTrail.Children.Add(opLabel);
-        Row(ov, "\uE7F4", "8E8E93", "배경 어둡기", "20–100. 지금 화면은 어둡히지 않아요.", opTrail);
+        Row(ov, "\uE7F4", "8E8E93", "카드 농도", "20–100. 화면 전체는 어둡히지 않아요.", opTrail, tight: true);
+    }
 
+    void PageGeneral()
+    {
         Header("시작");
         var start = Group();
         var startup = Switch(false, _ => { }, enabled: false);
