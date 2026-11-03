@@ -18,10 +18,11 @@ public partial class MainWindow : Window
         ("notes", "스티커 메모", "\uE70B", "F5B83D"),
         ("kakao", "카톡 광고 제거", "\uE8BD", "FFCC00"),
         ("powertoys", "PowerToys", "\uE945", "AF52DE"),
+        ("airdock", "AirDock", "\uE7C3", "5AC8FA"),
         ("general", "일반", "\uE713", "8E8E93"),
         ("about", "정보", "\uE946", "5856D6"),
     };
-    public static readonly string[] DefaultTabOrder = { "presets", "notes", "kakao", "powertoys", "general", "about" };
+    public static readonly string[] DefaultTabOrder = { "presets", "notes", "kakao", "powertoys", "airdock", "general", "about" };
     public IReadOnlyList<(string Key, string Label, string Glyph, string Hex)> Pages { get; private set; } = Catalog;
     public string CurrentPage { get; private set; } = "";
     public bool EverShown { get; private set; }
@@ -239,6 +240,7 @@ public partial class MainWindow : Window
             case "kakao": PageKakao(); break;
             case "desktop": PagePresets(); break;
             case "powertoys": PagePowerToys(); break;
+            case "airdock": PageAirDock(); break;
             case "general": PageGeneral(); break;
             default: PageAbout(); break;
         }

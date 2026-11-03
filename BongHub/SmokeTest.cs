@@ -124,7 +124,7 @@ public static class SmokeTest
         t.Check("reopen from tray after Alt+F4", reopenErr == null && w.IsVisible && w.Root.Opacity > 0.99, reopenErr?.Message ?? $"visible={w.IsVisible}");
         string? reopenFocus = await TestKit.WaitNotForeground(w);
         t.Check("reopen did not take focus", reopenFocus == null, reopenFocus ?? "");
-        t.Check("six settings tabs", w.Pages.Count == 6 && w.Pages.Any(p => p.Label == "모니터 프로필") && w.Pages.Any(p => p.Label == "카톡 광고 제거") && !w.Pages.Any(p => p.Key == "windows") && !w.Pages.Any(p => p.Key == "desktop"));
+        t.Check("seven settings tabs", w.Pages.Count == 7 && w.Pages.Any(p => p.Label == "모니터 프로필") && w.Pages.Any(p => p.Label == "AirDock") && w.Pages.Any(p => p.Label == "카톡 광고 제거") && !w.Pages.Any(p => p.Key == "windows") && !w.Pages.Any(p => p.Key == "desktop"));
         t.Check("startup switch is display only", w.StartupSwitchEnabled == false);
         t.Check("about shows version and hotkeys", w.AboutMentionsVersion && w.AboutMentionsHotkey);
         t.Check("open folder stays inside tests", w.RequestOpenDataFolder() == false && w.FolderLaunches == 0);
@@ -665,7 +665,7 @@ public static class SmokeTest
         var bc = TestKit.ContrastElement(tray.LastBalloonVisual!, tray.LastBalloonSample!, DarkUnder);
         t.Check("balloon text contrast ≥ 7", bc.ratio >= 7, $"{bc.ratio:0.0}:1 ({bc.fg} on {bc.bg})");
         t.Check("smoketest does not register a shell tray icon", !tray.ShellIconCreated && tray.NativeBalloonCalls == 0);
-        t.Check("smoketest does not register a hotkey or a hook", NoteHotkey.NativeRegistrations == 0 && NoteHotkey.HookInstalls == 0 && !NoteHotkey.Registered && ProfileHotkey.NativeRegistrations == 0 && ProfileHotkey.HookInstalls == 0);
+        t.Check("smoketest does not register a hotkey or a hook", NoteHotkey.NativeRegistrations == 0 && NoteHotkey.HookInstalls == 0 && !NoteHotkey.Registered && ProfileHotkey.NativeRegistrations == 0 && ProfileHotkey.HookInstalls == 0 && AirDockHotkey.NativeRegistrations == 0 && AirDockHotkey.HookInstalls == 0 && AirDockLaunch.NativeStarts == 0);
         NoteHotkey.ReportFailure(tray, "Ctrl+Alt+N");
         t.Check("hotkey conflict balloon", tray.LastBalloonMessage != null && tray.LastBalloonMessage.Contains("단축키 등록 실패") && tray.LastBalloonMessage.Contains("Ctrl+Alt+N") && tray.NativeBalloonCalls == 0);
 
@@ -678,7 +678,7 @@ public static class SmokeTest
 
         var bare = new HashSet<string>();
         var pageClips = new List<string>();
-        foreach (var page in new[] { "notes", "general", "powertoys", "kakao", "presets" })
+        foreach (var page in new[] { "notes", "general", "powertoys", "airdock", "kakao", "presets" })
         {
             w.Navigate(page);
             w.UpdateLayout();
@@ -695,6 +695,17 @@ public static class SmokeTest
         foreach (var item in ThemeAudit.Bare(tray.Menu)) bare.Add(item);
         t.Check("every control uses a themed style", bare.Count == 0, bare.Count == 0 ? "" : string.Join(", ", bare.Take(12)));
         t.Check("settings pages do not clip text", pageClips.Count == 0, pageClips.Count == 0 ? "" : string.Join(" | ", pageClips.Take(4)));
+        string dockStory = AirDockLayout.Story();
+        t.Check("airdock stays on the cursor monitor and does not launch", dockStory.Length == 0 && AirDockLaunch.NativeStarts == 0 && AirDockLaunch.Attempts == 0, dockStory);
+        bool added = w.AddAirProgram(@"C:\Fake\Notes.exe");
+        bool again = w.AddAirProgram(@"C:\Fake\Notes.exe");
+        bool text = w.AddAirProgram(@"C:\Fake\readme.txt");
+        bool link = w.AddAirProgram(@"C:\Fake\Calc.lnk");
+        bool moved = w.MoveAirProgram(0, 1);
+        var preview = AirDockWindow.Present(ConfigStore.AirItems, ConfigStore.AirIcon);
+        bool offDock = preview.Left <= -20000 && !preview.ShowActivated;
+        preview.Close();
+        t.Check("airdock page keeps exe and lnk only, and the preview stays off-screen", added && !again && !text && link && moved && w.AirCount == 2 && w.AirNames[0] == "Calc" && w.AirNames[1] == "Notes" && offDock && AirDockLaunch.NativeStarts == 0, string.Join(",", w.AirNames));
         viewer.Close();
 
         int screensBefore = ScreenCatalog.NativeCalls;
