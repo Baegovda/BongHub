@@ -53,12 +53,17 @@ public static class ConfigStore
     public static bool DeskRestoreOnChange { get; private set; } = true;
     public static bool DeskRestoreOnStartup { get; private set; }
     public static List<ToySnapshot> PowerToys { get; } = new();
+    public static bool AirEnabled { get; set; }
+    public static string AirHotkey { get; set; } = "";
+    public static int AirIcon { get; set; } = 56;
+    public static List<AirProgram> AirItems { get; } = new();
     public static string LoadError = "";
     public static int Writes;
 
     public static void Load()
     {
-        Presets.Clear(); Notes = new NotesSettings(); TabOrder.Clear(); Rules.Clear(); WindowRules.Clear(); Workspaces.Clear(); PowerToys.Clear();
+        Presets.Clear(); Notes = new NotesSettings(); TabOrder.Clear(); Rules.Clear(); WindowRules.Clear(); Workspaces.Clear(); PowerToys.Clear(); AirItems.Clear();
+        AirEnabled = false; AirHotkey = ""; AirIcon = 56;
         IdleEnabled = true; IdleMinutes = 30; IdlePreset = ""; SkipIfAudio = true; OverlayEnabled = true; OverlayOpacity = 82;
         KakaoAdBlock = false; KakaoCompact = true; KakaoDark = false; KakaoAutoApply = true;
         CloudEnabled = false; CloudRepo = ""; CloudBranch = "main"; CloudPullMinutes = 2;
@@ -128,6 +133,20 @@ public static class ConfigStore
                 DeskRestoreOnStartup = Bool(d["RestoreOnStartup"], false);
                 DeskHotkeySave = Str(d["HotkeySave"]);
                 DeskHotkeyRestore = Str(d["HotkeyRestore"]);
+            }
+            if (root?["AirDock"] is JsonObject air)
+            {
+                AirEnabled = Bool(air["Enabled"], false);
+                AirHotkey = HotkeyChord.Normalize(Str(air["Hotkey"]));
+                AirIcon = AirDockLayout.ClampIcon((int)Num(air["Icon"], 56));
+                if (air["Items"] is JsonArray airItems)
+                    foreach (var item in airItems.OfType<JsonObject>())
+                    {
+                        string path = Str(item["Path"]);
+                        if (!AirList.Accept(path)) continue;
+                        string name = Str(item["Name"]);
+                        AirItems.Add(new AirProgram { Name = name.Length > 0 ? name : AirList.Title(path), Path = path });
+                    }
             }
             if (root?["Pt"] is JsonObject pt)
             {
@@ -222,6 +241,18 @@ public static class ConfigStore
         }
     }
     public static void SetDeskMinutes(int minutes) { DeskAutoSaveMinutes = Math.Clamp(minutes, 1, 240); }
+
+    public static bool SaveAir()
+    {
+        var items = new JsonArray();
+        foreach (var item in AirItems)
+            items.Add(new JsonObject { ["Name"] = item.Name ?? "", ["Path"] = item.Path ?? "" });
+        bool ok = SetSectionValue("AirDock", "Enabled", JsonValue.Create(AirEnabled));
+        ok = SetSectionValue("AirDock", "Hotkey", JsonValue.Create(AirHotkey ?? "")) && ok;
+        ok = SetSectionValue("AirDock", "Icon", JsonValue.Create(AirIcon)) && ok;
+        ok = SetSectionValue("AirDock", "Items", items) && ok;
+        return ok;
+    }
     public static bool SetPtEnabled(string child, bool enabled) => SetPt(child, "Enabled", JsonValue.Create(enabled));
 
     public static bool SetPt(string child, string field, JsonNode value)

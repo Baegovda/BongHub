@@ -61,7 +61,12 @@ jobs:
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $exe = Join-Path (Get-Location) "artifacts/publish/BongHub.exe"
           if (-not (Test-Path $exe)) { Write-Error "missing $exe"; exit 1 }
-          $p = Start-Process -FilePath $exe -ArgumentList @('--smoketest', '--out', $out) -Wait -PassThru
+          $p = Start-Process -FilePath $exe -ArgumentList @('--smoketest', '--out', $out) -PassThru
+          if (-not $p.WaitForExit(120000)) {
+            try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch { }
+            Write-Error "smoketest did not exit within 120s"
+            exit 1
+          }
           $log = Join-Path $out "smoketest.txt"
           $beside = Join-Path (Split-Path $exe) "smoketest.txt"
           if (-not (Test-Path $log) -and (Test-Path $beside)) { Copy-Item $beside $log }

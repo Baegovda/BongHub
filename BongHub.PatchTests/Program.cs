@@ -711,6 +711,8 @@ string clipRtf = NoteClip.ToRtf(clip);
 Check("note clip keeps text and png", clip.Count == 3 && clipPlain == "안녕 끝" && !clipPlain.Contains("Image") && clip[1].Png is { Length: 4 } && clipRtf.Contains("\\pngblip") && clipRtf.Contains("89504e47"));
 string blockStory = NoteBlocks.Story();
 Check("note blocks keep plain text and accept slash and markdown", blockStory.Length == 0, blockStory);
+string dockStory = AirDockLayout.Story();
+Check("airdock stays on the cursor monitor without launching", dockStory.Length == 0 && AirDockLaunch.NativeStarts == 0, dockStory);
 string clipHtml = NoteClip.ToHtml(clip);
 int fragAt = clipHtml.IndexOf("<!--StartFragment-->", StringComparison.Ordinal);
 int fragEnd = clipHtml.IndexOf("<!--EndFragment-->", StringComparison.Ordinal);

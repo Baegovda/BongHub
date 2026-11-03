@@ -40,15 +40,32 @@ public static class Fx
         => Clocks.TryGetValue(target, out var gen) && gen.Map.TryGetValue(dp, out int cur) && cur == token;
     static void Play(IAnimatable target, DependencyProperty dp, DoubleAnimation anim, Action done)
     {
-        anim.FillBehavior = FillBehavior.Stop;
+        // Hold the end value until we copy it into the local property. FillBehavior.Stop snaps back to the
+        // From value (0 for a fade-in) when the clock is removed, and that snap can land after Completed.
+        anim.FillBehavior = FillBehavior.HoldEnd;
         int token = Bump(target, dp);
-        anim.Completed += (_, _) =>
+        void Land()
         {
             if (!IsCurrent(target, dp, token)) return;
+            done();
             target.BeginAnimation(dp, null);
             done();
-        };
+        }
+        anim.Completed += (_, _) => Land();
         target.BeginAnimation(dp, anim);
+        if (target is DispatcherObject source && source.Dispatcher != null)
+        {
+            var timer = new DispatcherTimer(DispatcherPriority.ContextIdle, source.Dispatcher)
+            {
+                Interval = anim.Duration.TimeSpan + TimeSpan.FromMilliseconds(40)
+            };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                Land();
+            };
+            timer.Start();
+        }
     }
 
     static ScaleTransform EnsureScale(UIElement el)
