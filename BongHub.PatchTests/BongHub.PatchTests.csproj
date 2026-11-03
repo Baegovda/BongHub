@@ -17,5 +17,6 @@
     <Compile Include="..\BongHub\KakaoLogic.cs" Link="KakaoLogic.cs" />
     <Compile Include="..\BongHub\CloudSync.cs" Link="CloudSync.cs" />
     <Compile Include="..\BongHub\NoteClip.cs" Link="NoteClip.cs" />
+    <Compile Include="..\BongHub\NoteBlocks.cs" Link="NoteBlocks.cs" />
   </ItemGroup>
 </Project>

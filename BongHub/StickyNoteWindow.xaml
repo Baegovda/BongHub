@@ -26,16 +26,17 @@
       </Border.Background>
     </Border>
 
-    <!-- top bar: native caption (drag). The title sits with the tools, like a page name. -->
-    <Grid Grid.Row="0" Margin="14,0,6,0">
+    <!-- top bar: native caption (drag). The title stays in this row, beside the tools, and both stay inside a narrow note. -->
+    <Grid x:Name="Caption" Grid.Row="0" Margin="14,0,6,0" ClipToBounds="True">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
-      <Grid Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">
+      <Grid Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center" ClipToBounds="True">
         <TextBlock x:Name="TitleHint" Text="제목" FontWeight="Bold" Opacity="0.38" IsHitTestVisible="False" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         <TextBox x:Name="TitleBox" FontWeight="Bold" Background="Transparent" BorderThickness="0" Padding="0" BorderBrush="Transparent"
                  MaxLength="80" VerticalContentAlignment="Center" VerticalAlignment="Center" TextWrapping="NoWrap"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled"
                  IsTabStop="False" WindowChrome.IsHitTestVisibleInChrome="True"/>
       </Grid>
       <StackPanel x:Name="Bar" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Opacity="1">
@@ -44,6 +45,7 @@
         <Button x:Name="ColorBtn" Style="{StaticResource IconButton}" Content="&#xE790;" ToolTip="색" WindowChrome.IsHitTestVisibleInChrome="True"/>
         <Button x:Name="ListBtn" Style="{StaticResource IconButton}" Content="&#xE700;" ToolTip="메모 목록" WindowChrome.IsHitTestVisibleInChrome="True"/>
         <Button x:Name="PinBtn" Style="{StaticResource IconButton}" Content="&#xE718;" ToolTip="항상 위" WindowChrome.IsHitTestVisibleInChrome="True"/>
+        <Button x:Name="MoreBtn" Style="{StaticResource IconButton}" Content="&#xE712;" ToolTip="더 보기" Visibility="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True"/>
         <Button x:Name="CloseBtn" Style="{StaticResource IconButton}" Content="&#xE8BB;" FontSize="11" ToolTip="닫기" WindowChrome.IsHitTestVisibleInChrome="True"/>
       </StackPanel>
     </Grid>
@@ -66,7 +68,7 @@
     <Border x:Name="FormatBar" Grid.Row="2" Margin="10,0,10,10" CornerRadius="14" Background="#33000000" BorderBrush="#1FFFFFFF" BorderThickness="1"
             Padding="4,2" HorizontalAlignment="Left" Visibility="Collapsed" Opacity="0">
       <Border.RenderTransform><TranslateTransform x:Name="FormatShift" Y="8"/></Border.RenderTransform>
-      <StackPanel Orientation="Horizontal">
+      <WrapPanel x:Name="FormatTools" Orientation="Horizontal">
         <Button x:Name="BoldBtn" Style="{StaticResource IconButton}" FontFamily="{StaticResource UiFont}" FontWeight="Bold" FontSize="14" Content="B" ToolTip="굵게 (Ctrl+B)"/>
         <Button x:Name="ItalicBtn" Style="{StaticResource IconButton}" FontFamily="{StaticResource UiFont}" FontStyle="Italic" FontSize="14" Content="I" ToolTip="기울임 (Ctrl+I)"/>
         <Button x:Name="UnderBtn" Style="{StaticResource IconButton}" FontSize="14" ToolTip="밑줄 (Ctrl+U)"><TextBlock Text="U" TextDecorations="Underline" FontFamily="{StaticResource UiFont}"/></Button>
@@ -77,7 +79,7 @@
         <Button x:Name="LargerBtn" Style="{StaticResource IconButton}" FontFamily="{StaticResource UiFont}" FontSize="12" Content="A+" ToolTip="글자 크게 (Ctrl++)" />
         <Button x:Name="ResetSizeBtn" Style="{StaticResource IconButton}" Content="&#xE72C;" ToolTip="기본 글자 크기"/>
         <Button x:Name="ImageBtn" Style="{StaticResource IconButton}" Content="&#xE91B;" ToolTip="이미지 넣기"/>
-      </StackPanel>
+      </WrapPanel>
     </Border>
 
     <!-- color palette popup -->
