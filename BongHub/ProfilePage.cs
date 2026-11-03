@@ -23,22 +23,27 @@ public partial class MainWindow
     public FrameworkElement? ProfileWindowList { get; private set; }
     public bool PreviewIcons { get; private set; }
 
-    Button VectorButton(string kind, string tip, Action click, string? keep = null, double box = 26)
+    UIElement VectorButton(string kind, string tip, Action click, string? keep = null, double box = 26)
     {
+        var icon = ProfileMarks.Icon(kind, box >= 24 ? 14 : 11);
         var b = new Button
         {
-            Content = ProfileMarks.Icon(kind, box >= 24 ? 14 : 11),
             Style = (Style)FindResource("IconButton"),
             Width = box,
             Height = box,
             ToolTip = tip,
             Tag = keep ?? "path-icon",
-            Margin = new Thickness(2, 0, 0, 0),
             Padding = new Thickness(0),
-            FontFamily = (FontFamily)FindResource("UiFont")
+            FontFamily = (FontFamily)FindResource("UiFont"),
+            Background = Brushes.Transparent
         };
         b.Click += (_, _) => click();
-        return b;
+        // The Path has to be a real visual child of the canvas. Button.Content stays inside the template
+        // until a layout pass, so a walk right after Render would miss it.
+        var host = new Grid { Width = box, Height = box, Margin = new Thickness(2, 0, 0, 0) };
+        host.Children.Add(icon);
+        host.Children.Add(b);
+        return host;
     }
 
     UIElement AppFace(string? process, string? path)
@@ -768,7 +773,8 @@ public partial class MainWindow
                 lines.Children.Add(size);
             }
             body.Children.Add(lines);
-            var chipTools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = selectedTile ? Visibility.Visible : Visibility.Hidden, IsHitTestVisible = selectedTile, Tag = "chip-tools" };
+            bool showTools = selectedTile || fallbackTools == null;
+            var chipTools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = showTools ? Visibility.Visible : Visibility.Hidden, IsHitTestVisible = showTools, Tag = "chip-tools" };
             chipTools.Children.Add(VectorButton("pencil", "수치로 고치기", () => { selectedAppId = app.Id; selectedMonitorNumber = app.Monitor; Render("presets", false); }, "keep:edit:" + app.Id, 20));
             chipTools.Children.Add(VectorButton("trash", "창 빼기", () => RemoveApp(profile, app), "keep:trash:" + app.Id, 20));
             body.Children.Add(chipTools);
