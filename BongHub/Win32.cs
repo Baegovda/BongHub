@@ -149,47 +149,54 @@ internal static class Win32
     }
 
     /// <summary>
-    /// <c>ShowActivated=false</c> is not enough on a real desktop. The shell can still activate the process's first window.
-    /// <c>--off</c>, smoke, and note tests keep this bit so the window cannot become foreground.
+    /// A passive show (process start, <c>--off</c>, smoke) must not become the foreground window.
+    /// If the shell handed us the foreground anyway, give it back. Does not set <c>WS_EX_NOACTIVATE</c>,
+    /// so a later user open can still activate.
     /// </summary>
-    public static void KeepInactive(IntPtr h)
+    public static void ReleaseIfStole(IntPtr self, IntPtr previous)
     {
-        if (h == IntPtr.Zero || !AppEnv.Off) return;
-        long ex = ExStyle(h);
-        if ((ex & WS_EX_NOACTIVATE) != 0) return;
-        try { SetWindowLongPtrW(h, GWL_EXSTYLE, new IntPtr(ex | WS_EX_NOACTIVATE)); }
-        catch { }
+        if (self == IntPtr.Zero || previous == IntPtr.Zero || previous == self) return;
+        if (GetForegroundWindow() != self) return;
+        uint prevThread = GetWindowThreadProcessId(previous, out _);
+        uint appThread = GetCurrentThreadId();
+        bool attached = prevThread != 0 && prevThread != appThread && AttachThreadInput(prevThread, appThread, true);
+        try { SetForegroundWindow(previous); }
+        finally { if (attached) AttachThreadInput(prevThread, appThread, false); }
     }
 
-    static IntPtr parkedForeground;
-    static bool yielding;
-    /// <summary>Remember the foreground window that is not <paramref name="self"/>, before we show.</summary>
-    public static void ParkForeground(IntPtr self)
+    /// <summary>
+    /// User opened settings (tray, second instance, menu). Another app may own the foreground,
+    /// so attach to its thread before <c>SetForegroundWindow</c>. Never call this from <c>--off</c> or smoke.
+    /// </summary>
+    public static void BringToForeground(IntPtr hwnd)
     {
-        if (!AppEnv.Off) return;
-        var fg = GetForegroundWindow();
-        if (fg == IntPtr.Zero || fg == self) return;
-        parkedForeground = fg;
-    }
-
-    /// <summary>If this window took the foreground, give it back and show without activating.</summary>
-    public static void YieldForeground(IntPtr self)
-    {
-        if (yielding || !AppEnv.Off || self == IntPtr.Zero) return;
-        yielding = true;
+        if (hwnd == IntPtr.Zero || AppEnv.Off) return;
+        AllowActivate(hwnd);
+        IntPtr fg = GetForegroundWindow();
+        uint foreThread = fg == IntPtr.Zero ? 0 : GetWindowThreadProcessId(fg, out _);
+        uint appThread = GetCurrentThreadId();
+        bool attached = false;
+        if (foreThread != 0 && foreThread != appThread)
+            attached = AttachThreadInput(foreThread, appThread, true);
         try
         {
-            KeepInactive(self);
-            if (GetForegroundWindow() != self) return;
-            if (parkedForeground != IntPtr.Zero && parkedForeground != self)
-                SetForegroundWindow(parkedForeground);
-            ShowWindow(self, 8);
+            AllowSetForegroundWindow(-1);
+            if (IsIconic(hwnd)) ShowWindow(hwnd, 9);
+            else ShowWindow(hwnd, 5);
+            SetForegroundWindow(hwnd);
         }
-        finally { yielding = false; }
+        finally
+        {
+            if (attached) AttachThreadInput(foreThread, appThread, false);
+        }
     }
 
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int processId);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
 
     /// <summary>3.4.9 clears WS_EX_NOACTIVATE right after show so the first drag is not deferred.</summary>
     public static void AllowActivate(IntPtr h)

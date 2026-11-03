@@ -50,17 +50,11 @@ public partial class MainWindow : Window
             if (AppEnv.Off) { ShowInTaskbar = false; Win32.Place(this, AppEnv.OffsetX + 100, AppEnv.OffsetY + 100, (int)(Width * Win32.Scale(this)), (int)(Height * Win32.Scale(this))); }
         };
         if (AppEnv.Off) { ShowActivated = false; WindowStartupLocation = WindowStartupLocation.Manual; Left = -30000; Top = -30000; }
-        Activated += (_, _) => { if (AppEnv.Off) Win32.YieldForeground(Win32.Handle(this)); };
         ContentRendered += (_, _) => EverShown = true;
         SourceInitialized += (_, _) =>
         {
             var src = HwndSource.FromHwnd(Win32.Handle(this));
             src?.AddHook(OnDisplayMessage);
-            if (AppEnv.Off)
-            {
-                Win32.KeepInactive(Win32.Handle(this));
-                src?.AddHook(RefuseActivate);
-            }
         };
         ProfileHotkey.Fired = id => Dispatcher.BeginInvoke(() => RequestApplyProfile(id));
         SizeChanged += (_, e) =>
@@ -91,20 +85,6 @@ public partial class MainWindow : Window
         AppEnv.Mark("presets_begin");
         Navigate("presets");
         AppEnv.Mark("presets_end");
-    }
-
-    /// <summary><c>--off</c> must not become the foreground window. A click and a late shell activation both give the focus back.</summary>
-    IntPtr RefuseActivate(IntPtr hwnd, int msg, IntPtr wp, IntPtr lp, ref bool handled)
-    {
-        if (!AppEnv.Off) return IntPtr.Zero;
-        if (msg == Win32.WM_MOUSEACTIVATE)
-        {
-            handled = true;
-            return (IntPtr)Win32.MA_NOACTIVATE;
-        }
-        if (msg == Win32.WM_ACTIVATE && (wp.ToInt64() & 0xFFFF) != 0)
-            Win32.YieldForeground(hwnd);
-        return IntPtr.Zero;
     }
 
     /// <summary>Decorative radial glows. Shown after the first frame is recorded so the software raster of the first paint skips them.</summary>

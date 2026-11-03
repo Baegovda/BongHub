@@ -50,7 +50,7 @@ public sealed class TrayService : IDisposable
         AppEnv.NoteTrayVisible();
     }
 
-    public void OnLeftClick() => app.ShowSettings(null);
+    public void OnLeftClick() => app.ShowSettings(null, user: true);
     public void OnNewNote() => NoteManager.NewNote();
     public void OnExit() => exit();
 

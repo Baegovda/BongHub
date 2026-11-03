@@ -57,7 +57,7 @@ public partial class App : Application
                     Shutdown(); return;
                 }
                 showEvt = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
-                showWait = ThreadPool.RegisterWaitForSingleObject(showEvt, (_, _) => Dispatcher.BeginInvoke(() => ShowSettings(null)), null, -1, false);
+                showWait = ThreadPool.RegisterWaitForSingleObject(showEvt, (_, _) => Dispatcher.BeginInvoke(() => ShowSettings(null, user: true)), null, -1, false);
             }
             quitEvt = new EventWaitHandle(false, EventResetMode.AutoReset, QuitEventName);
             quitWait = ThreadPool.RegisterWaitForSingleObject(quitEvt, (_, _) => Dispatcher.BeginInvoke(RequestShutdown), null, -1, false);
@@ -132,7 +132,8 @@ public partial class App : Application
         return MainWin;
     }
 
-    public void ShowSettings(string? page)
+    /// <param name="user">Tray, second instance, or an in-app menu. Passive startup and <c>--off</c> pass false and must not steal the foreground.</param>
+    public void ShowSettings(string? page, bool user = false)
     {
         var w = EnsureMain();
         if (page != null) w.Navigate(page);
@@ -151,16 +152,13 @@ public partial class App : Application
             // After the timestamp, so the radial-glow raster is not inside first_frame_ms.
             WindowFx.Of(w).AfterFirstFrame += w.ShowDecorations;
         }
-        if (AppEnv.Off)
-        {
-            var hwnd = Win32.Handle(w);
-            Win32.ParkForeground(hwnd);
-            Win32.KeepInactive(hwnd);
-        }
+        bool bring = user && !AppEnv.Off;
+        IntPtr previous = bring ? IntPtr.Zero : Win32.GetForegroundWindow();
         if (!w.IsVisible) { AppEnv.Mark("show_begin"); w.Show(); if (first) AppEnv.Mark("show_returned"); if (!first) w.Reappear(); }
         if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
-        if (AppEnv.Off) Win32.YieldForeground(Win32.Handle(w));
-        else w.Activate();
+        var hwnd = Win32.Handle(w);
+        if (bring) Win32.BringToForeground(hwnd);
+        else Win32.ReleaseIfStole(hwnd, previous);
     }
 
     Timer? cloudTimer;
