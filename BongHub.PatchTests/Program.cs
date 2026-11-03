@@ -1066,6 +1066,14 @@ var snapCue = SnapCueMath.Window(new ProfileBox(12, 40, 400, 300), new ProfileBo
 var snapFlush = SnapCueMath.Window(new ProfileBox(3, 40, 400, 300), new ProfileBox(0, 0, 1920, 1080), null, 1, 8, "", default);
 Check("snap preview marks the zone and the flush edge", snapCue.Kind == "left" && snapCue.Left && snapCue.Box.W == 960 && snapFlush.Left && snapFlush.Box.X == 0);
 Check("hotkey capture shows held modifiers", HotkeyChord.Caps(false, true, true, false) == "Ctrl + Alt + …" && HotkeyChord.Caps(false, false, false, false).Length == 0 && HotkeyChord.ListenPrompt == "키를 누르세요…");
+string[] captureApis = { "GraphicsCapture", "CreateForMonitor", "Direct3D11CaptureFramePool", "IDXGIOutputDuplication", "DwmRegisterThumbnail", "CopyFromScreen", "IsBorderRequired" };
+var captureHits = new List<string>();
+if (repo != null)
+    foreach (var file in Directory.GetFiles(Path.Combine(repo, "BongHub"), "*.cs"))
+        foreach (var api in captureApis)
+            if (File.ReadAllText(file).Contains(api, StringComparison.Ordinal))
+                captureHits.Add(Path.GetFileName(file) + ":" + api);
+Check("app does not capture a monitor or a window", captureHits.Count == 0, string.Join(", ", captureHits));
 var barBottom = new ProfileMonitor { Number = 1, X = 0, Y = 0, W = 1920, H = 1080, Primary = true, WorkX = 0, WorkY = 0, WorkW = 1920, WorkH = 1040 };
 var barLeft = new ProfileMonitor { Number = 2, X = 1920, Y = 0, W = 1600, H = 1200, Primary = false, WorkX = 1968, WorkY = 0, WorkW = 1552, WorkH = 1200 };
 var barTop = new ProfileMonitor { Number = 3, X = -2560, Y = -1440, W = 2560, H = 1440, Primary = false, WorkX = -2560, WorkY = -1400, WorkW = 2560, WorkH = 1400 };
