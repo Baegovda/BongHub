@@ -813,12 +813,15 @@ public partial class MainWindow
             Canvas.SetLeft(tile, chip.X);
             Canvas.SetTop(tile, chip.Y);
             Canvas.SetZIndex(tile, selectedTile ? 40 : 20);
-            bool tallChip = chip.H >= 46;
-            double toolBox = chip.W < 96 ? 14 : 16;
-            double toolBand = toolBox * 2 + 6;
-            bool showIcon = !countOnly && contentInset.Icon >= 10 && chip.W >= toolBand + 46;
             double nameFont = chip.W < 70 || chip.H < 34 ? 10 : 12;
-            double nameMax = Math.Max(28, chip.W - 12 - (showIcon ? contentInset.Icon + 6 : 0));
+            bool roomForSize = chip.H >= 56 && chip.W >= 72;
+            double labelH = nameFont + 6 + (roomForSize ? 14 : 0);
+            double toolBox = chip.W >= 120 && chip.H >= 64 ? 16 : 12;
+            double toolBand = toolBox * 2 + 8;
+            // Buttons occupy the chip's bottom-right corner. A chip that cannot hold that corner and the name hides them.
+            bool cornerRoom = chip.H >= labelH + toolBox + 2 && chip.W >= toolBand + 16;
+            bool showIcon = !countOnly && contentInset.Icon >= 10 && chip.W >= (cornerRoom ? toolBand : 0) + 46;
+            double nameMax = Math.Max(28, chip.W - 12 - (showIcon ? Math.Min(contentInset.Icon, 14) + 6 : 0));
             var nameBlock = new TextBlock
             {
                 Text = chipText,
@@ -832,9 +835,7 @@ public partial class MainWindow
                 MaxWidth = nameMax,
                 IsHitTestVisible = false
             };
-            var body = new Grid { Margin = new Thickness(4, 2, 3, 2) };
-            body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var body = new Grid { Margin = new Thickness(4, 2, 2, 2) };
             var lines = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Left };
             if (showIcon)
             {
@@ -850,7 +851,6 @@ public partial class MainWindow
             }
             var words = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
             words.Children.Add(nameBlock);
-            bool roomForSize = tallChip && chip.W >= 64;
             if (roomForSize)
             {
                 words.Children.Add(new TextBlock
@@ -867,27 +867,31 @@ public partial class MainWindow
             }
             lines.Children.Add(words);
             body.Children.Add(lines);
-            bool showTools = parked || selectedTile || fallbackTools == null;
+            bool showTools = cornerRoom && (parked || selectedTile || fallbackTools == null);
             var chipTools = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, 1, 0, 0),
+                VerticalAlignment = VerticalAlignment.Bottom,
                 Visibility = showTools ? Visibility.Visible : Visibility.Hidden,
                 IsHitTestVisible = showTools,
                 Tag = "chip-tools"
             };
-            Grid.SetRow(chipTools, 1);
             chipTools.Children.Add(VectorButton("pencil", "수치로 고치기", () => { selectedAppId = app.Id; selectedMonitorNumber = app.Monitor; Render("presets", false); }, "keep:edit:" + app.Id, toolBox));
             chipTools.Children.Add(VectorButton("trash", "창 빼기", () => RemoveApp(profile, app), "keep:trash:" + app.Id, toolBox));
             body.Children.Add(chipTools);
             tile.ClipToBounds = true;
             tile.Child = body;
             if (selectedTile) drewSelected = true;
-            else fallbackTools ??= chipTools;
-            tile.MouseEnter += (_, _) => { chipTools.Visibility = Visibility.Visible; chipTools.IsHitTestVisible = true; Canvas.SetZIndex(tile, 50); };
-            tile.MouseLeave += (_, _) => { if (app.Id != selectedAppId) { chipTools.Visibility = Visibility.Hidden; chipTools.IsHitTestVisible = false; } };
+            else if (cornerRoom) fallbackTools ??= chipTools;
+            tile.MouseEnter += (_, _) =>
+            {
+                if (!cornerRoom) return;
+                chipTools.Visibility = Visibility.Visible;
+                chipTools.IsHitTestVisible = true;
+                Canvas.SetZIndex(tile, 50);
+            };
+            tile.MouseLeave += (_, _) => { if (cornerRoom && app.Id != selectedAppId) { chipTools.Visibility = Visibility.Hidden; chipTools.IsHitTestVisible = false; } };
             double chipX = chip.X, chipY = chip.Y;
             var appStart = new ProfileBox(home.X + app.X, home.Y + app.Y, app.W, app.H);
             string edge = "";
