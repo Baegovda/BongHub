@@ -18,6 +18,7 @@
     <Compile Include="..\BongHub\CloudSync.cs" Link="CloudSync.cs" />
     <Compile Include="..\BongHub\NoteClip.cs" Link="NoteClip.cs" />
     <Compile Include="..\BongHub\NoteBlocks.cs" Link="NoteBlocks.cs" />
+    <Compile Include="..\BongHub\CursorCross.cs" Link="CursorCross.cs" />
     <Compile Include="..\BongHub\AirDock.cs" Link="AirDock.cs" />
   </ItemGroup>
 </Project>

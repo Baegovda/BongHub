@@ -307,6 +307,7 @@ public partial class App : Application
         try { NoteHotkey.Stop(); } catch { }
         try { ProfileHotkey.Stop(); } catch { }
         try { AirDockHotkey.Stop(); } catch { }
+        try { CursorCrossService.Stop(); } catch { }
         try { if (KakaoNative.Launched) KakaoNative.Restore(); } catch { }
         try { cloudTimer?.Dispose(); } catch { }
         tray?.Dispose();

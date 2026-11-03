@@ -437,6 +437,7 @@ public partial class MainWindow
     void DrawProfileSettings(MonitorProfile profile, Panel sink)
     {
         var g = Group(sink);
+        Row(g, "\uE7F8", "5AC8FA", "화면 경계", "EDID mm로 같은 실물 위치에 둬요. 기본은 꺼짐.", Switch(AppSettings.CursorCross, v => AppSettings.SetCursorCross(v), !AppEnv.ReadOnly), tight: true);
         var nameBox = new TextBox { Text = profile.Name, MinWidth = 140, FontSize = 13, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground };
         nameBox.LostFocus += (_, _) => { ProfileDoc.Rename(profile, nameBox.Text); SaveProfiles(); ProfileHotkey.Bind(Profiles, ConfigStore.Notes.Hotkey); };
         Row(g, null, null, "이름", null, Chip(nameBox), tight: true);
@@ -1282,6 +1283,8 @@ public partial class MainWindow
         stage.Children.Add(expand);
         var card = new DockPanel { Margin = new Thickness(0, 0, 0, 6), LastChildFill = true };
         var bar = new Grid { Height = 32, Margin = new Thickness(2, 0, 2, 2) };
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var pills = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         pills.Children.Add(StatePill(AppSettings.ChipsVisible, "eye", "eyeoff", "창 칩", "칩 숨김", "저장된 창 칩을 모니터맵에 보여요.", "chip-visibility", () =>
         {
@@ -1293,7 +1296,24 @@ public partial class MainWindow
             AppSettings.SetMonitorLocked(!AppSettings.MonitorLocked);
             Render("presets", false);
         }));
+        Grid.SetColumn(pills, 1);
         bar.Children.Add(pills);
+        if (AppSettings.CursorCross)
+        {
+            var fit = new TextBlock
+            {
+                Text = "실물 맞춤",
+                FontSize = 12,
+                Foreground = (Brush)FindResource("Secondary"),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(8, 0, 8, 0),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                IsHitTestVisible = false
+            };
+            Grid.SetColumn(fit, 0);
+            bar.Children.Add(fit);
+        }
         DockPanel.SetDock(bar, Dock.Top);
         card.Children.Add(bar);
         stage.Margin = new Thickness(0);

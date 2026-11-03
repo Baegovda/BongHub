@@ -668,7 +668,7 @@ public static class SmokeTest
         var bc = TestKit.ContrastElement(tray.LastBalloonVisual!, tray.LastBalloonSample!, DarkUnder);
         t.Check("balloon text contrast ≥ 7", bc.ratio >= 7, $"{bc.ratio:0.0}:1 ({bc.fg} on {bc.bg})");
         t.Check("smoketest does not register a shell tray icon", !tray.ShellIconCreated && tray.NativeBalloonCalls == 0);
-        t.Check("smoketest does not register a hotkey or a hook", NoteHotkey.NativeRegistrations == 0 && NoteHotkey.HookInstalls == 0 && !NoteHotkey.Registered && ProfileHotkey.NativeRegistrations == 0 && ProfileHotkey.HookInstalls == 0 && AirDockHotkey.NativeRegistrations == 0 && AirDockHotkey.HookInstalls == 0 && AirDockLaunch.NativeStarts == 0);
+        t.Check("smoketest does not register a hotkey or a hook", NoteHotkey.NativeRegistrations == 0 && NoteHotkey.HookInstalls == 0 && !NoteHotkey.Registered && ProfileHotkey.NativeRegistrations == 0 && ProfileHotkey.HookInstalls == 0 && AirDockHotkey.NativeRegistrations == 0 && AirDockHotkey.HookInstalls == 0 && AirDockLaunch.NativeStarts == 0 && CursorCrossService.HookInstalls == 0 && !CursorCrossService.Active && CursorCrossService.Reads == 0);
         NoteHotkey.ReportFailure(tray, "Ctrl+Alt+N");
         t.Check("hotkey conflict balloon", tray.LastBalloonMessage != null && tray.LastBalloonMessage.Contains("단축키 등록 실패") && tray.LastBalloonMessage.Contains("Ctrl+Alt+N") && tray.NativeBalloonCalls == 0);
 
@@ -698,6 +698,11 @@ public static class SmokeTest
         foreach (var item in ThemeAudit.Bare(tray.Menu)) bare.Add(item);
         t.Check("every control uses a themed style", bare.Count == 0, bare.Count == 0 ? "" : string.Join(", ", bare.Take(12)));
         t.Check("settings pages do not clip text", pageClips.Count == 0, pageClips.Count == 0 ? "" : string.Join(" | ", pageClips.Take(4)));
+        string crossStory = CursorCross.Story();
+        AppSettings.SetCursorCross(true);
+        bool crossOff = !CursorCrossService.Active && CursorCrossService.HookInstalls == 0 && CursorCrossService.Reads == 0;
+        AppSettings.SetCursorCross(false);
+        t.Check("cursor cross follows fake millimetres and installs no hook", crossStory.Length == 0 && crossOff, crossStory);
         string dockStory = AirDockLayout.Story();
         t.Check("airdock stays on the cursor monitor and does not launch", dockStory.Length == 0 && AirDockLaunch.NativeStarts == 0 && AirDockLaunch.Attempts == 0, dockStory);
         bool added = w.AddAirProgram(@"C:\Fake\Notes.exe");
