@@ -779,7 +779,7 @@ public partial class MainWindow
             var homeView = ProfileSnap.ToCanvas(home.Box, scene, 8, 8);
             var chip = ProfileChrome.WindowChip(app.X, app.Y, app.W, app.H, home.W, home.H, homeView.X, homeView.Y, homeView.W, homeView.H);
             bool homeDetail = ProfileChrome.Detail(homeView.W, homeView.H, home.W, home.H, home.Scale, home.Orientation, home.Primary, home.Connected).Length > 0;
-            var contentInset = ProfileChrome.ChipContent(chip, homeView.X, homeView.Y, homeView.W, ProfileChrome.BadgeBand(homeView.W, homeView.H, homeDetail));
+            var contentInset = ProfileChrome.ChipContent(chip, homeView.X, homeView.Y, homeView.W, ProfileChrome.BadgeBand(homeView.W, homeView.H, homeDetail), home.Primary);
             string shownName = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
             string chipText = shownName.Length > 0 ? shownName : "창";
             bool countOnly = false;
@@ -789,7 +789,7 @@ public partial class MainWindow
             {
                 // The real rectangle sits under the identify number. Keep a compact chip beside it so the
                 // edit buttons stay on the canvas, without covering the number or the resolution line.
-                var parkedBox = ProfileChrome.ParkedChip(homeView.X, homeView.Y, homeView.W, homeView.H);
+                var parkedBox = ProfileChrome.ParkedChip(homeView.X, homeView.Y, homeView.W, homeView.H, home.Primary);
                 if (parkedBox.W < 2 || parkedBox.H < 2) continue;
                 chip = parkedBox;
                 contentInset = new ProfileChrome.ChipInk(true, 2, 1, 13);
@@ -821,7 +821,9 @@ public partial class MainWindow
             // Buttons occupy the chip's bottom-right corner. A chip that cannot hold that corner and the name hides them.
             bool cornerRoom = chip.H >= labelH + toolBox + 2 && chip.W >= toolBand + 16;
             bool showIcon = !countOnly && contentInset.Icon >= 10 && chip.W >= (cornerRoom ? toolBand : 0) + 46;
-            double nameMax = Math.Max(28, chip.W - 12 - (showIcon ? Math.Min(contentInset.Icon, 14) + 6 : 0));
+            double insetL = contentInset.Left > 0.5 ? contentInset.Left : 0;
+            double insetT = contentInset.Top > 0.5 ? contentInset.Top : 0;
+            double nameMax = Math.Max(20, chip.W - 12 - insetL - (showIcon ? Math.Min(contentInset.Icon, 14) + 6 : 0));
             var nameBlock = new TextBlock
             {
                 Text = chipText,
@@ -835,7 +837,7 @@ public partial class MainWindow
                 MaxWidth = nameMax,
                 IsHitTestVisible = false
             };
-            var body = new Grid { Margin = new Thickness(4, 2, 2, 2) };
+            var body = new Grid { Margin = new Thickness(4 + insetL, 2 + insetT, 2, 2) };
             var lines = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Left };
             if (showIcon)
             {
@@ -1074,29 +1076,31 @@ public partial class MainWindow
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(6, 1, 6, 1),
                 IsHitTestVisible = false,
-                Tag = "monitor-number",
-                Child = new TextBlock
-                {
-                    Text = mon.Number.ToString(),
-                    Foreground = Brushes.White,
-                    FontSize = 12,
-                    FontWeight = FontWeights.Bold,
-                    IsHitTestVisible = false,
-                    Tag = "monitor-label"
-                }
+                Tag = "monitor-number"
             };
+            var numberRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            numberRow.Children.Add(new TextBlock
+            {
+                Text = mon.Number.ToString(),
+                Foreground = Brushes.White,
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                IsHitTestVisible = false,
+                Tag = "monitor-label",
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            if (mon.Primary)
+            {
+                var star = ProfileMarks.Icon("star", 11);
+                star.Margin = new Thickness(4, 0, 0, 0);
+                star.VerticalAlignment = VerticalAlignment.Center;
+                numberRow.Children.Add(star);
+            }
+            number.Child = numberRow;
             Canvas.SetLeft(number, box.X + 6);
             Canvas.SetTop(number, box.Y + 6);
             Canvas.SetZIndex(number, 75);
             stage.Children.Add(number);
-            if (mon.Primary)
-            {
-                var star = ProfileMarks.Icon("star", 12);
-                Canvas.SetLeft(star, box.X + 6 + 28);
-                Canvas.SetTop(star, box.Y + 8);
-                Canvas.SetZIndex(star, 76);
-                stage.Children.Add(star);
-            }
         }
         Canvas.SetZIndex(guideLine, 90);
         Canvas.SetZIndex(guideLine2, 90);

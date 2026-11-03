@@ -938,6 +938,9 @@ Check("smoke desk parks the swallowed notepad chip", smokePark, smokeParkDetail)
 var parkedChip = ProfileChrome.ParkedChip(0, 0, 180, 100);
 var parkedPill = ProfileChrome.NumberPill(0, 0);
 var parkedTight = ProfileChrome.ParkedChip(0, 0, 48, 40);
+var primPill = ProfileChrome.NumberPill(0, 0, true);
+var underPrim = ProfileChrome.ChipContent(new DipRect(0, 0, 140, 48), 0, 0, 200, 80, true);
+Check("primary star stays inside the badge and chip text starts after it", primPill.W >= 50 && underPrim.Show && underPrim.Left >= primPill.Right - 1, $"pill {primPill.W:0} left {underPrim.Left:0}");
 Check("chip icon clears the identify band", chipInset.Show && (chipInset.Top >= headerBand - 1 || chipInset.Left >= 24) && belowInset.Show && belowInset.Left == 0 && belowInset.Top == 0 && !swallowed.Show && parkedChip.W >= 56 && parkedChip.H >= 18 && parkedChip.X >= parkedPill.Right + 3 && !parkedChip.Hits(parkedPill) && parkedChip.Bottom <= 26 && parkedChip.Right <= 176 && parkedTight.W == 0, $"inset {chipInset.Left:0},{chipInset.Top:0} show={chipInset.Show} below {below.Y:0} {belowInset.Left:0},{belowInset.Top:0} swallowed={swallowed.Show} parked {parkedChip.X:0},{parkedChip.Y:0} {parkedChip.W:0}x{parkedChip.H:0} tight={parkedTight.W:0}");
 var iconMon = new List<ProfileMonitor>
 {

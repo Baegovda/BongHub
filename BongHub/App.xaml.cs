@@ -169,8 +169,10 @@ public partial class App : Application
         }
         else
         {
+            // Reopen after hide is not the first frame, but Show can still activate. Same give-back retry.
             Win32.ResetPassive(previous);
             Win32.ReleaseIfStole(hwnd, previous);
+            PassiveKeep(w, previous);
         }
     }
 
@@ -189,8 +191,13 @@ public partial class App : Application
             if (gen != passiveGen) { timer.Stop(); return; }
             n++;
             var hwnd = Win32.Handle(w);
-            bool hot = hwnd != IntPtr.Zero && (Win32.GetForegroundWindow() == hwnd || w.IsActive);
-            if (hot) Win32.ReleaseIfStole(hwnd, previous);
+            bool foreground = hwnd != IntPtr.Zero && Win32.GetForegroundWindow() == hwnd;
+            bool hot = foreground || w.IsActive;
+            if (foreground) Win32.ReleaseIfStole(hwnd, previous);
+            else if (w.IsActive)
+            {
+                try { System.Windows.Input.Keyboard.ClearFocus(); } catch { }
+            }
             Win32.NotePassive(n, clock.ElapsedMilliseconds, hot);
             if (n >= 8) timer.Stop();
         };

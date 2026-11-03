@@ -122,7 +122,8 @@ public static class SmokeTest
         try { app.ShowSettings("presets"); } catch (Exception e) { reopenErr = e; }
         await TestKit.Delay(400);
         t.Check("reopen from tray after Alt+F4", reopenErr == null && w.IsVisible && w.Root.Opacity > 0.99, reopenErr?.Message ?? $"visible={w.IsVisible}");
-        t.Check("reopen did not take focus", TestKit.NotForeground(w));
+        string? reopenFocus = await TestKit.WaitNotForeground(w);
+        t.Check("reopen did not take focus", reopenFocus == null, reopenFocus ?? "");
         t.Check("six settings tabs", w.Pages.Count == 6 && w.Pages.Any(p => p.Label == "모니터 프로필") && w.Pages.Any(p => p.Label == "카톡 광고 제거") && !w.Pages.Any(p => p.Key == "windows") && !w.Pages.Any(p => p.Key == "desktop"));
         t.Check("startup switch is display only", w.StartupSwitchEnabled == false);
         t.Check("about shows version and hotkeys", w.AboutMentionsVersion && w.AboutMentionsHotkey);
@@ -510,7 +511,8 @@ public static class SmokeTest
         var ns = WindowFx.Of(note);
         t.Check("note first frame", await TestKit.Until(() => note.Ready, 6000), $"{nsw.Elapsed.TotalMilliseconds:0} ms");
         t.Check("note cloaked before first paint", ns.CloakedAtCreate > 0, $"{ns.CloakedAtCreate}");
-        t.Check("note did not take focus (ShowActivated=false)", TestKit.NotForeground(note) && !note.ShowActivated);
+        string? noteFocus = await TestKit.WaitNotForeground(note);
+        t.Check("note did not take focus (ShowActivated=false)", noteFocus == null && !note.ShowActivated, noteFocus ?? (note.ShowActivated ? "showActivated=true" : ""));
         var r = Win32.Rect(note);
         bool onScreen = Win32.OnAnyMonitor(r.Left, r.Top, r.Width, r.Height);
         t.Check("note placed by physical pixels", !onScreen && r.Left == 200 + AppEnv.OffsetX && r.Top == 200 + AppEnv.OffsetY && r.Width == 330 && r.Height == 330, $"onScreen={onScreen} {r.Left},{r.Top} {r.Width}x{r.Height}");
@@ -642,14 +644,16 @@ public static class SmokeTest
         await TestKit.Until(() => !w.IsVisible, 2000);
         t.Check("tray menu 열기 opens settings", tray.RaiseHeader("BongHub 열기") && await TestKit.Until(() => w.IsVisible, 2000));
         await TestKit.Delay(350);
-        t.Check("tray menu 열기 did not take focus", TestKit.NotForeground(w));
+        string? trayMenuFocus = await TestKit.WaitNotForeground(w);
+        t.Check("tray menu 열기 did not take focus", trayMenuFocus == null, trayMenuFocus ?? "");
 
         Win32.SendMessage(Win32.Handle(w), 0x0010, IntPtr.Zero, IntPtr.Zero);
         await TestKit.Until(() => !w.IsVisible, 2000);
         tray.OnLeftClick();
         t.Check("tray left click opens settings", await TestKit.Until(() => w.IsVisible, 2000));
         await TestKit.Delay(350);
-        t.Check("tray left click did not take focus", TestKit.NotForeground(w));
+        string? trayClickFocus = await TestKit.WaitNotForeground(w);
+        t.Check("tray left click did not take focus", trayClickFocus == null, trayClickFocus ?? "");
         t.Check("tray 종료 requests shutdown", tray.ExitRequestsShutdown);
 
         tray.ShowBalloon("기준선");

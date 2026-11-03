@@ -2176,7 +2176,8 @@ public static class ProfileChrome
     }
 
     /// <summary>The identify number drawn at the tile's top-left. Matches the badge in <c>DrawProfileCanvas</c>.</summary>
-    public static DipRect NumberPill(double tileX, double tileY) => new(tileX + 4, tileY + 4, 32, 24);
+    /// <param name="primary">The primary badge also holds the star, so the pill is wider and chip text starts further right.</param>
+    public static DipRect NumberPill(double tileX, double tileY, bool primary = false) => new(tileX + 4, tileY + 4, primary ? 52 : 32, 24);
 
     /// <summary>
     /// Where the chip icon sits. <see cref="ChipInk.Show"/> is false when the chip is swallowed by the number
@@ -2184,10 +2185,10 @@ public static class ProfileChrome
     /// </summary>
     public readonly record struct ChipInk(bool Show, double Left, double Top, double Icon);
 
-    public static ChipInk ChipContent(DipRect chip, double tileX, double tileY, double tileW, double badgeH)
+    public static ChipInk ChipContent(DipRect chip, double tileX, double tileY, double tileW, double badgeH, bool primary = false)
     {
         if (chip.W < 8 || chip.H < 8) return new ChipInk(false, 0, 0, 0);
-        var pill = NumberPill(tileX, tileY);
+        var pill = NumberPill(tileX, tileY, primary);
         if (!chip.Hits(pill))
         {
             double overlap = tileY + badgeH - chip.Y;
@@ -2219,9 +2220,9 @@ public static class ProfileChrome
     /// number's row, to the right of <see cref="NumberPill"/>, and stops above the info line (frame margin 28)
     /// so the number and the resolution text stay readable. Empty when the tile has no room for the edit buttons.
     /// </summary>
-    public static DipRect ParkedChip(double tileX, double tileY, double tileW, double tileH)
+    public static DipRect ParkedChip(double tileX, double tileY, double tileW, double tileH, bool primary = false)
     {
-        var pill = NumberPill(tileX, tileY);
+        var pill = NumberPill(tileX, tileY, primary);
         const double gap = 4;
         const double edge = 4;
         double x = pill.Right + gap;
