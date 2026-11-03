@@ -253,6 +253,13 @@ public partial class StickyNoteWindow : Window
     void BeginTopology()
     {
         if (AppEnv.Off) return;
+        if (NoteManager.SwitchPin)
+        {
+            TopologyHold = true;
+            if (NoteManager.TryPin(this, out var pin))
+                Win32.Place(this, pin.X + AppEnv.OffsetX, pin.Y + AppEnv.OffsetY, pin.W, pin.H);
+            return;
+        }
         TopologyHold = true;
         topologyWaits = 0;
         if (anchorBefore.Count == 0) anchorBefore = RememberAnchors();
@@ -277,6 +284,12 @@ public partial class StickyNoteWindow : Window
     public void FinishTopology(NoteLayout.Box[] areas, bool forceTransient)
     {
         topologyTimer?.Stop();
+        if (NoteManager.SwitchPin && NoteManager.TryPin(this, out var pin))
+        {
+            TopologyHold = true;
+            if (!AppEnv.Off) Win32.Place(this, pin.X + AppEnv.OffsetX, pin.Y + AppEnv.OffsetY, pin.W, pin.H);
+            return;
+        }
         bool transient = forceTransient || NoteLayout.IsTransient(areas);
         if (transient && !forceTransient && topologyWaits < 8 && !AppEnv.Off)
         {

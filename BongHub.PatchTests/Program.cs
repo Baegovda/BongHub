@@ -406,6 +406,10 @@ try { new RealDisplay().Apply(PresetPlan.Commands(new MonitorPreset { Name = "ìž
 bool brightThrew = false;
 try { new RealBright().Set("SAM73D3", 30, out _); } catch (InvalidOperationException) { brightThrew = true; }
 Check("display and brightness refuse before any api", displayThrew && brightThrew && !DisplayGate.RealAllowed && DisplaySystem.NativeCalls == 0 && DisplaySystem.MmtStarts == 0 && DisplaySystem.ChangeDisplaySettingsExCalls == 0 && DisplaySystem.SetDisplayConfigCalls == 0 && DisplaySystem.BrightnessCalls == 0 && DisplaySystem.DdcCalls == 0);
+string ccdStory = CcdLayout.DisconnectStory();
+Check("disabled monitor deactivates and the primary returns to the origin", ccdStory.Length == 0 && DisplaySystem.SetDisplayConfigCalls == 0 && DisplaySystem.MmtStarts == 0, ccdStory);
+string holdStory = SwitchHold.Story();
+Check("windows keep their snapshot when a monitor turns off", holdStory.Length == 0 && LiveWindowSurface.NativeCalls == 0, holdStory);
 byte[]? dataBefore = null;
 string? dataPath = null;
 if (repo != null)

@@ -152,9 +152,42 @@ public static class NoteManager
         return string.Join("\r\n\r\n──────────\r\n\r\n", NoteStore.All.Where(m => !string.IsNullOrWhiteSpace(m.Text)).Select(m => m.Text.Trim()));
     }
 
-    public static void HoldTopology() { foreach (var w in open.Values.ToList()) w.SetTopologyHold(true); }
+    public static bool SwitchPin { get; private set; }
+    public readonly record struct NotePin(int X, int Y, int W, int H);
+    static readonly Dictionary<StickyNoteWindow, NotePin> pins = new();
+
+    public static void HoldTopology()
+    {
+        SwitchPin = true;
+        pins.Clear();
+        foreach (var w in open.Values.ToList())
+        {
+            w.SetTopologyHold(true);
+            pins[w] = new NotePin(w.Meta.X, w.Meta.Y, w.Meta.W, w.Meta.H);
+        }
+    }
+
+    public static bool TryPin(StickyNoteWindow w, out NotePin pin)
+    {
+        if (SwitchPin && pins.TryGetValue(w, out pin)) return true;
+        pin = default;
+        return false;
+    }
+
     public static void SettleTopology()
     {
+        if (SwitchPin)
+        {
+            foreach (var kv in pins.ToList())
+            {
+                kv.Key.SetTopologyHold(true);
+                if (!AppEnv.Off) Win32.Place(kv.Key, kv.Value.X + AppEnv.OffsetX, kv.Value.Y + AppEnv.OffsetY, kv.Value.W, kv.Value.H);
+                kv.Key.SetTopologyHold(false);
+            }
+            pins.Clear();
+            SwitchPin = false;
+            return;
+        }
         var areas = AppEnv.Off ? Array.Empty<NoteLayout.Box>() : Win32.WorkAreas();
         bool transient = AppEnv.Off || NoteLayout.IsTransient(areas);
         foreach (var w in open.Values.ToList()) w.FinishTopology(areas, transient);

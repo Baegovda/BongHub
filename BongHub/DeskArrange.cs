@@ -509,3 +509,531 @@ public static class ProfileSwitch
         return profile;
     }
 }
+
+/// <summary>One CCD path. <see cref="StableId"/> is the device-interface path or the EDID id, never <c>\\.\DISPLAYn</c>.</summary>
+public sealed class CcdPath
+{
+    public string StableId = "";
+    public string Gdi = "";
+    public int X, Y, W, H;
+    public bool Active = true;
+    public bool Primary;
+    public bool Available = true;
+}
+
+/// <summary>One <c>SetDisplayConfig</c> commit. Positions are source positions. The primary is at (0,0).</summary>
+public sealed class CcdCommit
+{
+    public List<CcdPath> Paths = new();
+    public uint Flags;
+    /// <summary><c>supplied</c> writes the path and mode arrays. <c>topology</c> restores a saved path with <c>SDC_TOPOLOGY_SUPPLIED</c>.</summary>
+    public string Kind = "supplied";
+}
+
+/// <summary>
+/// Plans one CCD commit. Disabled monitors are deactivated. The enabled primary moves to (0,0)
+/// and every other enabled monitor keeps its offset from that primary. Matching uses <see cref="CcdPath.StableId"/> only.
+/// </summary>
+public static class CcdLayout
+{
+    public const uint SdcApply = 0x00000080;
+    public const uint SdcUseSupplied = 0x00000020;
+    public const uint SdcSave = 0x00000200;
+    public const uint SdcAllow = 0x00000400;
+    public const uint SdcTopology = 0x00000010;
+    public const uint ApplySupplied = SdcApply | SdcUseSupplied | SdcSave | SdcAllow;
+    public const uint ApplyTopology = SdcApply | SdcTopology | SdcSave | SdcAllow;
+
+    public static CcdCommit Build(IReadOnlyList<CcdPath>? live, IReadOnlyList<DeskScreen>? desired, IReadOnlyList<CcdPath>? saved)
+    {
+        var commit = new CcdCommit();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool revive = false;
+        DeskScreen? primary = null;
+        if (desired != null)
+        {
+            foreach (var s in desired)
+                if (s.Enabled && s.W > 0 && s.H > 0 && s.Primary) { primary = s; break; }
+            if (primary == null)
+                foreach (var s in desired)
+                    if (s.Enabled && s.W > 0 && s.H > 0) { primary = s; break; }
+        }
+        int ox = primary?.X ?? 0, oy = primary?.Y ?? 0;
+        if (desired != null)
+        {
+            foreach (var want in desired)
+            {
+                if (want.StableId.Length == 0) continue;
+                var current = Find(want.StableId, live);
+                var src = current ?? Find(want.StableId, saved);
+                if (want.Enabled && current?.Active != true) revive = true;
+                var path = new CcdPath
+                {
+                    StableId = want.StableId,
+                    Gdi = src?.Gdi ?? "",
+                    X = want.Enabled ? want.X - ox : src?.X ?? want.X,
+                    Y = want.Enabled ? want.Y - oy : src?.Y ?? want.Y,
+                    W = want.W > 0 ? want.W : src?.W ?? 0,
+                    H = want.H > 0 ? want.H : src?.H ?? 0,
+                    Active = want.Enabled && want.W > 0 && want.H > 0,
+                    Primary = want.Enabled && primary != null && string.Equals(want.StableId, primary.StableId, StringComparison.OrdinalIgnoreCase),
+                    Available = src?.Available ?? true
+                };
+                commit.Paths.Add(path);
+                seen.Add(want.StableId);
+            }
+        }
+        if (live != null)
+        {
+            foreach (var p in live)
+            {
+                if (p.StableId.Length == 0 || seen.Contains(p.StableId)) continue;
+                commit.Paths.Add(Clone(p));
+            }
+        }
+        commit.Kind = revive ? "topology" : "supplied";
+        commit.Flags = revive ? ApplyTopology : ApplySupplied;
+        return commit;
+    }
+
+    public static CcdPath? Find(string? id, IReadOnlyList<CcdPath>? list)
+    {
+        if (list == null || string.IsNullOrEmpty(id)) return null;
+        foreach (var p in list)
+            if (string.Equals(p.StableId, id, StringComparison.OrdinalIgnoreCase)) return p;
+        return null;
+    }
+
+    public static CcdPath Clone(CcdPath p) => new()
+    {
+        StableId = p.StableId, Gdi = p.Gdi, X = p.X, Y = p.Y, W = p.W, H = p.H,
+        Active = p.Active, Primary = p.Primary, Available = p.Available
+    };
+
+    /// <summary>Empty when a disabled monitor is deactivated, the primary lands at (0,0), and a later profile turns it back on. No display API.</summary>
+    public static string DisconnectStory()
+    {
+        const string A = @"\\?\DISPLAY#DELAAA#4&111#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+        const string B = @"\\?\DISPLAY#DELBBB#4&222#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+        const string C = @"\\?\DISPLAY#DELCCC#4&333#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+        const string D = @"\\?\DISPLAY#DELDDD#4&444#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+        const string E = @"\\?\DISPLAY#DELEEE#4&555#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+        var ccd = new FakeCcd();
+        ccd.Paths.Add(new CcdPath { StableId = A, Gdi = @"\\.\DISPLAY5", X = 0, Y = 0, W = 1920, H = 1080, Active = true, Primary = true });
+        ccd.Paths.Add(new CcdPath { StableId = B, Gdi = @"\\.\DISPLAY2", X = 1920, Y = 0, W = 1920, H = 1080, Active = true });
+        ccd.Paths.Add(new CcdPath { StableId = C, Gdi = @"\\.\DISPLAY1", X = 3840, Y = 0, W = 1920, H = 1080, Active = true });
+        ccd.Paths.Add(new CcdPath { StableId = D, Gdi = @"\\.\DISPLAY3", X = 0, Y = 1080, W = 1920, H = 1080, Active = true });
+        ccd.Paths.Add(new CcdPath { StableId = E, Gdi = @"\\.\DISPLAY4", X = -1920, Y = -1080, W = 1920, H = 1080, Active = true });
+        var away = new List<DeskScreen>
+        {
+            new() { StableId = E, Device = @"\\.\DISPLAY1", X = -1921, Y = -1080, W = 1920, H = 1080, Primary = true, Enabled = true },
+            new() { StableId = A, Device = @"\\.\DISPLAY4", X = 0, Y = 0, W = 1920, H = 1080, Enabled = false },
+            new() { StableId = B, Device = @"\\.\DISPLAY2", X = 1920, Y = 0, W = 1920, H = 1080, Enabled = false },
+            new() { StableId = C, Device = @"\\.\DISPLAY1", X = 3840, Y = 0, W = 1920, H = 1080, Enabled = false },
+            new() { StableId = D, Device = @"\\.\DISPLAY3", X = 0, Y = 1080, W = 1920, H = 1080, Enabled = false }
+        };
+        var off = Build(ccd.Paths, away, ccd.Saved);
+        if (off.Kind != "supplied" || off.Flags != ApplySupplied) return "disable flags " + off.Flags.ToString("X");
+        var kept = off.Paths.Where(p => p.Active).ToList();
+        if (kept.Count != 1 || kept[0].StableId != E || !kept[0].Primary || kept[0].X != 0 || kept[0].Y != 0)
+            return "kept " + string.Join(",", kept.Select(p => p.StableId + "@" + p.X + "," + p.Y));
+        if (kept[0].StableId.StartsWith(@"\\.\", StringComparison.Ordinal)) return "primary was a GDI name";
+        var gone = off.Paths.Where(p => !p.Active).Select(p => p.StableId).OrderBy(s => s, StringComparer.Ordinal).ToArray();
+        var expectGone = new[] { A, B, C, D }.OrderBy(s => s, StringComparer.Ordinal).ToArray();
+        if (!gone.SequenceEqual(expectGone)) return "deactivated " + string.Join(",", gone);
+        if (off.Paths.Any(p => string.Equals(p.StableId, p.Gdi, StringComparison.OrdinalIgnoreCase))) return "path id copied the GDI name";
+        if (ccd.Apply(off) != 0) return "apply failed";
+        ccd.Paths.RemoveAll(p => !p.Active);
+        if (ccd.Paths.Count != 1 || ccd.Saved == null || ccd.Saved.Count != 5) return "saved topology " + (ccd.Saved?.Count ?? 0);
+        var work = new List<DeskScreen>
+        {
+            new() { StableId = A, Device = @"\\.\DISPLAY9", X = 100, Y = 50, W = 1920, H = 1080, Primary = true, Enabled = true },
+            new() { StableId = B, Device = @"\\.\DISPLAY9", X = 2020, Y = 50, W = 1920, H = 1080, Enabled = true },
+            new() { StableId = C, Device = @"\\.\DISPLAY9", X = 3940, Y = 50, W = 1920, H = 1080, Enabled = true },
+            new() { StableId = D, Device = @"\\.\DISPLAY9", X = 100, Y = 1130, W = 1920, H = 1080, Enabled = true },
+            new() { StableId = E, Device = @"\\.\DISPLAY9", X = -1820, Y = -1030, W = 1920, H = 1080, Enabled = true }
+        };
+        var back = Build(ccd.Paths, work, ccd.Saved);
+        if (back.Kind != "topology" || back.Flags != ApplyTopology) return "re-enable used " + back.Kind + " " + back.Flags.ToString("X");
+        if (back.Paths.Count(p => p.Active) != 5) return "re-enable paths " + back.Paths.Count(p => p.Active);
+        var origin = back.Paths.First(p => p.StableId == A);
+        var shifted = back.Paths.First(p => p.StableId == E);
+        if (!origin.Primary || origin.X != 0 || origin.Y != 0) return "round-trip primary " + origin.X + "," + origin.Y;
+        if (shifted.X != -1920 || shifted.Y != -1080 || !shifted.Active) return "round-trip shift " + shifted.X + "," + shifted.Y;
+        if (ccd.Apply(back) != 0) return "re-enable apply failed";
+        if (ccd.Paths.Any(p => !p.Active) || ccd.Paths.Count(p => p.Primary) != 1) return "a monitor stayed off";
+        int alive = ccd.Paths.Count(p => p.Active);
+        ccd.FailCode = 87;
+        int rc = ccd.Apply(Build(ccd.Paths, away, ccd.Saved));
+        if (rc != 87 || ccd.Paths.Count(p => p.Active) != alive) return "failed commit changed the desk " + rc;
+        return "";
+    }
+}
+
+/// <summary>Last full topology. The real apply saves it before a monitor is turned off. Tests leave it null.</summary>
+public static class CcdBank
+{
+    public static List<CcdPath>? Saved { get; private set; }
+
+    public static void RememberIfFuller(IReadOnlyList<CcdPath>? paths)
+    {
+        if (paths == null) return;
+        int active = 0;
+        foreach (var p in paths) if (p.Active) active++;
+        int prev = -1;
+        if (Saved != null)
+        {
+            prev = 0;
+            foreach (var p in Saved) if (p.Active) prev++;
+        }
+        if (prev >= 0 && active < prev) return;
+        var copy = new List<CcdPath>(paths.Count);
+        foreach (var p in paths) copy.Add(CcdLayout.Clone(p));
+        Saved = copy;
+    }
+}
+
+/// <summary>Records CCD commits. <see cref="Apply"/> never calls a display API.</summary>
+public sealed class FakeCcd
+{
+    public List<CcdPath> Paths = new();
+    public List<CcdPath>? Saved;
+    public List<CcdCommit> Log = new();
+    public int Applies;
+    public int LastCode;
+    public int FailCode;
+
+    public int Apply(CcdCommit commit)
+    {
+        Applies++;
+        Log.Add(commit);
+        LastCode = FailCode;
+        if (FailCode != 0) return FailCode;
+        if (Saved == null)
+        {
+            Saved = new List<CcdPath>(Paths.Count);
+            foreach (var p in Paths) Saved.Add(CcdLayout.Clone(p));
+        }
+        foreach (var p in commit.Paths)
+        {
+            var hit = CcdLayout.Find(p.StableId, Paths);
+            if (hit == null)
+            {
+                Paths.Add(CcdLayout.Clone(p));
+                continue;
+            }
+            hit.X = p.X; hit.Y = p.Y; hit.W = p.W; hit.H = p.H;
+            hit.Active = p.Active; hit.Primary = p.Primary;
+            if (p.Gdi.Length > 0) hit.Gdi = p.Gdi;
+        }
+        CcdPath? prim = null;
+        foreach (var p in Paths)
+            if (p.Active && p.Primary) { prim = p; break; }
+        if (prim != null)
+            foreach (var p in Paths)
+                if (!ReferenceEquals(p, prim)) p.Primary = false;
+        return 0;
+    }
+}
+
+/// <summary>One top-level window taken before a mode switch. Coordinates are physical pixels.</summary>
+public sealed class HeldWindow
+{
+    public long Id;
+    public string MonitorId = "";
+    public int RelX, RelY, W, H;
+    public int Dpi = 100;
+    public string State = "normal";
+    public int NormalX, NormalY, NormalW, NormalH;
+    public bool Own;
+    public int AbsX, AbsY;
+    public string Process = "";
+    public string Title = "";
+    public string Class = "";
+}
+
+/// <summary>One restore. <see cref="NormalX"/> is a screen pixel. <see cref="Move"/> is false for a minimized window, so its iconic rect stays put.</summary>
+public sealed class HoldMove
+{
+    public long Id;
+    public int X, Y, W, H;
+    public string State = "normal";
+    public int NormalX, NormalY, NormalW, NormalH;
+    public bool Move = true;
+}
+
+/// <summary>
+/// Snapshot before a topology change, and the single restore after it settles.
+/// A window whose monitor is still there keeps its relative rect. A window on a monitor that turned off
+/// uses its profile rule, or the nearest remaining monitor at the same relative size, clamped to the work area.
+/// BongHub's own windows keep their absolute rect.
+/// </summary>
+public static class SwitchHold
+{
+    public static List<HeldWindow> Capture(IReadOnlyList<PickProbe>? probes, IReadOnlyList<ProfileMonitor>? monitors, int originX, int originY)
+    {
+        var list = new List<HeldWindow>();
+        if (probes == null) return list;
+        foreach (var probe in probes)
+        {
+            if (probe?.Window == null || !probe.Visible || probe.Cloaked || probe.Tool) continue;
+            var w = probe.Window;
+            bool own = probe.Own || SessionLayout.OwnProcess(w);
+            bool placed = (w.Min || w.Max) && w.NormalW > 0 && w.NormalH > 0;
+            int sx = placed ? w.NormalX + originX : w.X;
+            int sy = placed ? w.NormalY + originY : w.Y;
+            int sw = placed ? w.NormalW : w.W;
+            int sh = placed ? w.NormalH : w.H;
+            if (sw < 1) sw = 1;
+            if (sh < 1) sh = 1;
+            var host = Host(sx + sw / 2, sy + sh / 2, monitors);
+            string id = host == null ? "" : DeskArrange.Stable(host);
+            list.Add(new HeldWindow
+            {
+                Id = w.Id,
+                MonitorId = id,
+                RelX = host == null ? sx : sx - host.X,
+                RelY = host == null ? sy : sy - host.Y,
+                W = sw,
+                H = sh,
+                Dpi = host == null || host.Scale <= 0 ? 100 : host.Scale,
+                State = w.Min ? "min" : w.Max ? "max" : "normal",
+                NormalX = sx,
+                NormalY = sy,
+                NormalW = sw,
+                NormalH = sh,
+                Own = own,
+                AbsX = w.X,
+                AbsY = w.Y,
+                Process = w.Process ?? "",
+                Title = w.Title ?? "",
+                Class = w.Class ?? ""
+            });
+        }
+        return list;
+    }
+
+    public static List<HoldMove> Plan(IReadOnlyList<HeldWindow>? shot, IReadOnlyList<ProfileMonitor>? before, IReadOnlyList<ProfileMonitor>? after, IReadOnlyList<ProfileApp>? rules)
+    {
+        var list = new List<HoldMove>();
+        if (shot == null) return list;
+        foreach (var held in shot)
+        {
+            if (held.Own)
+            {
+                list.Add(new HoldMove
+                {
+                    Id = held.Id, X = held.AbsX, Y = held.AbsY, W = held.W, H = held.H,
+                    State = held.State, NormalX = held.AbsX, NormalY = held.AbsY, NormalW = held.W, NormalH = held.H,
+                    Move = held.State != "min"
+                });
+                continue;
+            }
+            var stay = Alive(held.MonitorId, after);
+            int x, y, w, h;
+            string state = held.State;
+            if (stay != null)
+            {
+                x = stay.X + held.RelX;
+                y = stay.Y + held.RelY;
+                w = held.W;
+                h = held.H;
+                if (state == "max")
+                {
+                    var area = WorkOf(stay);
+                    x = area.X; y = area.Y; w = area.W; h = area.H;
+                }
+            }
+            else
+            {
+                var rule = RuleFor(held, rules);
+                var home = rule == null ? null : AliveNumber(rule.Monitor, after);
+                if (rule != null && home != null)
+                {
+                    x = home.X + rule.X;
+                    y = home.Y + rule.Y;
+                    w = rule.W > 0 ? rule.W : held.W;
+                    h = rule.H > 0 ? rule.H : held.H;
+                    if (rule.State == "min") state = "min";
+                    else if (rule.State is "max" or "top") state = "max";
+                    var clamped = Clamp(x, y, w, h, WorkOf(home));
+                    x = clamped.X; y = clamped.Y; w = clamped.W; h = clamped.H;
+                }
+                else
+                {
+                    var near = Nearest(held, before, after);
+                    if (near == null) continue;
+                    var clamped = Clamp(near.X + held.RelX, near.Y + held.RelY, held.W, held.H, WorkOf(near));
+                    x = clamped.X; y = clamped.Y; w = clamped.W; h = clamped.H;
+                }
+            }
+            list.Add(new HoldMove
+            {
+                Id = held.Id, X = x, Y = y, W = w, H = h, State = state,
+                NormalX = state == "max" ? (stay == null ? x : stay.X + held.RelX) : x,
+                NormalY = state == "max" ? (stay == null ? y : stay.Y + held.RelY) : y,
+                NormalW = state == "max" ? held.W : w,
+                NormalH = state == "max" ? held.H : h,
+                Move = state != "min"
+            });
+        }
+        return list;
+    }
+
+    /// <summary>Empty when a window on a removed monitor is parked, a registered window uses its rule, and a note stays at its absolute rect. No window API.</summary>
+    public static string Story()
+    {
+        const string A = @"\\?\DISPLAY#AAA#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+        const string B = @"\\?\DISPLAY#BBB#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+        var before = new List<ProfileMonitor>
+        {
+            new() { Path = A, Id = A, Number = 1, X = 0, Y = 0, W = 1920, H = 1080, WorkX = 0, WorkY = 0, WorkW = 1920, WorkH = 1080, Primary = true, Enabled = true, Connected = true, Scale = 100, Device = @"\\.\DISPLAY1" },
+            new() { Path = B, Id = B, Number = 2, X = 1920, Y = 0, W = 1920, H = 1080, WorkX = 1920, WorkY = 0, WorkW = 1920, WorkH = 1040, Primary = false, Enabled = true, Connected = true, Scale = 125, Device = @"\\.\DISPLAY2" }
+        };
+        var after = new List<ProfileMonitor>
+        {
+            new() { Path = A, Id = A, Number = 1, X = 100, Y = 0, W = 1920, H = 1080, WorkX = 100, WorkY = 40, WorkW = 1920, WorkH = 1040, Primary = true, Enabled = true, Connected = true, Scale = 100, Device = @"\\.\DISPLAY9" }
+        };
+        var code = new TrackedWindow { Id = 1, Process = "Code", Title = "편집", Class = "Chrome_WidgetWin_1", X = 40, Y = 50, W = 800, H = 600 };
+        var noteApp = new TrackedWindow { Id = 2, Process = "notepad", Title = "메모장", Class = "Notepad", X = 2020, Y = 80, W = 640, H = 480 };
+        var calc = new TrackedWindow { Id = 3, Process = "calc", Title = "계산기", Class = "ApplicationFrameWindow", X = 2020, Y = 80, W = 3000, H = 900 };
+        var hidden = new TrackedWindow { Id = 4, Process = "chrome", Title = "브라우저", Class = "Chrome_WidgetWin_1", Min = true, X = -32000, Y = -32000, W = 160, H = 28, NormalX = 2100, NormalY = 100, NormalW = 800, NormalH = 600 };
+        var own = new TrackedWindow { Id = 5, Process = "BongHub", Title = "메모", Class = "HwndWrapper", X = -3000, Y = 400, W = 420, H = 560 };
+        var probes = new List<PickProbe>
+        {
+            new() { Window = code, Visible = true },
+            new() { Window = noteApp, Visible = true },
+            new() { Window = calc, Visible = true },
+            new() { Window = hidden, Visible = true },
+            new() { Window = own, Visible = true, Own = true }
+        };
+        var shot = Capture(probes, before, 0, 0);
+        if (shot.Count != 5) return "captured " + shot.Count;
+        var codeShot = shot.First(s => s.Id == 1);
+        if (codeShot.MonitorId != A || codeShot.RelX != 40 || codeShot.Dpi != 100) return "code monitor " + codeShot.MonitorId;
+        var noteShot = shot.First(s => s.Id == 2);
+        if (noteShot.MonitorId != B || noteShot.RelX != 100 || noteShot.RelY != 80 || noteShot.Dpi != 125) return "note rel " + noteShot.RelX + "," + noteShot.RelY;
+        if (noteShot.MonitorId.StartsWith(@"\\.\", StringComparison.Ordinal)) return "snapshot used a GDI name";
+        var minShot = shot.First(s => s.Id == 4);
+        if (minShot.State != "min" || minShot.RelX != 180 || minShot.NormalW != 800) return "min snapshot " + minShot.RelX;
+        var rules = new List<ProfileApp> { new() { Process = "notepad.exe", Class = "Notepad", Title = "메모장", Monitor = 1, X = 40, Y = 50, W = 700, H = 500, State = "normal" } };
+        var plan = Plan(shot, before, after, rules);
+        var surface = new FakeWindowSurface();
+        surface.Windows.Add(code);
+        surface.Windows.Add(noteApp);
+        surface.Windows.Add(calc);
+        surface.Windows.Add(hidden);
+        surface.Windows.Add(own);
+        if (surface.ApplyHold(plan) != 5) return "hold apply";
+        if (code.X != 140 || code.Y != 50 || code.W != 800 || code.H != 600) return "code moved to " + code.X + "," + code.Y + " " + code.W + "x" + code.H;
+        if (noteApp.X != 140 || noteApp.Y != 50 || noteApp.W != 700 || noteApp.H != 500) return "rule missed " + noteApp.X + "," + noteApp.Y + " " + noteApp.W + "x" + noteApp.H;
+        if (calc.X != 100 || calc.Y != 80 || calc.W != 1920 || calc.H != 900) return "clamp " + calc.X + "," + calc.Y + " " + calc.W + "x" + calc.H;
+        if (!hidden.Min || hidden.X != -32000 || hidden.NormalX != 280 || hidden.NormalY != 100 || hidden.NormalW != 800) return "min restore " + hidden.NormalX + "," + hidden.NormalY + " min=" + hidden.Min;
+        if (own.X != -3000 || own.Y != 400 || own.W != 420 || own.H != 560) return "note jumped " + own.X + "," + own.Y;
+        code.W = 1000; code.H = 750;
+        surface.ApplyHold(plan);
+        if (code.W != 800 || code.H != 600 || code.X != 140) return "dpi resize stuck " + code.W + "x" + code.H;
+        surface.Windows.Remove(own);
+        int settled = surface.Settle(SessionLayout.MonitorsOf(before), SessionLayout.MonitorsOf(after));
+        if (settled != 0 || !hidden.Min) return "settle fought the snapshot " + settled;
+        surface.ShowRestored(4);
+        if (hidden.X != 280 || hidden.Y != 100 || hidden.Min) return "show restored off-screen " + hidden.X + "," + hidden.Y;
+        return "";
+    }
+
+    static ProfileMonitor? Host(int x, int y, IReadOnlyList<ProfileMonitor>? monitors)
+    {
+        if (monitors == null) return null;
+        foreach (var m in monitors)
+            if (m.Connected && m.W > 0 && m.H > 0 && x >= m.X && y >= m.Y && x < m.X + m.W && y < m.Y + m.H) return m;
+        return null;
+    }
+
+    static ProfileMonitor? Alive(string id, IReadOnlyList<ProfileMonitor>? monitors)
+    {
+        if (monitors == null || id.Length == 0) return null;
+        foreach (var m in monitors)
+            if (m.Enabled && m.Connected && m.W > 0 && m.H > 0 && string.Equals(DeskArrange.Stable(m), id, StringComparison.OrdinalIgnoreCase))
+                return m;
+        return null;
+    }
+
+    static ProfileMonitor? AliveNumber(int number, IReadOnlyList<ProfileMonitor>? monitors)
+    {
+        if (monitors == null) return null;
+        foreach (var m in monitors)
+            if (m.Enabled && m.Connected && m.W > 0 && m.Number == number) return m;
+        return null;
+    }
+
+    static ProfileApp? RuleFor(HeldWindow held, IReadOnlyList<ProfileApp>? rules)
+    {
+        if (rules == null) return null;
+        ProfileApp? best = null;
+        int bestScore = 0;
+        foreach (var app in rules)
+        {
+            int score = 0;
+            if (app.Process.Length > 0)
+            {
+                if (!SameExe(app.Process, held.Process)) continue;
+                score += 2;
+            }
+            if (app.Class.Length > 0)
+            {
+                if (!string.Equals(app.Class, held.Class, StringComparison.OrdinalIgnoreCase)) continue;
+                score += 2;
+            }
+            if (app.Title.Length > 0)
+            {
+                if ((held.Title ?? "").IndexOf(app.Title, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                score += 1;
+            }
+            if (score > bestScore) { bestScore = score; best = app; }
+        }
+        return bestScore >= 2 ? best : null;
+    }
+
+    static bool SameExe(string a, string b)
+    {
+        string Strip(string s) => s.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? s[..^4] : s;
+        return string.Equals(Strip(a), Strip(b), StringComparison.OrdinalIgnoreCase);
+    }
+
+    static ProfileMonitor? Nearest(HeldWindow held, IReadOnlyList<ProfileMonitor>? before, IReadOnlyList<ProfileMonitor>? after)
+    {
+        if (after == null) return null;
+        ProfileMonitor? old = null;
+        if (before != null)
+            foreach (var m in before)
+                if (string.Equals(DeskArrange.Stable(m), held.MonitorId, StringComparison.OrdinalIgnoreCase)) { old = m; break; }
+        int ax = old?.X ?? held.AbsX;
+        int ay = old?.Y ?? held.AbsY;
+        ProfileMonitor? best = null;
+        long bestD = long.MaxValue;
+        foreach (var m in after)
+        {
+            if (!m.Enabled || !m.Connected || m.W <= 0 || m.H <= 0) continue;
+            long dx = (long)m.X - ax, dy = (long)m.Y - ay;
+            long d = dx * dx + dy * dy;
+            if (d < bestD) { bestD = d; best = m; }
+        }
+        return best;
+    }
+
+    static ProfileBox WorkOf(ProfileMonitor m)
+        => m.WorkW > 8 && m.WorkH > 8 ? new ProfileBox(m.WorkX, m.WorkY, m.WorkW, m.WorkH) : new ProfileBox(m.X, m.Y, m.W, m.H);
+
+    static (int X, int Y, int W, int H) Clamp(int x, int y, int w, int h, ProfileBox area)
+    {
+        int limitW = Math.Max(1, area.W);
+        int limitH = Math.Max(1, area.H);
+        int cw = w < 1 ? Math.Min(800, limitW) : Math.Min(w, limitW);
+        int ch = h < 1 ? Math.Min(600, limitH) : Math.Min(h, limitH);
+        if (x < area.X) x = area.X;
+        if (y < area.Y) y = area.Y;
+        if (x + cw > area.X + area.W) x = area.X + area.W - cw;
+        if (y + ch > area.Y + area.H) y = area.Y + area.H - ch;
+        return (x, y, cw, ch);
+    }
+}
