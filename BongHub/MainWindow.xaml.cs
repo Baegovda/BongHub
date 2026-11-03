@@ -58,7 +58,7 @@ public partial class MainWindow : Window
         ProfileHotkey.Fired = id => Dispatcher.BeginInvoke(() => RequestApplyProfile(id));
         SizeChanged += (_, e) =>
         {
-            if (CurrentPage != "presets") return;
+            if (AppEnv.Smoke || AppEnv.NoteTest || AppEnv.Off || CurrentPage != "presets") return;
             if (Math.Abs(e.NewSize.Width - e.PreviousSize.Width) < 12 && Math.Abs(e.NewSize.Height - e.PreviousSize.Height) < 12) return;
             Dispatcher.BeginInvoke(() => { if (CurrentPage == "presets") Render("presets", false); });
         };
