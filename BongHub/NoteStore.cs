@@ -140,8 +140,6 @@ public static class NoteColors
 {
     public static readonly string[] Keys = { "yellow", "green", "pink", "purple", "blue", "gray", "charcoal" };
     public static readonly string[] Names = { "노랑", "초록", "분홍", "보라", "파랑", "회색", "차콜" };
-    static readonly Color[] title = { C(104, 88, 32), C(46, 94, 62), C(118, 54, 86), C(84, 62, 132), C(46, 78, 130), C(82, 82, 92), C(48, 48, 55) };
-    static readonly Color[] body = { C(58, 52, 30), C(32, 52, 40), C(60, 36, 50), C(44, 38, 66), C(30, 42, 64), C(48, 48, 54), C(30, 30, 34) };
     static readonly Color[] swatch = { C(240, 205, 90), C(120, 205, 140), C(240, 140, 190), C(180, 150, 240), C(120, 170, 245), C(180, 180, 190), C(110, 110, 120) };
     static readonly Color[] partner = { C(255, 150, 110), C(64, 184, 176), C(183, 124, 255), C(228, 126, 244), C(76, 138, 254), C(110, 117, 144), C(46, 48, 72) };
     public static readonly string[][] Gradients = {
@@ -164,8 +162,6 @@ public static class NoteColors
     public static bool IsAutomaticInk(Color c)
         => Rgb(c, Text) || Rgb(c, DarkText) || Rgb(c, LegacyText);
     static bool Rgb(Color a, Color b) => a.R == b.R && a.G == b.G && a.B == b.B;
-    /// <summary>Same ink as the body, nudged toward white so the bold title reads a little stronger.</summary>
-    public static Color TitleInk => Mix(Text, Colors.White, 0.42);
     /// <summary>Dark ink on a light note, light ink on a dark note. Title and body share it.</summary>
     public static Color Ink(string? key)
     {

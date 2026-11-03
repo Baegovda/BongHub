@@ -18,8 +18,7 @@ Windows 트레이 유틸리티입니다. 부제는 "석봉이의 유틸 창고"�
 - `BongHub.PatchTests/` — 설정 바이트와 목 동작
 - `BongHub.RichEditTests/` — 창 없이 RTF 그림을 읽고 씀
 - `legacy/BongAd/` — 카카오톡 광고 제거 도우미 원본. 실행 파일은 `BongHub/res/BongAd.exe`
-- `docs/HANDOFF.md` — 인수인계
-- `docs/PORTING_PLAN.md` — 1.0.0 이전 이식 기록
+- `docs/HANDOVER.md` — 인수인계 (구조, 시험 금지, 배포, 데이터)
 
 ## 빌드
 
@@ -40,7 +39,7 @@ BongHub.exe --smoketest
 BongHub.exe --notetest --data <notes 복사본>
 ```
 
-`--smoketest`와 `--notetest`는 화면 밖이고 저장권 잠금, git, 카톡 창, 모니터 전환을 하지 않아요. 기대값은 스모크 **123 PASS**, 노트 **128 PASS**예요. 탭은 모니터 프로필, 스티커 메모, 카톡 광고 제거, PowerToys, 일반, 정보 여섯 개예요. 옛 기록은 `test-logs/`에 있어요.
+`--smoketest`와 `--notetest`는 화면 밖이고 저장권 잠금, git, 카톡 창, 모니터 전환을 하지 않아요. 기대값은 스모크 **123 PASS**, 노트 **128 PASS**예요. 탭은 모니터 프로필, 스티커 메모, 카톡 광고 제거, PowerToys, 일반, 정보 여섯 개예요. `--quit`은 떠 있는 프로세스를 끝내고, `--tray`는 `--off`와 함께 트레이만 띄워요. 데이터 폴더는 `--data` 또는 `BONGHUB_DATA`예요. 스모크는 그 경로를 쓰지 않아요. 절차와 금지 사항은 `docs/HANDOVER.md`에 있어요.
 
 패치 검사:
 

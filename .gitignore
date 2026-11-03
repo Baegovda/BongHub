@@ -7,3 +7,5 @@
 *.suo
 Thumbs.db
 Desktop.ini
+# measure-baseline.ps1 가 여기 로컬 로그만 써요. 커밋된 0.2.0 기록은 기대값과 달라 뺐어요.
+test-logs/
