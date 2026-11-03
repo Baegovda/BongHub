@@ -701,7 +701,7 @@ public partial class MainWindow
             string shownName = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
             string chipText = shownName.Length > 0 ? shownName : "창";
             bool countOnly = false;
-            if (chip.W < 2 || chip.H < 2) continue;
+            if (chip.W < 2 || chip.H < 2 || !contentInset.Show) continue;
             if (chipSpots.TryGetValue(home.Number, out var spots)) spots.Add(chip);
             bool selectedTile = app.Id == selectedAppId;
             var tile = new Border
@@ -722,10 +722,15 @@ public partial class MainWindow
             var head = new Grid();
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             head.ColumnDefinitions.Add(new ColumnDefinition());
-            if (!countOnly)
+            if (!countOnly && contentInset.Icon >= 10)
             {
                 var mark = AppFace(app.Process, app.Path);
-                if (mark is FrameworkElement face) face.VerticalAlignment = VerticalAlignment.Center;
+                if (mark is FrameworkElement face)
+                {
+                    face.Width = contentInset.Icon;
+                    face.Height = contentInset.Icon;
+                    face.VerticalAlignment = VerticalAlignment.Center;
+                }
                 head.Children.Add(mark);
             }
             var nameBlock = new TextBlock

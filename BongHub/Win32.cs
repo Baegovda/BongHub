@@ -35,7 +35,8 @@ internal static class Win32
     public static double SystemScale { get { try { return GetDpiForSystem() / 96.0; } catch { return 1; } } }
     public const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_NOOWNERZORDER = 0x200;
     public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_FRAMECHANGED = 0x20;
-    public const int WM_MOVE = 0x3, WM_SIZE = 0x5, WM_WINDOWPOSCHANGING = 0x0046, WM_GETMINMAXINFO = 0x0024, WM_EXITSIZEMOVE = 0x232, WM_ENTERSIZEMOVE = 0x231, WM_DISPLAYCHANGE = 0x007E, WM_MOUSEACTIVATE = 0x0021;
+    public const int WM_MOVE = 0x3, WM_SIZE = 0x5, WM_WINDOWPOSCHANGING = 0x0046, WM_GETMINMAXINFO = 0x0024, WM_EXITSIZEMOVE = 0x232, WM_ENTERSIZEMOVE = 0x231, WM_DISPLAYCHANGE = 0x007E, WM_MOUSEACTIVATE = 0x0021, WM_ACTIVATE = 0x0006;
+    public const int MA_NOACTIVATE = 3;
     public const int SIZE_MINIMIZED = 1, SIZE_MAXIMIZED = 2;
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
     [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
@@ -146,6 +147,49 @@ internal static class Win32
         try { return GetWindowLongPtrW(h, GWL_EXSTYLE).ToInt64(); }
         catch { return 0; }
     }
+
+    /// <summary>
+    /// <c>ShowActivated=false</c> is not enough on a real desktop. The shell can still activate the process's first window.
+    /// <c>--off</c>, smoke, and note tests keep this bit so the window cannot become foreground.
+    /// </summary>
+    public static void KeepInactive(IntPtr h)
+    {
+        if (h == IntPtr.Zero || !AppEnv.Off) return;
+        long ex = ExStyle(h);
+        if ((ex & WS_EX_NOACTIVATE) != 0) return;
+        try { SetWindowLongPtrW(h, GWL_EXSTYLE, new IntPtr(ex | WS_EX_NOACTIVATE)); }
+        catch { }
+    }
+
+    static IntPtr parkedForeground;
+    static bool yielding;
+    /// <summary>Remember the foreground window that is not <paramref name="self"/>, before we show.</summary>
+    public static void ParkForeground(IntPtr self)
+    {
+        if (!AppEnv.Off) return;
+        var fg = GetForegroundWindow();
+        if (fg == IntPtr.Zero || fg == self) return;
+        parkedForeground = fg;
+    }
+
+    /// <summary>If this window took the foreground, give it back and show without activating.</summary>
+    public static void YieldForeground(IntPtr self)
+    {
+        if (yielding || !AppEnv.Off || self == IntPtr.Zero) return;
+        yielding = true;
+        try
+        {
+            KeepInactive(self);
+            if (GetForegroundWindow() != self) return;
+            if (parkedForeground != IntPtr.Zero && parkedForeground != self)
+                SetForegroundWindow(parkedForeground);
+            ShowWindow(self, 8);
+        }
+        finally { yielding = false; }
+    }
+
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
 
     /// <summary>3.4.9 clears WS_EX_NOACTIVATE right after show so the first drag is not deferred.</summary>
     public static void AllowActivate(IntPtr h)

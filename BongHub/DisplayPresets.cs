@@ -2182,22 +2182,43 @@ public static class ProfileChrome
         return new DipRect(x, y, w, h);
     }
 
+    /// <summary>The identify number drawn at the tile's top-left. Matches the badge in <c>DrawProfileCanvas</c>.</summary>
+    public static DipRect NumberPill(double tileX, double tileY) => new(tileX + 4, tileY + 4, 32, 24);
+
     /// <summary>
-    /// Extra left and top inset for the chip icon and title. The frame stays on <paramref name="chip"/>.
-    /// Content drops below <see cref="BadgeBand"/> when the chip is tall enough, otherwise it slides past the number pill.
+    /// Where the chip icon sits. <see cref="ChipInk.Show"/> is false when the chip is swallowed by the number
+    /// and no icon can sit beside or under it. A tall chip still drops below <see cref="BadgeBand"/>.
     /// </summary>
-    public static (double Left, double Top) ChipContent(DipRect chip, double tileX, double tileY, double tileW, double badgeH)
+    public readonly record struct ChipInk(bool Show, double Left, double Top, double Icon);
+
+    public static ChipInk ChipContent(DipRect chip, double tileX, double tileY, double tileW, double badgeH)
     {
-        if (chip.W < 2 || chip.H < 2 || badgeH <= 0) return (0, 0);
-        double overlap = tileY + badgeH - chip.Y;
-        if (overlap <= 0.5) return (0, 0);
-        double room = chip.H - overlap;
-        if (room >= 16) return (0, overlap);
-        double pill = Math.Min(42, Math.Max(28, tileW * 0.22));
-        double shift = tileX + pill - chip.X;
-        if (shift <= 0.5) return (0, 0);
-        if (chip.W - shift < 16) return (0, Math.Min(overlap, Math.Max(0, chip.H - 14)));
-        return (shift, 0);
+        if (chip.W < 8 || chip.H < 8) return new ChipInk(false, 0, 0, 0);
+        var pill = NumberPill(tileX, tileY);
+        if (!chip.Hits(pill))
+        {
+            double overlap = tileY + badgeH - chip.Y;
+            if (overlap > 0.5 && chip.H - overlap >= 16) return new ChipInk(true, 0, overlap, 16);
+            double icon = chip.W >= 28 && chip.H >= 18 ? 16 : 0;
+            return new ChipInk(true, 0, 0, icon);
+        }
+        double rightW = chip.Right - pill.Right;
+        double belowH = chip.Bottom - pill.Bottom;
+        bool rightOk = rightW >= 14 && chip.H >= 14;
+        bool belowOk = belowH >= 14 && chip.W >= 18;
+        if (rightOk && (!belowOk || rightW * Math.Max(1, chip.H) >= chip.W * belowH))
+        {
+            double icon = Math.Min(16, Math.Min(rightW - 4, chip.H - 4));
+            if (icon < 10) return new ChipInk(false, 0, 0, 0);
+            return new ChipInk(true, pill.Right - chip.X, 0, icon);
+        }
+        if (belowOk)
+        {
+            double icon = Math.Min(16, Math.Min(chip.W - 8, belowH - 4));
+            if (icon < 10) return new ChipInk(false, 0, 0, 0);
+            return new ChipInk(true, 0, pill.Bottom - chip.Y, icon);
+        }
+        return new ChipInk(false, 0, 0, 0);
     }
 
     /// <summary>Icon dot at the icon's real position on the tile.</summary>

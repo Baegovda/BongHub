@@ -151,9 +151,16 @@ public partial class App : Application
             // After the timestamp, so the radial-glow raster is not inside first_frame_ms.
             WindowFx.Of(w).AfterFirstFrame += w.ShowDecorations;
         }
+        if (AppEnv.Off)
+        {
+            var hwnd = Win32.Handle(w);
+            Win32.ParkForeground(hwnd);
+            Win32.KeepInactive(hwnd);
+        }
         if (!w.IsVisible) { AppEnv.Mark("show_begin"); w.Show(); if (first) AppEnv.Mark("show_returned"); if (!first) w.Reappear(); }
         if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
-        if (!AppEnv.Off) w.Activate();
+        if (AppEnv.Off) Win32.YieldForeground(Win32.Handle(w));
+        else w.Activate();
     }
 
     Timer? cloudTimer;
