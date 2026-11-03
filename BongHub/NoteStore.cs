@@ -53,6 +53,7 @@ public static class NoteStore
             catch (Exception e) { CorruptMeta++; AppEnv.Log($"note meta skipped {f}: {e.Message}"); }
         }
         All.Sort((a, b) => b.Modified.CompareTo(a.Modified));
+        foreach (var m in All) PrunePending(m.Id);
     }
     public static NoteMeta? Find(string id) => All.FirstOrDefault(n => n.Id == id);
     public static string Serialize(NoteMeta m) => JsonSerializer.Serialize(m, Js);
@@ -60,9 +61,48 @@ public static class NoteStore
 
     public static bool SaveMeta(NoteMeta m) { m.Modified = DateTime.Now; var ok = Write(MetaPath(m.Id), new UTF8Encoding(false).GetBytes(Serialize(m))); Changed?.Invoke(); return ok; }
     public static bool SaveRtf(NoteMeta m, byte[] rtf) => Write(RtfPath(m.Id), rtf);
-    /// <summary>The edit the image guard would not put over the existing file. The old <c>.rtf</c> stays.</summary>
+    /// <summary>The edit the image guard would not put over the existing file. The old <c>.rtf</c> stays. A note keeps one pending file.</summary>
     public static bool SavePendingRtf(NoteMeta m, byte[] rtf)
-        => Write(PendingRtfPath(m.Id, DateTime.Now.ToString("yyyyMMddHHmmssfff")), rtf);
+    {
+        var path = PendingRtfPath(m.Id, DateTime.Now.ToString("yyyyMMddHHmmssfff"));
+        if (!Write(path, rtf)) return false;
+        foreach (var file in PendingRtfs(m.Id))
+            if (!string.Equals(Path.GetFullPath(file), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
+                TryDeletePending(file);
+        PrunePending(m.Id);
+        return true;
+    }
+    /// <summary>Deletes pending files older than the note RTF, and any extra pending so one remains.</summary>
+    public static void PrunePending(string id)
+    {
+        if (AppEnv.DenyWrite()) return;
+        var files = PendingRtfs(id);
+        if (files.Length == 0) return;
+        bool hasMain = false;
+        DateTime mainTime = DateTime.MinValue;
+        var main = RtfPath(id);
+        if (File.Exists(main))
+        {
+            try { mainTime = File.GetLastWriteTimeUtc(main); hasMain = true; }
+            catch { hasMain = false; }
+        }
+        string? keep = null;
+        DateTime keepTime = DateTime.MinValue;
+        foreach (var file in files)
+        {
+            DateTime t;
+            try { t = File.GetLastWriteTimeUtc(file); }
+            catch { continue; }
+            if (hasMain && t < mainTime) { TryDeletePending(file); continue; }
+            if (keep == null || t >= keepTime)
+            {
+                if (keep != null) TryDeletePending(keep);
+                keep = file;
+                keepTime = t;
+            }
+            else TryDeletePending(file);
+        }
+    }
     public static string? NewestPendingRtf(string id)
     {
         string? best = null;
@@ -78,8 +118,13 @@ public static class NoteStore
     }
     public static void ClearPendingRtf(string id)
     {
-        foreach (var file in PendingRtfs(id))
-            try { File.Delete(file); } catch (Exception e) { AppEnv.Log($"pending delete {file}: {e.Message}"); }
+        if (AppEnv.DenyWrite()) return;
+        foreach (var file in PendingRtfs(id)) TryDeletePending(file);
+    }
+    static void TryDeletePending(string file)
+    {
+        try { if (File.Exists(file)) File.Delete(file); }
+        catch (Exception e) { AppEnv.Log($"pending delete {file}: {e.Message}"); }
     }
     public static string? LoadRtf(string id) { try { return File.ReadAllText(RtfPath(id), Encoding.UTF8); } catch { return null; } }
 

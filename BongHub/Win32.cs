@@ -35,6 +35,9 @@ internal static class Win32
     public const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_NOOWNERZORDER = 0x200;
     public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_FRAMECHANGED = 0x20;
     public const int WM_MOVE = 0x3, WM_SIZE = 0x5, WM_WINDOWPOSCHANGING = 0x0046, WM_GETMINMAXINFO = 0x0024, WM_EXITSIZEMOVE = 0x232, WM_ENTERSIZEMOVE = 0x231, WM_DISPLAYCHANGE = 0x007E, WM_MOUSEACTIVATE = 0x0021;
+    public const int SIZE_MINIMIZED = 1, SIZE_MAXIMIZED = 2;
+    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
     public const int GWL_EXSTYLE = -20;
     public const long WS_EX_NOACTIVATE = 0x08000000;
     delegate bool MonitorEnumProc(IntPtr monitor, IntPtr hdc, ref RECT rc, IntPtr data);
@@ -74,11 +77,15 @@ internal static class Win32
         try
         {
             var info = Marshal.PtrToStructure<MINMAXINFO>(lp);
+            // ptMaxSize is the maximized rectangle. Leave it so maximize fills the monitor
+            // instead of becoming a 30000px window that CaptureRect would store.
+            // Min track is physical pixels, same as the note file. A 90 DIP floor becomes 113 px at 125%.
             const int cap = 30000;
+            int minW = (int)StickyNoteWindow.NoteMinWidth, minH = (int)StickyNoteWindow.NoteMinHeight;
+            if (info.ptMinTrackSize.X != minW) info.ptMinTrackSize.X = minW;
+            if (info.ptMinTrackSize.Y != minH) info.ptMinTrackSize.Y = minH;
             if (info.ptMaxTrackSize.X < cap) info.ptMaxTrackSize.X = cap;
             if (info.ptMaxTrackSize.Y < cap) info.ptMaxTrackSize.Y = cap;
-            if (info.ptMaxSize.X < cap) info.ptMaxSize.X = cap;
-            if (info.ptMaxSize.Y < cap) info.ptMaxSize.Y = cap;
             Marshal.StructureToPtr(info, lp, false);
         }
         catch { }

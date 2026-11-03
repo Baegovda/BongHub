@@ -67,6 +67,24 @@ public static class NoteTest
         var changed = before.Where(kv => !after.TryGetValue(kv.Key, out var v) || v != kv.Value).Select(kv => kv.Key).ToList();
         var unexpected = changed.Where(k => !wasClosed.Contains(k)).ToList();
         t.Check("untouched notes are not rewritten", unexpected.Count == 0 && NoteStore.Writes == changed.Count, $"writes={NoteStore.Writes}, changed={changed.Count} (closed→opened meta: {wasClosed.Count})" + (unexpected.Count > 0 ? " unexpected: " + string.Join(",", unexpected) : ""));
+        var legacySize = wins.Where(x => x.m.W < StickyNoteWindow.NoteMinWidth || x.m.H < StickyNoteWindow.NoteMinHeight || x.m.W > StickyNoteWindow.NoteMaxWidth || x.m.H > StickyNoteWindow.NoteMaxHeight).ToList();
+        bool legacyShown = legacySize.All(x =>
+        {
+            var r = Win32.Rect(x.w);
+            var raw = File.ReadAllText(NoteStore.MetaPath(x.m.Id), Encoding.UTF8);
+            int wantW = StickyNoteWindow.ClampNoteSpan(x.m.W, StickyNoteWindow.NoteMinWidth, StickyNoteWindow.NoteMaxWidth);
+            int wantH = StickyNoteWindow.ClampNoteSpan(x.m.H, StickyNoteWindow.NoteMinHeight, StickyNoteWindow.NoteMaxHeight);
+            return r.Width == wantW && r.Height == wantH && raw.Contains($"\"W\":{x.m.W}") && raw.Contains($"\"H\":{x.m.H}");
+        });
+        t.Check("legacy out-of-range size is shown clamped and left in the file", legacyShown, legacySize.Count == 0 ? "none in this copy" : string.Join("; ", legacySize.Select(x =>
+        {
+            var r = Win32.Rect(x.w);
+            var raw = File.ReadAllText(NoteStore.MetaPath(x.m.Id), Encoding.UTF8);
+            int wantW = StickyNoteWindow.ClampNoteSpan(x.m.W, StickyNoteWindow.NoteMinWidth, StickyNoteWindow.NoteMaxWidth);
+            int wantH = StickyNoteWindow.ClampNoteSpan(x.m.H, StickyNoteWindow.NoteMinHeight, StickyNoteWindow.NoteMaxHeight);
+            bool fileKept = raw.Contains($"\"W\":{x.m.W}") && raw.Contains($"\"H\":{x.m.H}");
+            return $"{x.m.Id} stored {x.m.W}x{x.m.H} want {wantW}x{wantH} hwnd {r.Width}x{r.Height} fileKept={fileKept} dpi={Win32.Scale(x.w):0.###}";
+        })));
 
         // ---------- image note: edit text, images must survive ----------
         var img = wins.OrderByDescending(x => Pict(NoteStore.RtfPath(x.m.Id))).First();
@@ -133,6 +151,11 @@ public static class NoteTest
         for (int i = 0; i < 8; i++) { Win32.Place(nw, AppEnv.OffsetX + 400 + i * 7, AppEnv.OffsetY + 260 + i * 3, 360, 300); await TestKit.Delay(16); }
         Win32.SendMessage(Win32.Handle(nw), Win32.WM_EXITSIZEMOVE, IntPtr.Zero, IntPtr.Zero);
         t.Check("drag end saves position at once", nw.MetaWrites == mw0 + 1 && nw.Meta.X == 449 && nw.Meta.Y == 281 && nw.Meta.W == 360 && nw.Meta.H == 300, $"meta writes +{nw.MetaWrites - mw0}, {nw.Meta.X},{nw.Meta.Y} {nw.Meta.W}x{nw.Meta.H}");
+        int keepX = nw.Meta.X, keepY = nw.Meta.Y, keepW = nw.Meta.W, keepH = nw.Meta.H;
+        bool iconTook = nw.CaptureSizeForTest(-32000, -32000, 40826, 34, iconic: true, zoomed: false);
+        bool zoomTook = nw.CaptureSizeForTest(0, 0, 3840, 2160, iconic: false, zoomed: true);
+        bool collapsedTook = nw.CaptureSizeForTest(keepX, keepY, 40826, 34, iconic: false, zoomed: false);
+        t.Check("open note ignores minimized, maximized, and collapsed rects", !iconTook && !zoomTook && !collapsedTook && nw.Meta.X == keepX && nw.Meta.Y == keepY && nw.Meta.W == keepW && nw.Meta.H == keepH);
         await TestKit.Delay(900);
         t.Check("no extra write after drag", nw.MetaWrites == mw0 + 1, $"+{nw.MetaWrites - mw0}");
         nw.SetColor("g:ocean"); nw.SetTopMost(true);
@@ -290,6 +313,40 @@ public static class NoteTest
         t.Check("clamp far note into nearest area", areas[1].Contains(c1), c1.ToString());
         t.Check("clamp leaves a visible note", c2.X == 100 && c2.Y == 100 && c2.W == 300 && c2.H == 300);
         t.Check("clamp shrinks an oversized note", areas.Any(a => a.Contains(c3)), c3.ToString());
+        var restore = new StickyNoteWindow.NoteSpan(442, 757, 647, 873);
+        t.Check("minimized capture keeps the restore size", !StickyNoteWindow.TryNoteSize(restore, -32000, -32000, 40826, 34, iconic: true, zoomed: false, out _));
+        t.Check("maximized capture keeps the restore size", !StickyNoteWindow.TryNoteSize(restore, -8, -8, 3856, 2112, iconic: false, zoomed: true, out _));
+        t.Check("collapsed capture keeps the restore size", !StickyNoteWindow.TryNoteSize(restore, 3840, -16, 40826, 34, false, false, out _) && !StickyNoteWindow.TryNoteSize(restore, 0, 0, 3840, 60, false, false, out _) && !StickyNoteWindow.TryNoteSize(restore, 5759, -564, 960, 60, false, false, out _));
+        bool movedSize = StickyNoteWindow.TryNoteSize(restore, 500, 400, 360, 300, false, false, out var nextSize);
+        t.Check("normal move saves the restore size", movedSize && nextSize == new StickyNoteWindow.NoteSpan(500, 400, 360, 300));
+        t.Check("showing the clamp of a legacy size is not a new save", !StickyNoteWindow.TryNoteSize(new StickyNoteWindow.NoteSpan(0, 0, 3840, 60), 0, 0, 3840, 90, false, false, out _) && !StickyNoteWindow.TryNoteSize(new StickyNoteWindow.NoteSpan(10, 20, 40826, 34), 10, 20, 30000, 90, false, false, out _));
+        t.Check("span clamp is the note minimum and maximum", StickyNoteWindow.ClampNoteSpan(34, StickyNoteWindow.NoteMinHeight, StickyNoteWindow.NoteMaxHeight) == 90 && StickyNoteWindow.ClampNoteSpan(60, StickyNoteWindow.NoteMinHeight, StickyNoteWindow.NoteMaxHeight) == 90 && StickyNoteWindow.ClampNoteSpan(40826, StickyNoteWindow.NoteMinWidth, StickyNoteWindow.NoteMaxWidth) == 30000 && StickyNoteWindow.ClampNoteSpan(200, StickyNoteWindow.NoteMinWidth, StickyNoteWindow.NoteMaxWidth) == 200);
+        var pictOrig = Encoding.ASCII.GetBytes("{\\rtf1\\ansi{\\pict\\pngblip ab}{\\pict\\pngblip cd}}");
+        var pictNone = Encoding.ASCII.GetBytes("{\\rtf1\\ansi deleted}");
+        var pictOne = Encoding.ASCII.GetBytes("{\\rtf1\\ansi{\\pict\\pngblip ab}}");
+        var blockedSave = NoteRtf.Choose(pictOrig, pictNone, 2, 5, out var blockedWarn);
+        t.Check("guard blocks images still on screen", blockedWarn != null && blockedWarn.Contains("screen=2") && blockedWarn.Contains("groups=5") && blockedWarn.Contains("picts=0") && blockedSave.AsSpan().SequenceEqual(pictOrig));
+        var deletedSave = NoteRtf.Choose(pictOrig, pictNone, 0, 5, out var deletedWarn);
+        t.Check("guard allows a deleted image", deletedWarn == null && deletedSave.AsSpan().SequenceEqual(pictNone));
+        var matchedSave = NoteRtf.Choose(pictOrig, pictOne, 1, 5, out var matchedWarn);
+        t.Check("guard allows a save that matches the screen", matchedWarn == null && NoteRtf.Picts(matchedSave) == 1);
+        var pile = NoteStore.Create("yellow", 40, 40, 200, 200);
+        File.WriteAllBytes(NoteStore.RtfPath(pile.Id), Encoding.ASCII.GetBytes("{\\rtf1\\ansi pile}"));
+        NoteStore.SavePendingRtf(pile, Encoding.ASCII.GetBytes("{\\rtf1\\ansi one}"));
+        NoteStore.SavePendingRtf(pile, Encoding.ASCII.GetBytes("{\\rtf1\\ansi two}"));
+        var pileFiles = NoteStore.PendingRtfs(pile.Id);
+        t.Check("a note keeps one pending file", pileFiles.Length == 1 && File.ReadAllText(pileFiles[0], Encoding.ASCII).Contains("two"), string.Join(",", pileFiles.Select(Path.GetFileName)));
+        var stale = NoteStore.Create("yellow", 48, 48, 200, 200);
+        File.WriteAllBytes(NoteStore.RtfPath(stale.Id), Encoding.ASCII.GetBytes("{\\rtf1\\ansi stale}"));
+        var oldPending = NoteStore.PendingRtfPath(stale.Id, "19990101010101000");
+        var oldPending2 = NoteStore.PendingRtfPath(stale.Id, "19990101010101001");
+        File.WriteAllBytes(oldPending, Encoding.ASCII.GetBytes("{\\rtf1\\ansi old1}"));
+        File.WriteAllBytes(oldPending2, Encoding.ASCII.GetBytes("{\\rtf1\\ansi old2}"));
+        File.SetLastWriteTimeUtc(oldPending, new DateTime(1999, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        File.SetLastWriteTimeUtc(oldPending2, new DateTime(1999, 1, 2, 0, 0, 0, DateTimeKind.Utc));
+        File.SetLastWriteTimeUtc(NoteStore.RtfPath(stale.Id), DateTime.UtcNow);
+        NoteStore.PrunePending(stale.Id);
+        t.Check("pending older than the rtf is removed", !File.Exists(oldPending) && !File.Exists(oldPending2) && NoteStore.PendingRtfs(stale.Id).Length == 0);
 
         var picNote = NoteManager.NewNote();
         t.Check("image note opened", picNote != null);
@@ -340,6 +397,28 @@ public static class NoteTest
         var afterEdit = File.ReadAllBytes(NoteStore.RtfPath(picNote.Meta.Id));
         t.Check("later edit keeps pngblip bytes", RtfPict.PayloadBytes(afterEdit) == beforeDrop && Encoding.ASCII.GetString(afterEdit).Contains(@"\pngblip"), $"payload {RtfPict.PayloadBytes(afterEdit)}");
         t.Check("editor shows the edit", picNote.PlainText().Contains("리치") || picNote.PlainText().Contains("떨어짐"), picNote.PlainText());
+        t.Check("image guard keeps one pending file", NoteStore.PendingRtfs(picNote.Meta.Id).Length == 1, string.Join(",", NoteStore.PendingRtfs(picNote.Meta.Id).Select(Path.GetFileName)));
+        var erased = NoteManager.NewNote();
+        if (erased != null)
+        {
+            await TestKit.Until(() => erased.Ready, 5000);
+            erased.InsertImageFile(pngPath);
+            erased.FlushText();
+            int erasedGuards = erased.ImageGuardHits;
+            erased.RemoveImagesFromDocumentForTest();
+            erased.FlushText();
+            var erasedBytes = File.ReadAllBytes(NoteStore.RtfPath(erased.Meta.Id));
+            t.Check("deleting the pictures updates the rtf", erased.ImageGuardHits == erasedGuards && NoteRtf.Picts(erasedBytes) == 0 && NoteStore.PendingRtfs(erased.Meta.Id).Length == 0 && !Encoding.ASCII.GetString(erasedBytes).Contains(@"\pngblip"), $"guard {erased.ImageGuardHits} picts {NoteRtf.Picts(erasedBytes)}");
+            erased.InsertImageFile(pngPath);
+            erased.FlushText();
+            int restoredCount = RtfPict.Parse(File.ReadAllBytes(NoteStore.RtfPath(erased.Meta.Id))).Count;
+            t.Check("a new picture does not restore a deleted one", erased.ImageGuardHits == erasedGuards && restoredCount == 1, $"picts {restoredCount} guard {erased.ImageGuardHits}");
+        }
+        else
+        {
+            t.Check("deleting the pictures updates the rtf", false, "no note");
+            t.Check("a new picture does not restore a deleted one", false, "no note");
+        }
 
         var guardNote = NoteManager.NewNote();
         t.Check("guard note opened", guardNote != null);
@@ -372,16 +451,16 @@ public static class NoteTest
                 reopened.Editor.Document.Blocks.Add(new Paragraph(new Run("이어쓰기")));
                 reopened.FlushText();
                 long still = RtfPict.PayloadBytes(File.ReadAllBytes(NoteStore.RtfPath(guardId)));
-                t.Check("pending edit does not replace a richer rtf", reopened.PlainText().Contains("떨어짐") && reopened.PlainText().Contains("이어쓰기") && still == richPayload, $"text '{reopened.PlainText()}' payload {still}/{richPayload}");
+                t.Check("screen-matching edit replaces the rtf and clears pending", reopened.PlainText().Contains("떨어짐") && reopened.PlainText().Contains("이어쓰기") && NoteStore.PendingRtfs(guardId).Length == 0 && still != richPayload, $"text '{reopened.PlainText()}' payload {still}/{richPayload} pending {NoteStore.PendingRtfs(guardId).Length}");
             }
-            else t.Check("pending edit does not replace a richer rtf", false, "no reopen");
+            else t.Check("screen-matching edit replaces the rtf and clears pending", false, "no reopen");
         }
         else
         {
             t.Check("loose image is stored as png", false, "no note");
             t.Check("quit flush keeps the rtf and writes a pending copy", false, "no note");
             t.Check("pending rtf loads when it is newer", false, "no note");
-            t.Check("pending edit does not replace a richer rtf", false, "no note");
+            t.Check("screen-matching edit replaces the rtf and clears pending", false, "no note");
         }
 
         var viewNote = NoteManager.NewNote();

@@ -169,11 +169,11 @@ static class NoteRtf
         return sb.ToString();
     }
 
-    /// <param name="groupsHeld">Original pict groups still owned by the note. A save with fewer picts keeps the file.</param>
+    /// <param name="groupsHeld">Tracked pict groups. Included in the log only. Pictures the user deleted can leave this above the screen count, and that must not refuse a save whose picts match the screen.</param>
     public static byte[] Choose(byte[] original, byte[] candidate, int imagesOnScreen, int groupsHeld, out string? warning)
     {
         int picts = Picts(candidate);
-        if ((imagesOnScreen > 0 && picts < imagesOnScreen) || (groupsHeld > 0 && picts < groupsHeld))
+        if (imagesOnScreen > 0 && picts < imagesOnScreen)
         {
             warning = $"wpf rtf dropped images screen={imagesOnScreen} groups={groupsHeld} picts={picts}; kept original bytes";
             return original ?? [];
