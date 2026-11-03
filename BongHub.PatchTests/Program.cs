@@ -898,6 +898,42 @@ var below = ProfileChrome.WindowChip(0, 1400, 800, 600, 3840, 2160, 0, 80, 180, 
 var belowInset = ProfileChrome.ChipContent(below, 0, 80, 180, 36);
 Check("small tiles drop detail and chips keep the real ratio", stage.Width == 700 && stage.FitHeight == 252 && narrowDetail.Length == 0 && midDetail == "2400×1350" && wideDetail.Contains("3840") && wideDetail.Contains("주") && Math.Abs(chipBox.W - 200) < 1.5 && Math.Abs(chipBox.H - 100) < 1.5 && chipBox.Y < 22 && iconDot.W == 6 && headerBand >= 60 && Math.Abs(underChip.W - 90) < 1.5 && underChip.Y < 2 && painted < stage.FitHeight && painted > 70 && ProfileGlyph.Kinds.Length == 11 && ProfileGlyph.Known("lock") && ProfileGlyph.Known("trash"));
 var swallowed = ProfileChrome.ChipContent(new DipRect(2, 2, 24, 18), 0, 0, 180, 70);
+var smokeDesk = new[]
+{
+    new ProfileBox(-3840, 0, 3840, 2160),
+    new ProfileBox(0, 0, 3840, 2160),
+    new ProfileBox(3840, 0, 2400, 1350),
+    new ProfileBox(6240, -200, 2400, 1350),
+    new ProfileBox(8640, 0, 1200, 800),
+};
+bool smokePark = true;
+string smokeParkDetail = "";
+foreach (int cw in new[] { 520, 656, 720 })
+{
+    foreach (int fh in new[] { 160, 210, 252 })
+    {
+        var scene = ProfileSnap.Fit(smokeDesk, cw, fh, 16);
+        var tile3 = ProfileSnap.ToCanvas(smokeDesk[0], scene, 8, 8);
+        var tile1 = ProfileSnap.ToCanvas(smokeDesk[1], scene, 8, 8);
+        var noteChip = ProfileChrome.WindowChip(80, 80, 720, 480, 3840, 2160, tile3.X, tile3.Y, tile3.W, tile3.H);
+        bool noteDetail = ProfileChrome.Detail(tile3.W, tile3.H, 3840, 2160, 125, 0, false, true).Length > 0;
+        var noteInk = ProfileChrome.ChipContent(noteChip, tile3.X, tile3.Y, tile3.W, ProfileChrome.BadgeBand(tile3.W, tile3.H, noteDetail));
+        var notePark = ProfileChrome.ParkedChip(tile3.X, tile3.Y, tile3.W, tile3.H);
+        var notePill = ProfileChrome.NumberPill(tile3.X, tile3.Y);
+        var codeChip = ProfileChrome.WindowChip(160, 120, 1400, 900, 3840, 2160, tile1.X, tile1.Y, tile1.W, tile1.H);
+        bool codeDetail = ProfileChrome.Detail(tile1.W, tile1.H, 3840, 2160, 125, 0, true, true).Length > 0;
+        var codeInk = ProfileChrome.ChipContent(codeChip, tile1.X, tile1.Y, tile1.W, ProfileChrome.BadgeBand(tile1.W, tile1.H, codeDetail));
+        bool ok = !noteInk.Show && notePark.W >= 56 && notePark.H >= 18 && !notePark.Hits(notePill) && notePark.Bottom <= tile3.Y + 26 && notePark.Right <= tile3.Right - 3 && codeInk.Show;
+        if (!ok)
+        {
+            smokePark = false;
+            smokeParkDetail = $"cw={cw} fh={fh} tile3 {tile3.W}x{tile3.H} note {noteChip.X:0},{noteChip.Y:0} {noteChip.W:0}x{noteChip.H:0} show={noteInk.Show} park {notePark.X:0},{notePark.Y:0} {notePark.W:0}x{notePark.H:0} codeShow={codeInk.Show}";
+            break;
+        }
+    }
+    if (!smokePark) break;
+}
+Check("smoke desk parks the swallowed notepad chip", smokePark, smokeParkDetail);
 var parkedChip = ProfileChrome.ParkedChip(0, 0, 180, 100);
 var parkedPill = ProfileChrome.NumberPill(0, 0);
 var parkedTight = ProfileChrome.ParkedChip(0, 0, 48, 40);

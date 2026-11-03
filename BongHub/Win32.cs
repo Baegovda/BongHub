@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -148,6 +150,50 @@ internal static class Win32
         catch { return 0; }
     }
 
+    /// <summary>How many times the last passive show tried to hand focus back, and what the foreground was.</summary>
+    public static int PassiveTries { get; private set; }
+    public static string PassiveNote { get; private set; } = "";
+    public static IntPtr PassivePrevious { get; private set; }
+
+    public static void ResetPassive(IntPtr previous)
+    {
+        PassiveTries = 0;
+        PassiveNote = "";
+        PassivePrevious = previous;
+    }
+
+    public static void NotePassive(int n, long ms, bool hot)
+    {
+        PassiveTries = n;
+        string bit = ms + "ms:" + (hot ? "hot" : "idle");
+        PassiveNote = PassiveNote.Length == 0 ? bit : PassiveNote + " " + bit;
+    }
+
+    /// <summary>Class, title, and process of a window, for the smoke log when focus does not settle.</summary>
+    public static string Describe(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return "hwnd=0";
+        var title = new StringBuilder(240);
+        var cls = new StringBuilder(128);
+        GetWindowText(hwnd, title, title.Capacity);
+        GetClassName(hwnd, cls, cls.Capacity);
+        GetWindowThreadProcessId(hwnd, out uint pid);
+        string name;
+        try { name = Process.GetProcessById((int)pid).ProcessName; }
+        catch { name = "exited"; }
+        return "hwnd=" + hwnd + " class=" + cls + " title=\"" + title + "\" pid=" + pid + " process=" + name;
+    }
+
+    public static string FocusEvidence(Window w, long waitedMs)
+    {
+        var self = Handle(w);
+        var fg = GetForegroundWindow();
+        long ex = self == IntPtr.Zero ? 0 : ExStyle(self);
+        return "waited " + waitedMs + " ms, tries " + PassiveTries + " [" + PassiveNote + "] previous " + Describe(PassivePrevious)
+            + " self=" + self + " ex=0x" + ex.ToString("X") + " active=" + w.IsActive + " showActivated=" + w.ShowActivated
+            + " fg " + Describe(fg);
+    }
+
     /// <summary>
     /// A passive show (process start, <c>--off</c>, smoke) must not become the foreground window.
     /// If the shell handed us the foreground anyway, give it back. Does not set <c>WS_EX_NOACTIVATE</c>,
@@ -194,6 +240,8 @@ internal static class Win32
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder text, int count);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder text, int count);
     [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
     [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int processId);
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();

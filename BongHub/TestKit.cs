@@ -153,5 +153,16 @@ public sealed class TestKit
     }
 
     public static bool NotForeground(Window w) => Win32.GetForegroundWindow() != Win32.Handle(w) && !w.IsActive;
+
+    /// <summary>
+    /// Passive shows must not be foreground. Waits through the uncloak race, then returns
+    /// null on success or a foreground/class/title/process/exstyle line on failure.
+    /// </summary>
+    public static async Task<string?> WaitNotForeground(Window w, int timeoutMs = 500)
+    {
+        var sw = Stopwatch.StartNew();
+        bool ok = await Until(() => NotForeground(w), timeoutMs);
+        return ok ? null : Win32.FocusEvidence(w, sw.ElapsedMilliseconds);
+    }
     public static void Pump() => Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, () => { });
 }

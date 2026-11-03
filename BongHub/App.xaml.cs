@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -153,12 +154,66 @@ public partial class App : Application
             WindowFx.Of(w).AfterFirstFrame += w.ShowDecorations;
         }
         bool bring = user && !AppEnv.Off;
+        // Captured before Show. The first window is often activated when its cloak drops, which is
+        // after this method returns, so a passive show keeps trying to hand that focus back.
         IntPtr previous = bring ? IntPtr.Zero : Win32.GetForegroundWindow();
+        if (first && !bring)
+            WindowFx.Of(w).AfterFirstFrame += () => PassiveKeep(w, previous);
         if (!w.IsVisible) { AppEnv.Mark("show_begin"); w.Show(); if (first) AppEnv.Mark("show_returned"); if (!first) w.Reappear(); }
         if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
         var hwnd = Win32.Handle(w);
-        if (bring) Win32.BringToForeground(hwnd);
-        else Win32.ReleaseIfStole(hwnd, previous);
+        if (bring)
+        {
+            Win32.BringToForeground(hwnd);
+            KeepBringing(w);
+        }
+        else
+        {
+            Win32.ResetPassive(previous);
+            Win32.ReleaseIfStole(hwnd, previous);
+        }
+    }
+
+    int passiveGen;
+    /// <summary>The shell activates the first window when the cloak drops. Give that focus back a few times.</summary>
+    void PassiveKeep(Window w, IntPtr previous)
+    {
+        int gen = ++passiveGen;
+        Win32.ResetPassive(previous);
+        Win32.ReleaseIfStole(Win32.Handle(w), previous);
+        int n = 0;
+        var clock = Stopwatch.StartNew();
+        var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(40) };
+        timer.Tick += (_, _) =>
+        {
+            if (gen != passiveGen) { timer.Stop(); return; }
+            n++;
+            var hwnd = Win32.Handle(w);
+            bool hot = hwnd != IntPtr.Zero && (Win32.GetForegroundWindow() == hwnd || w.IsActive);
+            if (hot) Win32.ReleaseIfStole(hwnd, previous);
+            Win32.NotePassive(n, clock.ElapsedMilliseconds, hot);
+            if (n >= 8) timer.Stop();
+        };
+        timer.Start();
+    }
+
+    int bringGen;
+    /// <summary>A user open can lose the foreground race to the app that was in front. Try again briefly.</summary>
+    void KeepBringing(Window w)
+    {
+        int gen = ++bringGen;
+        int n = 0;
+        var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(40) };
+        timer.Tick += (_, _) =>
+        {
+            if (gen != bringGen) { timer.Stop(); return; }
+            n++;
+            var hwnd = Win32.Handle(w);
+            bool ours = hwnd != IntPtr.Zero && Win32.GetForegroundWindow() == hwnd && w.IsActive;
+            if (!ours) Win32.BringToForeground(hwnd);
+            if (n >= 6 || ours) timer.Stop();
+        };
+        timer.Start();
     }
 
     Timer? cloudTimer;
