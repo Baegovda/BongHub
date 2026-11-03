@@ -13,6 +13,8 @@ public static class AppIcon
     public static Func<string, ImageSource?>? Fake;
     static readonly Dictionary<string, ImageSource?> Cache = new(StringComparer.OrdinalIgnoreCase);
 
+    public static void Clear() => Cache.Clear();
+
     public static ImageSource? Lookup(string? process, string? path)
     {
         var files = IconBits.FilesToTry(process, path);

@@ -15,21 +15,33 @@ public partial class MainWindow
         return b;
     }
 
-    Button GlyphButton(string glyph, string tip, Action click)
+    public Canvas? ProfileStage { get; private set; }
+    public FrameworkElement? ProfileWindowList { get; private set; }
+
+    Button VectorButton(string kind, string tip, Action click)
     {
         var b = new Button
         {
-            Content = glyph,
+            Content = ProfileMarks.Icon(kind, 14),
             Style = (Style)FindResource("IconButton"),
-            Width = 22,
-            Height = 22,
-            FontSize = 11,
+            Width = 26,
+            Height = 26,
             ToolTip = tip,
-            Margin = new Thickness(1, 0, 0, 0),
-            Padding = new Thickness(0)
+            Tag = "path-icon",
+            Margin = new Thickness(2, 0, 0, 0),
+            Padding = new Thickness(0),
+            FontFamily = (FontFamily)FindResource("UiFont")
         };
         b.Click += (_, _) => click();
         return b;
+    }
+
+    UIElement AppFace(string? process, string? path)
+    {
+        var face = AppIcon.Lookup(process, path);
+        if (face != null)
+            return new Image { Source = face, Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+        return ProfileMarks.Icon("app", 15);
     }
 
     string shownLive = "";
@@ -169,7 +181,7 @@ public partial class MainWindow
                 MaxWidth = 120,
                 TextTrimming = TextTrimming.CharacterEllipsis
             });
-            row.Children.Add(GlyphButton(item.Show ? "\uE7B3" : "\uE7B5", item.Show ? "미리보기에서 숨기기" : "미리보기에 보이기", () =>
+            row.Children.Add(VectorButton(item.Show ? "eye" : "eyeoff", item.Show ? "미리보기에서 숨기기" : "미리보기에 보이기", () =>
             {
                 item.Show = !item.Show;
                 SaveProfiles();
@@ -186,34 +198,50 @@ public partial class MainWindow
 
     void DrawWindowStrip(MonitorProfile profile)
     {
-        var scroll = new ScrollViewer { MaxHeight = 168, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        var stack = new StackPanel { Margin = new Thickness(4, 4, 4, 4) };
+        var scroll = new ScrollViewer { MaxHeight = 220, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        var stack = new StackPanel { Margin = new Thickness(6, 6, 6, 4) };
         bool any = false;
         foreach (var mon in profile.Monitors.OrderBy(m => m.Number))
         {
             var apps = profile.Apps.Where(a => a.Monitor == mon.Number).ToList();
             if (apps.Count == 0) continue;
             any = true;
-            stack.Children.Add(new TextBlock
+            var group = new Border
             {
-                Text = mon.Number + "번" + (mon.Connected ? "" : " · 연결 안 됨"),
-                FontSize = 11,
-                Margin = new Thickness(8, 4, 8, 2),
-                Foreground = (Brush)FindResource("Secondary")
+                CornerRadius = new CornerRadius(12),
+                Background = new SolidColorBrush(Color.FromArgb(0x10, 255, 255, 255)),
+                Padding = new Thickness(8, 6, 6, 4),
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+            var inner = new StackPanel();
+            var head = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
+            head.Children.Add(new Border
+            {
+                MinWidth = 22,
+                Height = 18,
+                CornerRadius = new CornerRadius(9),
+                Background = (Brush)FindResource("Accent"),
+                Padding = new Thickness(6, 0, 6, 0),
+                Child = new TextBlock { Text = mon.Number.ToString(), FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
             });
+            head.Children.Add(new TextBlock
+            {
+                Text = mon.W + "×" + mon.H + (mon.Connected ? "" : " · 연결 안 됨"),
+                FontSize = 11.5,
+                Margin = new Thickness(8, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = (Brush)FindResource("Secondary"),
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+            inner.Children.Add(head);
             foreach (var app in apps)
             {
                 var item = app;
-                var row = new Grid { Height = 28, Margin = new Thickness(4, 0, 4, 1) };
+                var row = new Grid { Height = 30, Margin = new Thickness(0, 0, 0, 1) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22) });
                 row.ColumnDefinitions.Add(new ColumnDefinition());
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var face = AppIcon.Lookup(item.Process, item.Path);
-                UIElement mark = face != null
-                    ? new Image { Source = face, Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center }
-                    : new TextBlock { Text = "\uE737", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 13, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center };
-                row.Children.Add(mark);
+                row.Children.Add(AppFace(item.Process, item.Path));
                 string name = item.Name.Length > 0 ? item.Name : (item.Title.Length > 0 ? item.Title : item.Process);
                 var label = new TextBlock
                 {
@@ -221,19 +249,22 @@ public partial class MainWindow
                     FontSize = 12.5,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(6, 0, 6, 0),
+                    TextWrapping = TextWrapping.NoWrap,
                     TextTrimming = TextTrimming.CharacterEllipsis
                 };
                 Grid.SetColumn(label, 1);
                 row.Children.Add(label);
                 var tools = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-                tools.Children.Add(GlyphButton("\uE70F", "수치로 고치기", () => { selectedAppId = item.Id; selectedMonitorNumber = item.Monitor; Render("presets", false); }));
-                tools.Children.Add(GlyphButton("\uE74D", "창 빼기", () => RemoveApp(profile, item)));
-                Grid.SetColumn(tools, 3);
+                tools.Children.Add(VectorButton("pencil", "수치로 고치기", () => { selectedAppId = item.Id; selectedMonitorNumber = item.Monitor; Render("presets", false); }));
+                tools.Children.Add(VectorButton("trash", "창 빼기", () => RemoveApp(profile, item)));
+                Grid.SetColumn(tools, 2);
                 row.Children.Add(tools);
                 row.MouseLeftButtonUp += (_, _) => { selectedAppId = item.Id; selectedMonitorNumber = item.Monitor; Render("presets", false); };
                 if (item.Id == selectedAppId) row.Background = new SolidColorBrush(Color.FromArgb(0x22, 0x4C, 0x8A, 0xFE));
-                stack.Children.Add(row);
+                inner.Children.Add(row);
             }
+            group.Child = inner;
+            stack.Children.Add(group);
         }
         if (!any)
             stack.Children.Add(new TextBlock { Text = "담긴 창이 없어요.", Margin = new Thickness(8, 6, 8, 6), Foreground = (Brush)FindResource("Secondary"), FontSize = 12.5 });
@@ -242,7 +273,9 @@ public partial class MainWindow
         stack.Children.Add(bar);
         if (windowPickerOpen) stack.Children.Add(PickerBody(profile));
         scroll.Content = stack;
-        PageHost.Children.Add(new Border { Style = (Style)FindResource("Group"), Child = scroll, Margin = new Thickness(0, 8, 0, 0) });
+        var list = new Border { Style = (Style)FindResource("Group"), Child = scroll, Margin = new Thickness(0, 8, 0, 0) };
+        ProfileWindowList = list;
+        PageHost.Children.Add(list);
     }
 
     UIElement PickerBody(MonitorProfile profile)
@@ -447,7 +480,17 @@ public partial class MainWindow
 
     Button ProfileMenu(MonitorProfile item)
     {
-        var b = new Button { Content = "⋯", Style = (Style)FindResource("IconButton"), Width = 28, Height = 28, FontSize = 16, ToolTip = "복제, 삭제, 가져오기, 보내기", Margin = new Thickness(6, 0, 0, 0) };
+        var b = new Button
+        {
+            Content = ProfileMarks.Icon("ellipsis", 15),
+            Style = (Style)FindResource("IconButton"),
+            Width = 28,
+            Height = 28,
+            ToolTip = "복제, 삭제, 가져오기, 보내기",
+            Tag = "path-icon",
+            Margin = new Thickness(6, 0, 0, 0),
+            FontFamily = (FontFamily)FindResource("UiFont")
+        };
         var menu = new ContextMenu { PlacementTarget = b };
         void Add(string header, Action click)
         {
@@ -493,11 +536,22 @@ public partial class MainWindow
 
     void DrawProfileCanvas(MonitorProfile profile)
     {
-        const int cw = 640, pad = 18;
+        double availW = PageHost.ActualWidth;
+        if (availW < 280)
+        {
+            double view = Scroller.ViewportWidth;
+            availW = view > 320 ? view - 4 : 680;
+        }
+        double availH = Scroller.ViewportHeight > 240 ? Scroller.ViewportHeight : 560;
+        var (cw, ch) = ProfileChrome.Stage(availW, availH);
+        const int pad = 22;
         var boxes = profile.Monitors.Select(m => m.Box).ToList();
-        int ch = Math.Min(420, Math.Max(160, ProfileSnap.ContentHeight(boxes, cw, pad)));
         var scene = ProfileSnap.Fit(boxes, cw, ch, pad);
-        var stage = new Canvas { Width = cw, Height = ch, Margin = new Thickness(8, 0, 8, 4), VerticalAlignment = VerticalAlignment.Top, SnapsToDevicePixels = true, UseLayoutRounding = true, Background = Brushes.Transparent };
+        int usedH = pad * 2 + (int)Math.Ceiling(scene.Bounds.H * scene.Scale);
+        int extraY = Math.Max(0, (ch - usedH) / 2);
+        scene = new ProfileScene(scene.Scale, scene.OriginX, scene.OriginY + extraY, scene.Bounds);
+        var stage = new Canvas { Width = cw, Height = ch, Margin = new Thickness(0, 0, 0, 6), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Top, SnapsToDevicePixels = true, UseLayoutRounding = true, Background = Brushes.Transparent };
+        ProfileStage = stage;
         var preview = new Border
         {
             BorderBrush = (Brush)FindResource("Accent"),
@@ -524,35 +578,16 @@ public partial class MainWindow
             => profile.Monitors.FirstOrDefault(m => m.Connected && x >= m.X && y >= m.Y && x < m.X + m.W && y < m.Y + m.H)
                ?? profile.Monitors.FirstOrDefault(m => x >= m.X && y >= m.Y && x < m.X + m.W && y < m.Y + m.H)
                ?? profile.Monitors.FirstOrDefault();
-        foreach (var icon in profile.Icons)
-        {
-            int host = IconLayout.Host(icon.X, icon.Y, profile.Monitors.Select(m => m.Box).ToList());
-            if (host < 0) continue;
-            var pt = ProfileSnap.ToPoint(icon.X, icon.Y, scene);
-            var dot = new Border
-            {
-                Width = 18,
-                Height = 18,
-                CornerRadius = new CornerRadius(5),
-                Background = new SolidColorBrush(Color.FromArgb(icon.Show ? (byte)0xCC : (byte)0x55, 0x34, 0xC7, 0x59)),
-                IsHitTestVisible = false,
-                ToolTip = icon.Name + (icon.Show ? "" : " · 숨김"),
-                Child = new TextBlock { Text = "\uE8A5", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 10, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
-            };
-            Canvas.SetLeft(dot, pt.X);
-            Canvas.SetTop(dot, pt.Y);
-            Canvas.SetZIndex(dot, 4);
-            stage.Children.Add(dot);
-        }
+        var chipSpots = new Dictionary<int, List<DipRect>>();
         foreach (var mon in profile.Monitors)
         {
-            var box = ProfileSnap.ToCanvas(mon.Box, scene);
+            var box = ProfileSnap.ToCanvas(mon.Box, scene, 8, 8);
             bool selected = mon.Number == selectedMonitorNumber;
             var frame = new Border
             {
                 Width = box.W,
                 Height = box.H,
-                CornerRadius = new CornerRadius(16),
+                CornerRadius = new CornerRadius(Math.Clamp(box.H / 5.0, 8, 16)),
                 BorderThickness = new Thickness(selected ? 2 : 1),
                 BorderBrush = (Brush)FindResource(mon.Connected ? "Accent" : "Separator"),
                 Background = new SolidColorBrush(Color.FromArgb(mon.Connected ? (byte)36 : (byte)18, 0x4C, 0x8A, 0xFE)),
@@ -561,24 +596,30 @@ public partial class MainWindow
             };
             Canvas.SetLeft(frame, box.X);
             Canvas.SetTop(frame, box.Y);
-            string orient = mon.Orientation == 0 ? "" : " · " + mon.Orientation + "°";
-            var badge = new StackPanel { IsHitTestVisible = false, Margin = new Thickness(10, 8, 10, 0) };
+            string detail = ProfileChrome.Detail(box.W, box.H, mon.W, mon.H, mon.Scale, mon.Orientation, mon.Primary, mon.Connected);
+            double numberSize = ProfileChrome.NumberSize(box.W, box.H);
+            var badge = new StackPanel { IsHitTestVisible = false, Margin = new Thickness(8, 6, 8, 0) };
             badge.Children.Add(new TextBlock
             {
                 Text = mon.Number.ToString(),
                 Foreground = Brushes.White,
-                FontSize = 22,
-                FontWeight = FontWeights.Bold
+                FontSize = numberSize,
+                FontWeight = FontWeights.Bold,
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.CharacterEllipsis
             });
-            badge.Children.Add(new TextBlock
-            {
-                Text = mon.W + "×" + mon.H + " · " + (mon.Scale <= 0 ? 100 : mon.Scale) + "%" + orient + (mon.Primary ? " · 주" : "") + (mon.Connected ? "" : " · 연결 안 됨"),
-                Foreground = Brushes.White,
-                FontSize = 11,
-                Opacity = 0.85,
-                TextWrapping = TextWrapping.Wrap
-            });
+            if (detail.Length > 0)
+                badge.Children.Add(new TextBlock
+                {
+                    Text = detail,
+                    Foreground = Brushes.White,
+                    FontSize = 11,
+                    Opacity = 0.85,
+                    TextWrapping = TextWrapping.NoWrap,
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                });
             frame.Child = badge;
+            chipSpots[mon.Number] = new List<DipRect>();
             var start = mon.Box;
             var origin = new Point(box.X, box.Y);
             Point grab = default;
@@ -626,13 +667,17 @@ public partial class MainWindow
         foreach (var app in profile.Apps)
         {
             var home = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors[0];
-            var abs = new ProfileBox(home.X + app.X, home.Y + app.Y, Math.Max(120, app.W), Math.Max(80, app.H));
-            var view = ProfileSnap.ToCanvas(abs, scene);
+            var homeView = ProfileSnap.ToCanvas(home.Box, scene, 8, 8);
+            string homeDetail = ProfileChrome.Detail(homeView.W, homeView.H, home.W, home.H, home.Scale, home.Orientation, home.Primary, home.Connected);
+            double band = ProfileChrome.BadgeBand(homeView.H, homeDetail.Length > 0);
+            var chip = ProfileChrome.WindowChip(app.X, app.Y, app.W, app.H, home.W, home.H, homeView.X, homeView.Y, homeView.W, homeView.H, band);
+            if (chip.W < 8 || chip.H < 8) continue;
+            if (chipSpots.TryGetValue(home.Number, out var spots)) spots.Add(chip);
             bool selectedTile = app.Id == selectedAppId;
             var tile = new Border
             {
-                Width = view.W,
-                Height = view.H,
+                Width = chip.W,
+                Height = chip.H,
                 CornerRadius = new CornerRadius(10),
                 Background = new SolidColorBrush(Color.FromArgb(0xE6, 0x1C, 0x1C, 0x1E)),
                 BorderBrush = selectedTile ? (Brush)FindResource("Accent") : new SolidColorBrush(Color.FromArgb(0x66, 255, 255, 255)),
@@ -640,49 +685,49 @@ public partial class MainWindow
                 Cursor = Cursors.SizeAll,
                 ToolTip = (app.Name.Length > 0 ? app.Name : app.Title) + "\n" + app.W + "×" + app.H
             };
-            Canvas.SetLeft(tile, view.X);
-            Canvas.SetTop(tile, view.Y);
+            Canvas.SetLeft(tile, chip.X);
+            Canvas.SetTop(tile, chip.Y);
             Canvas.SetZIndex(tile, selectedTile ? 40 : 20);
-            var head = new Grid { Margin = new Thickness(6, 4, 4, 0) };
-            head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
+            var head = new Grid { Margin = new Thickness(6, 3, 4, 0) };
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             head.ColumnDefinitions.Add(new ColumnDefinition());
-            var icon = AppIcon.Lookup(app.Process, app.Path);
-            UIElement mark = icon != null
-                ? new Image { Source = icon, Width = 16, Height = 16, IsHitTestVisible = false }
-                : new TextBlock { Text = "\uE737", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 13, Foreground = Brushes.White, IsHitTestVisible = false };
+            var mark = AppFace(app.Process, app.Path);
+            if (mark is FrameworkElement face) face.VerticalAlignment = VerticalAlignment.Center;
             head.Children.Add(mark);
             string shown = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
             var nameBlock = new TextBlock
             {
                 Text = shown.Length > 0 ? shown : "창",
                 Foreground = Brushes.White,
-                FontSize = 12,
+                FontSize = chip.W < 72 ? 11 : 12,
                 FontWeight = FontWeights.SemiBold,
                 TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(4, 0, 4, 0),
+                Margin = new Thickness(4, 0, 2, 0),
                 IsHitTestVisible = false
             };
             Grid.SetColumn(nameBlock, 1);
             head.Children.Add(nameBlock);
-            var tools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top };
-            var captured = app;
-            tools.Children.Add(GlyphButton(captured.TopMost ? "\uE718" : "\uE718", "항상 위", () => { captured.TopMost = !captured.TopMost; selectedAppId = captured.Id; SaveProfiles(); Render("presets", false); }));
-            tools.Children.Add(GlyphButton("\uE921", "최소화", () => { captured.State = captured.State == "min" ? "normal" : "min"; selectedAppId = captured.Id; SaveProfiles(); Render("presets", false); }));
-            tools.Children.Add(GlyphButton("\uE70F", "수치", () => { selectedAppId = captured.Id; selectedMonitorNumber = captured.Monitor; Render("presets", false); }));
-            tools.Children.Add(GlyphButton("\uE74D", "빼기", () => RemoveApp(profile, captured)));
-            tools.Visibility = selectedTile ? Visibility.Visible : Visibility.Collapsed;
             var body = new Grid();
             body.Children.Add(head);
-            body.Children.Add(tools);
-            if (view.H >= 46)
+            if (chip.H >= 40)
             {
-                var size = new TextBlock { Text = app.W + "×" + app.H + (app.State == "min" ? " · 최소화" : app.TopMost ? " · 항상 위" : ""), Foreground = (Brush)FindResource("Secondary"), FontSize = 11, Margin = new Thickness(8, 24, 6, 0), IsHitTestVisible = false };
+                var size = new TextBlock
+                {
+                    Text = app.W + "×" + app.H,
+                    Foreground = (Brush)FindResource("Secondary"),
+                    FontSize = 11,
+                    Margin = new Thickness(8, 22, 6, 0),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                    IsHitTestVisible = false
+                };
                 body.Children.Add(size);
             }
             tile.Child = body;
-            tile.MouseEnter += (_, _) => { tools.Visibility = Visibility.Visible; Canvas.SetZIndex(tile, 50); };
-            tile.MouseLeave += (_, _) => { if (!selectedTile) tools.Visibility = Visibility.Collapsed; };
+            tile.MouseEnter += (_, _) => Canvas.SetZIndex(tile, 50);
+            double chipX = chip.X, chipY = chip.Y;
             var appStart = new ProfileBox(home.X + app.X, home.Y + app.Y, app.W, app.H);
             string edge = "";
             Point grab = default;
@@ -736,8 +781,8 @@ public partial class MainWindow
                 var p = e.GetPosition(stage);
                 int px = Vx(p.X), py = Vy(p.Y);
                 var host = HostAt(px, py) ?? home;
-                int vdx = (int)Math.Round((p.X - (view.X + grab.X)) / scene.Scale);
-                int vdy = (int)Math.Round((p.Y - (view.Y + grab.Y)) / scene.Scale);
+                int vdx = (int)Math.Round((p.X - (chipX + grab.X)) / scene.Scale);
+                int vdy = (int)Math.Round((p.Y - (chipY + grab.Y)) / scene.Scale);
                 if (edge.Length > 0)
                 {
                     var resized = ProfileSnap.Resize(appStart, host.Box, edge, vdx, vdy, 120);
@@ -779,6 +824,31 @@ public partial class MainWindow
                 Render("presets", false);
             };
             stage.Children.Add(tile);
+        }
+        foreach (var icon in profile.Icons)
+        {
+            var home = profile.Monitors.FirstOrDefault(m => icon.X >= m.X && icon.Y >= m.Y && icon.X < m.X + m.W && icon.Y < m.Y + m.H);
+            if (home == null) continue;
+            var homeView = ProfileSnap.ToCanvas(home.Box, scene, 8, 8);
+            string homeDetail = ProfileChrome.Detail(homeView.W, homeView.H, home.W, home.H, home.Scale, home.Orientation, home.Primary, home.Connected);
+            double band = ProfileChrome.BadgeBand(homeView.H, homeDetail.Length > 0);
+            chipSpots.TryGetValue(home.Number, out var occupied);
+            var dot = ProfileChrome.IconDot(icon.X, icon.Y, home.X, home.Y, home.W, home.H, homeView.X, homeView.Y, homeView.W, homeView.H, band, occupied);
+            if (dot.W < 1) continue;
+            var mark = new Border
+            {
+                Width = dot.W,
+                Height = dot.H,
+                CornerRadius = new CornerRadius(3),
+                Background = new SolidColorBrush(Color.FromArgb(icon.Show ? (byte)0xEE : (byte)0x66, 0x34, 0xC7, 0x59)),
+                IsHitTestVisible = false,
+                ToolTip = icon.Name + (icon.Show ? "" : " · 숨김"),
+                Child = ProfileMarks.Icon("app", 8)
+            };
+            Canvas.SetLeft(mark, dot.X);
+            Canvas.SetTop(mark, dot.Y);
+            Canvas.SetZIndex(mark, 3);
+            stage.Children.Add(mark);
         }
         Canvas.SetZIndex(guideLine, 90);
         Canvas.SetZIndex(preview, 5);
@@ -970,5 +1040,71 @@ sealed class AimOverlay : Window
             Close();
         };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
+    }
+}
+
+/// <summary>Vector symbols for the profile page. The icon font is not used, so a missing Segoe glyph cannot draw a blank box.</summary>
+static class ProfileMarks
+{
+    static readonly Dictionary<string, Geometry> Cache = new();
+
+    public static Viewbox Icon(string kind, double size)
+    {
+        var path = new System.Windows.Shapes.Path
+        {
+            Data = GeometryOf(kind),
+            Fill = new SolidColorBrush(Color.FromRgb(0xF5, 0xF7, 0xFA)),
+            Stretch = Stretch.Uniform
+        };
+        return new Viewbox { Width = size, Height = size, Child = path, IsHitTestVisible = false };
+    }
+
+    static Geometry GeometryOf(string kind)
+    {
+        if (Cache.TryGetValue(kind, out var cached)) return cached;
+        Geometry geo = kind switch
+        {
+            "ellipsis" => Dots(),
+            "app" => WindowGlyph(),
+            "eye" or "eyeoff" => Eye(kind == "eyeoff"),
+            _ => Geometry.Parse(kind switch
+            {
+                "trash" => "M6,1.4 H10 L10.7,3.1 H14.2 V4.6 H1.8 V3.1 H5.3 Z M3.5,6 H12.5 L11.7,14.6 H4.3 Z",
+                "pencil" => "M11.4,1.6 L14.4,4.6 L5.4,13.6 L2,14.2 L2.6,10.8 Z",
+                "pin" => "M8,1.4 C5.8,1.4 4.6,3 4.6,4.6 V8 L2.6,10.6 H7.2 V14.6 H8.8 V10.6 H13.4 L11.4,8 V4.6 C11.4,3 10.2,1.4 8,1.4 Z",
+                "min" => "M2.4,7.1 H13.6 V8.9 H2.4 Z",
+                "undo" => "M3.2,7.2 L7.4,3 L7.4,5.4 L12.6,5.4 L12.6,9.2 L7.4,9.2 L7.4,11.6 Z",
+                _ => "M2,2 H14 V14 H2 Z"
+            })
+        };
+        geo.Freeze();
+        Cache[kind] = geo;
+        return geo;
+    }
+
+    static Geometry Dots()
+    {
+        var g = new GeometryGroup();
+        g.Children.Add(new EllipseGeometry(new Point(3.2, 8), 1.35, 1.35));
+        g.Children.Add(new EllipseGeometry(new Point(8, 8), 1.35, 1.35));
+        g.Children.Add(new EllipseGeometry(new Point(12.8, 8), 1.35, 1.35));
+        return g;
+    }
+
+    static Geometry WindowGlyph()
+    {
+        var g = new GeometryGroup();
+        g.Children.Add(new RectangleGeometry(new Rect(1.2, 2.4, 13.6, 11.2), 1.6, 1.6));
+        g.Children.Add(new RectangleGeometry(new Rect(1.2, 2.4, 13.6, 2.4)));
+        return g;
+    }
+
+    static Geometry Eye(bool slash)
+    {
+        var g = new GeometryGroup();
+        g.Children.Add(Geometry.Parse("M1,8 C3.6,4.4 5.8,3.2 8,3.2 C10.2,3.2 12.4,4.4 15,8 C12.4,11.6 10.2,12.8 8,12.8 C5.8,12.8 3.6,11.6 1,8 Z"));
+        g.Children.Add(new EllipseGeometry(new Point(8, 8), 1.7, 1.7));
+        if (slash) g.Children.Add(Geometry.Parse("M2.2,3.2 L3.8,1.8 L13.8,12.6 L12.2,14 Z"));
+        return g;
     }
 }

@@ -552,11 +552,11 @@ public static class ProfileSnap
         return new ProfileScene(s, pad, pad, new ProfileBox(minX, minY, bw, bh));
     }
 
-    public static ProfileBox ToCanvas(ProfileBox box, ProfileScene scene)
+    public static ProfileBox ToCanvas(ProfileBox box, ProfileScene scene, int minW = 28, int minH = 22)
     {
         var p = ToPoint(box.X, box.Y, scene);
-        int w = Math.Max(28, (int)Math.Round(box.W * scene.Scale));
-        int h = Math.Max(22, (int)Math.Round(box.H * scene.Scale));
+        int w = Math.Max(minW, (int)Math.Round(box.W * scene.Scale));
+        int h = Math.Max(minH, (int)Math.Round(box.H * scene.Scale));
         return new ProfileBox(p.X, p.Y, w, h);
     }
 
@@ -1944,4 +1944,124 @@ public static class HotkeyEdit
                 if (HotkeyChord.Normalize(t) == norm) return (prev, "다른 프로필이 이 단축키를 쓰고 있어요.");
         return (norm, "");
     }
+}
+
+public readonly record struct DipRect(double X, double Y, double W, double H)
+{
+    public double Right => X + W;
+    public double Bottom => Y + H;
+    public bool Hits(DipRect other)
+    {
+        double w = Math.Min(Right, other.Right) - Math.Max(X, other.X);
+        double h = Math.Min(Bottom, other.Bottom) - Math.Max(Y, other.Y);
+        return w > 0.5 && h > 0.5;
+    }
+}
+
+/// <summary>
+/// How the monitor diagram uses the space it is given. Decisions are in DIPs, so 96 DPI and 120 DPI agree.
+/// A line that does not fit is omitted instead of being cut through a glyph.
+/// </summary>
+public static class ProfileChrome
+{
+    public static (int Width, int Height) Stage(double availW, double availH)
+    {
+        double w = double.IsNaN(availW) || availW < 280 ? 680 : availW;
+        double h = double.IsNaN(availH) || availH < 240 ? 560 : availH;
+        int width = (int)Math.Clamp(Math.Floor(w), 520, 1200);
+        int height = (int)Math.Clamp(Math.Floor(h * 0.5), 280, 520);
+        return (width, height);
+    }
+
+    /// <summary>11px digit line. Conservative so the label is hidden before it would clip.</summary>
+    public static bool Fits(string? text, double slot)
+    {
+        if (string.IsNullOrEmpty(text)) return true;
+        return text.Length * 6.4 <= slot;
+    }
+
+    public static double NumberSize(double tileW, double tileH)
+    {
+        if (tileW < 52 || tileH < 40) return 13;
+        if (tileW < 96 || tileH < 72) return 16;
+        return 22;
+    }
+
+    /// <summary>Resolution line for a monitor tile. Empty means show the Identify number only.</summary>
+    public static string Detail(double tileW, double tileH, int w, int h, int scale, int orientation, bool primary, bool connected)
+    {
+        if (tileW < 78 || tileH < 52) return "";
+        int pct = scale <= 0 ? 100 : scale;
+        string res = w + "×" + h;
+        string pctText = pct + "%";
+        string tail = (orientation == 0 ? "" : " · " + orientation + "°") + (primary ? " · 주" : "") + (connected ? "" : " · 끊김");
+        string full = res + " · " + pctText + tail;
+        string mid = res + " · " + pctText;
+        double slot = tileW - 18;
+        if (tileH >= 68 && Fits(full, slot)) return full;
+        if (tileH >= 56 && Fits(mid, slot)) return mid;
+        if (Fits(res, slot)) return res;
+        return "";
+    }
+
+    public static double BadgeBand(double tileH, bool hasDetail)
+    {
+        if (tileH < 36) return 18;
+        if (!hasDetail) return Math.Min(28, tileH * 0.46);
+        return Math.Min(50, Math.Max(34, tileH * 0.38));
+    }
+
+    /// <summary>Window chip inside the tile, under the number. A zero size means the tile is too small to draw one.</summary>
+    public static DipRect WindowChip(int localX, int localY, int localW, int localH, int monW, int monH, double tileX, double tileY, double tileW, double tileH, double badgeH)
+    {
+        const double pad = 6;
+        double top = tileY + badgeH + 2;
+        double bottom = tileY + tileH - pad;
+        double left = tileX + pad;
+        double right = tileX + tileW - pad;
+        double innerW = right - left;
+        double innerH = bottom - top;
+        if (innerW < 28 || innerH < 18) return new DipRect(left, top, 0, 0);
+        double nx = Math.Clamp(localX / (double)Math.Max(1, monW), 0, 1);
+        double ny = Math.Clamp(localY / (double)Math.Max(1, monH), 0, 1);
+        double nw = Math.Clamp(localW / (double)Math.Max(1, monW), 0.12, 1);
+        double nh = Math.Clamp(localH / (double)Math.Max(1, monH), 0.12, 1);
+        double w = Math.Min(innerW, Math.Max(36, nw * innerW));
+        double h = Math.Min(innerH, Math.Max(20, nh * innerH));
+        double x = left + nx * Math.Max(0, innerW - w);
+        double y = top + ny * Math.Max(0, innerH - h);
+        return new DipRect(x, y, w, h);
+    }
+
+    /// <summary>Icon marker kept off the number band and off window chips. Zero size means there is no free spot.</summary>
+    public static DipRect IconDot(int iconX, int iconY, int monX, int monY, int monW, int monH, double tileX, double tileY, double tileW, double tileH, double badgeH, IReadOnlyList<DipRect>? occupied)
+    {
+        const double size = 10;
+        const double pad = 5;
+        double left = tileX + pad;
+        double right = tileX + tileW - pad - size;
+        double top = tileY + badgeH + 2;
+        double bottom = tileY + tileH - pad - size;
+        if (right < left || bottom < top) return new DipRect(0, 0, 0, 0);
+        double fx = monW <= 0 ? 0 : Math.Clamp((iconX - monX) / (double)monW, 0, 1);
+        double fy = monH <= 0 ? 1 : Math.Clamp((iconY - monY) / (double)monH, 0, 1);
+        fy = Math.Max(fy, 0.78);
+        var badge = new DipRect(tileX, tileY, Math.Max(0, tileW), badgeH);
+        bool Clear(DipRect dot) => dot.W > 0 && !dot.Hits(badge) && (occupied == null || !occupied.Any(o => o.W > 0 && dot.Hits(o)));
+        var first = new DipRect(left + fx * (right - left), top + fy * (bottom - top), size, size);
+        if (Clear(first)) return first;
+        for (double t = 0; t <= 1.001; t += 0.1)
+        {
+            var slide = new DipRect(left + t * (right - left), bottom, size, size);
+            if (Clear(slide)) return slide;
+        }
+        return new DipRect(0, 0, 0, 0);
+    }
+}
+
+/// <summary>Names of the profile-page symbols drawn as vectors, not as a font glyph.</summary>
+public static class ProfileGlyph
+{
+    public static readonly string[] Kinds = { "ellipsis", "trash", "pencil", "pin", "min", "app", "eye", "eyeoff", "undo" };
+    public static bool Known(string? kind) => kind != null && Kinds.Contains(kind);
 }

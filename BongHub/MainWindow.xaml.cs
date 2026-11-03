@@ -56,6 +56,12 @@ public partial class MainWindow : Window
             src?.AddHook(OnDisplayMessage);
         };
         ProfileHotkey.Fired = id => Dispatcher.BeginInvoke(() => RequestApplyProfile(id));
+        SizeChanged += (_, e) =>
+        {
+            if (CurrentPage != "presets") return;
+            if (Math.Abs(e.NewSize.Width - e.PreviousSize.Width) < 12 && Math.Abs(e.NewSize.Height - e.PreviousSize.Height) < 12) return;
+            Dispatcher.BeginInvoke(() => { if (CurrentPage == "presets") Render("presets", false); });
+        };
         ApplyTabOrder(ConfigStore.TabOrder);
         RebuildNav();
         MinBtn.Click += (_, _) => WindowState = WindowState.Minimized;
@@ -559,7 +565,7 @@ public partial class MainWindow : Window
             trail.Children.Add(apply);
             if (item.Id == SelectedProfileId && ProfileUndo.Last != null)
             {
-                var undo = GlyphButton("\uE7A7", "마지막 적용 되돌리기", UndoLastApply);
+                var undo = VectorButton("undo", "마지막 적용 되돌리기", UndoLastApply);
                 undo.Margin = new Thickness(6, 0, 0, 0);
                 trail.Children.Add(undo);
             }
@@ -569,7 +575,7 @@ public partial class MainWindow : Window
         }
         var cmds = new StackPanel { Orientation = Orientation.Horizontal };
         cmds.Children.Add(Small("추가", () => { var n = ProfileDoc.Add(Profiles); SelectedProfileId = n.Id; SaveProfiles(); ProfileHotkey.Bind(Profiles, ConfigStore.Notes.Hotkey); Render("presets", false); }));
-        Row(g, null, null, "프로필", "복제와 삭제, 가져오기와 보내기는 ⋯에 있어요.", cmds);
+        Row(g, null, null, "프로필", null, cmds);
         var selected = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId);
         if (selected != null) BuildProfileEditor(selected);
         Footer("모니터와 창, 아이콘은 지금 적용을 눌렀을 때만 바뀌어요. 시험·화면 밖·CI에서는 디스플레이, 실제 창, 탐색기를 열지 않아요. 모니터를 바꾼 뒤 Windows가 최소화된 창을 다시 그리는 경우가 있어요. 작업 표시줄을 맞추려고 탐색기를 끝내지는 않아요.");

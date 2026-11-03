@@ -882,6 +882,13 @@ aged[0].Name = "바뀜";
 var undone = ProfileUndo.Take();
 var diff = ProfileDiff.Summary(agedBack[0], ownerDesk);
 Check("older profiles keep their fields and gain topmost, launch, and icon visibility", agedBack[0].Workspace == "W1" && agedBack[0].Hotkey == "Ctrl+Alt+1" && agedBack[0].Brightness[0].Value == 40 && agedBack[0].Monitors[0].Scale == 125 && agedBack[0].Apps[0].TopMost && !agedBack[0].Icons[0].Show && ProfileDoc.Parse(oldProfile)[0].Monitors[0].Scale == 100 && ProfileDoc.Parse(oldProfile)[0].Icons[0].Show && missingLaunch.Count == 1 && presentLaunch.Count == 0 && placed.Windows[0].TopMost && undone != null && undone.Name == "작업" && diff.Contains("창"));
+var stage = ProfileChrome.Stage(700, 600);
+var narrowDetail = ProfileChrome.Detail(56, 40, 1200, 800, 150, 90, false, true);
+var midDetail = ProfileChrome.Detail(120, 70, 2400, 1350, 100, 0, false, true);
+var wideDetail = ProfileChrome.Detail(220, 130, 3840, 2160, 125, 0, true, true);
+var chipBox = ProfileChrome.WindowChip(80, 40, 900, 600, 3840, 2160, 10, 20, 220, 140, 46);
+var iconDot = ProfileChrome.IconDot(20, 30, 0, 0, 3840, 2160, 10, 20, 220, 140, 46, new[] { chipBox });
+Check("small tiles drop detail and chips stay clear of the number", stage.Width == 700 && stage.Height == 300 && narrowDetail.Length == 0 && midDetail == "2400×1350" && wideDetail.Contains("3840") && wideDetail.Contains("주") && chipBox.Y >= 66 && chipBox.Bottom <= 160 && iconDot.W == 10 && !iconDot.Hits(chipBox) && !iconDot.Hits(new DipRect(10, 20, 220, 46)) && ProfileGlyph.Kinds.Length == 9 && ProfileGlyph.Known("ellipsis") && ProfileGlyph.Known("trash"));
 string profileRoot = Path.Combine(Path.GetTempPath(), "bonghub_profile_" + Environment.ProcessId);
 try
 {

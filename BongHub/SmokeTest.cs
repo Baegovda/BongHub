@@ -644,6 +644,7 @@ public static class SmokeTest
         t.Check("tray note commands still installed no hook", NoteHotkey.HookInstalls == 0 && NoteHotkey.NativeRegistrations == 0);
 
         var bare = new HashSet<string>();
+        var pageClips = new List<string>();
         foreach (var page in new[] { "notes", "general", "powertoys", "kakao", "presets" })
         {
             w.Navigate(page);
@@ -652,12 +653,15 @@ public static class SmokeTest
             if (live != null) { _ = live.Editor; live.ShowPalette(); live.CustomColor.OpenPicker(); }
             foreach (var item in ThemeAudit.Bare(tray.Menu)) bare.Add(item);
             live?.ClosePalette();
+            string clip = UiOverflow.First(w.PageHost);
+            if (clip.Length > 0) pageClips.Add(page + ": " + clip);
         }
         var bmp = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null, new byte[16], 8);
         var viewer = ImageViewerWindow.Open(bmp);
         await TestKit.Delay(120);
         foreach (var item in ThemeAudit.Bare(tray.Menu)) bare.Add(item);
         t.Check("every control uses a themed style", bare.Count == 0, bare.Count == 0 ? "" : string.Join(", ", bare.Take(12)));
+        t.Check("settings pages do not clip text", pageClips.Count == 0, pageClips.Count == 0 ? "" : string.Join(" | ", pageClips.Take(4)));
         viewer.Close();
 
         int screensBefore = ScreenCatalog.NativeCalls;
@@ -685,5 +689,25 @@ public static class SmokeTest
         }
         WalkText(w);
         t.Check("profile tab shows the live desk without a mismatch warning", !w.ProfileMismatchBanner && !warned && w.ProfileLayoutNote == "3,1,5,2,4" && ScreenCatalog.NativeCalls == screensBefore && DisplaySystem.NativeCalls == displaysBefore && LiveWindowSurface.NativeCalls == windowsBefore && ExplorerIconSurface.NativeCalls == iconsBefore && AppIcon.NativeCalls == 0);
+        string canvasClip = UiOverflow.First(w.ProfileStage);
+        var narrow = ProfileChrome.Detail(56, 40, 1200, 800, 150, 90, false, true);
+        var wideDetail = ProfileChrome.Detail(200, 120, 3840, 2160, 125, 0, true, true);
+        var chip = ProfileChrome.WindowChip(80, 40, 900, 600, 3840, 2160, 10, 20, 220, 140, 46);
+        var dot = ProfileChrome.IconDot(20, 30, 0, 0, 3840, 2160, 10, 20, 220, 140, 46, new[] { chip });
+        t.Check("small monitor tiles abbreviate text and chips stay under the number", narrow.Length == 0 && wideDetail.Length > 0 && ProfileChrome.Fits(wideDetail, 200 - 18) && chip.Y >= 20 + 46 && chip.Bottom <= 20 + 140 && dot.W > 0 && !dot.Hits(chip) && !dot.Hits(new DipRect(10, 20, 220, 46)));
+        t.Check("profile canvas text is not clipped", canvasClip.Length == 0 && UiOverflow.First(w.PageHost).Length == 0, canvasClip.Length > 0 ? canvasClip : UiOverflow.First(w.PageHost));
+        t.Check("profile symbols are vector paths", UiOverflow.FontIconButtons(w.PageHost) == 0 && UiOverflow.Paths(w.ProfileWindowList) >= 1 && ProfileGlyph.Known("ellipsis") && ProfileGlyph.Known("trash") && ProfileGlyph.Known("pencil"));
+        var iconBmp = AppIcon.FromPixels(2, 2, new byte[] { 20, 90, 200, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 });
+        AppIcon.Clear();
+        AppIcon.Fake = key => key.EndsWith("Code.exe", StringComparison.OrdinalIgnoreCase) ? iconBmp : null;
+        w.ShowLiveLayout(desk);
+        await TestKit.Delay(40);
+        int withIcon = UiOverflow.Images(w.ProfileWindowList);
+        AppIcon.Fake = null;
+        AppIcon.Clear();
+        w.ShowLiveLayout(desk);
+        await TestKit.Delay(40);
+        int withoutIcon = UiOverflow.Images(w.ProfileWindowList);
+        t.Check("window rows use the exe icon and a vector placeholder otherwise", withIcon >= 1 && withoutIcon == 0 && AppIcon.NativeCalls == 0 && UiOverflow.Paths(w.ProfileWindowList) >= 1);
     }
 }
