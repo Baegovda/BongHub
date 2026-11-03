@@ -78,6 +78,62 @@ public static class UiOverflow
         return n;
     }
 
+    /// <summary>Window chips whose box crosses a monitor number or info line. Touching edges do not count.</summary>
+    public static int CoveredLabels(DependencyObject? root)
+    {
+        if (root is not UIElement origin) return 0;
+        var labels = new List<Rect>();
+        var chips = new List<Rect>();
+        void Walk(DependencyObject node)
+        {
+            if (node is FrameworkElement fe && fe.Tag is string tag && fe.IsVisible && fe.ActualWidth > 1 && fe.ActualHeight > 1)
+            {
+                try
+                {
+                    var p = fe.TranslatePoint(new Point(0, 0), origin);
+                    var box = new Rect(p.X, p.Y, fe.ActualWidth, fe.ActualHeight);
+                    if (tag == "monitor-label") labels.Add(box);
+                    else if (tag == "window-chip") chips.Add(box);
+                }
+                catch { }
+            }
+            int count = 0;
+            try { count = VisualTreeHelper.GetChildrenCount(node); } catch { count = 0; }
+            for (int i = 0; i < count; i++) Walk(VisualTreeHelper.GetChild(node, i));
+        }
+        Walk(root);
+        int hits = 0;
+        foreach (var chip in chips)
+            foreach (var label in labels)
+                if (chip.Left < label.Right - 1 && chip.Right > label.Left + 1 && chip.Top < label.Bottom - 1 && chip.Bottom > label.Top + 1)
+                    hits++;
+        return hits;
+    }
+
+    /// <summary>Top and bottom of monitor tiles, in the canvas. Empty when none are tagged.</summary>
+    public static (double Top, double Bottom) MonitorSpan(Canvas? stage)
+    {
+        if (stage == null) return (0, 0);
+        double top = double.MaxValue, bottom = 0;
+        int n = 0;
+        void Walk(DependencyObject node)
+        {
+            if (node is FrameworkElement fe && fe.Tag as string == "monitor-tile" && fe.ActualHeight > 1)
+            {
+                double y = Canvas.GetTop(fe);
+                if (double.IsNaN(y)) y = 0;
+                top = Math.Min(top, y);
+                bottom = Math.Max(bottom, y + fe.ActualHeight);
+                n++;
+            }
+            int count = 0;
+            try { count = VisualTreeHelper.GetChildrenCount(node); } catch { count = 0; }
+            for (int i = 0; i < count; i++) Walk(VisualTreeHelper.GetChild(node, i));
+        }
+        Walk(stage);
+        return n == 0 ? (0, 0) : (top, bottom);
+    }
+
     public static int Images(DependencyObject? root)
     {
         if (root == null) return 0;

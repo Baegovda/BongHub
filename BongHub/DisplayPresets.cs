@@ -1964,13 +1964,23 @@ public readonly record struct DipRect(double X, double Y, double W, double H)
 /// </summary>
 public static class ProfileChrome
 {
-    public static (int Width, int Height) Stage(double availW, double availH)
+    /// <summary>Page width, and the tallest box <see cref="ProfileSnap.Fit"/> may use. The painted canvas is shorter.</summary>
+    public static (int Width, int FitHeight) Stage(double availW, double availH)
     {
         double w = double.IsNaN(availW) || availW < 280 ? 680 : availW;
         double h = double.IsNaN(availH) || availH < 240 ? 560 : availH;
         int width = (int)Math.Clamp(Math.Floor(w), 520, 1200);
-        int height = (int)Math.Clamp(Math.Floor(h * 0.5), 280, 520);
-        return (width, height);
+        int fit = (int)Math.Clamp(Math.Floor(h * 0.42), 160, 340);
+        return (width, fit);
+    }
+
+    /// <summary>Height of the diagram: the scaled arrangement plus padding. Top-aligned, no empty band.</summary>
+    public static int PaintedHeight(double contentHeight, double scale, int pad)
+    {
+        if (scale < 0.01 || double.IsNaN(scale) || double.IsInfinity(scale)) scale = 0.01;
+        if (contentHeight < 1 || double.IsNaN(contentHeight)) contentHeight = 1;
+        int h = pad + (int)Math.Ceiling(contentHeight * scale) + pad;
+        return Math.Max(pad * 2 + 36, h);
     }
 
     /// <summary>11px digit line. Conservative so the label is hidden before it would clip.</summary>
@@ -2004,11 +2014,31 @@ public static class ProfileChrome
         return "";
     }
 
-    public static double BadgeBand(double tileH, bool hasDetail)
+    /// <summary>Pixels reserved for the Identify number and the info line. Chips start under this.</summary>
+    public static double BadgeBand(double tileW, double tileH, bool hasDetail)
     {
-        if (tileH < 36) return 18;
-        if (!hasDetail) return Math.Min(28, tileH * 0.46);
-        return Math.Min(50, Math.Max(34, tileH * 0.38));
+        double num = Math.Ceiling(NumberSize(tileW, tileH) * 1.6);
+        double band = 8 + num + (hasDetail ? 18 : 0) + 8;
+        double cap = Math.Max(24, tileH - 16);
+        return Math.Min(band, cap);
+    }
+
+    /// <summary>The remaining strip cannot hold a real window chip, so one count chip is used instead.</summary>
+    public static bool NeedsCountChip(double tileW, double tileH, double badgeH, int windows)
+    {
+        if (windows <= 0) return false;
+        double inner = tileH - badgeH - 8;
+        return inner < 26 || tileW < 72;
+    }
+
+    public static DipRect CountChip(double tileX, double tileY, double tileW, double tileH, double badgeH)
+    {
+        double top = tileY + badgeH + 2;
+        double bottom = tileY + tileH - 4;
+        double h = Math.Min(18, bottom - top);
+        if (h < 14 || tileW < 36) return new DipRect(tileX, top, 0, 0);
+        double w = Math.Min(52, tileW - 12);
+        return new DipRect(tileX + 6, top, w, h);
     }
 
     /// <summary>Window chip inside the tile, under the number. A zero size means the tile is too small to draw one.</summary>
@@ -2036,7 +2066,7 @@ public static class ProfileChrome
     /// <summary>Icon marker kept off the number band and off window chips. Zero size means there is no free spot.</summary>
     public static DipRect IconDot(int iconX, int iconY, int monX, int monY, int monW, int monH, double tileX, double tileY, double tileW, double tileH, double badgeH, IReadOnlyList<DipRect>? occupied)
     {
-        const double size = 10;
+        const double size = 6;
         const double pad = 5;
         double left = tileX + pad;
         double right = tileX + tileW - pad - size;

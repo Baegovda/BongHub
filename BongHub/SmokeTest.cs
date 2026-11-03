@@ -696,6 +696,10 @@ public static class SmokeTest
         var dot = ProfileChrome.IconDot(20, 30, 0, 0, 3840, 2160, 10, 20, 220, 140, 46, new[] { chip });
         t.Check("small monitor tiles abbreviate text and chips stay under the number", narrow.Length == 0 && wideDetail.Length > 0 && ProfileChrome.Fits(wideDetail, 200 - 18) && chip.Y >= 20 + 46 && chip.Bottom <= 20 + 140 && dot.W > 0 && !dot.Hits(chip) && !dot.Hits(new DipRect(10, 20, 220, 46)));
         t.Check("profile canvas text is not clipped", canvasClip.Length == 0 && UiOverflow.First(w.PageHost).Length == 0, canvasClip.Length > 0 ? canvasClip : UiOverflow.First(w.PageHost));
+        w.UpdateLayout();
+        var span = UiOverflow.MonitorSpan(w.ProfileStage);
+        t.Check("window chips stay under the monitor labels", w.ProfileStage != null && UiOverflow.CoveredLabels(w.ProfileStage) == 0);
+        t.Check("monitor canvas is compact and top-aligned", w.ProfileStage != null && span.Top > 0 && span.Top <= 28 && w.ProfileStage.Height - span.Bottom <= 28 && w.ProfileStage.Height < 240 && !w.PreviewIcons);
         t.Check("profile symbols are vector paths", UiOverflow.FontIconButtons(w.PageHost) == 0 && UiOverflow.Paths(w.ProfileWindowList) >= 1 && ProfileGlyph.Known("ellipsis") && ProfileGlyph.Known("trash") && ProfileGlyph.Known("pencil"));
         var iconBmp = AppIcon.FromPixels(2, 2, new byte[] { 20, 90, 200, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 });
         AppIcon.Clear();

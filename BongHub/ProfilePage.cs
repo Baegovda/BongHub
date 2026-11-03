@@ -17,6 +17,7 @@ public partial class MainWindow
 
     public Canvas? ProfileStage { get; private set; }
     public FrameworkElement? ProfileWindowList { get; private set; }
+    public bool PreviewIcons { get; private set; }
 
     Button VectorButton(string kind, string tip, Action click)
     {
@@ -158,6 +159,7 @@ public partial class MainWindow
         else auto += " · 화면 구성마다 자동 저장은 일반 실행에서 보여요.";
         Row(icons, "\uE8A5", "5AC8FA", "이 화면 구성", auto, null, wrap: true);
         Row(icons, "\uE8A5", "5AC8FA", "적용할 때 아이콘 되돌리기", "지금 적용은 보이는 아이콘만 옮겨요.", Switch(profile.RestoreIcons, v => { profile.RestoreIcons = v; SaveProfiles(); }, !AppEnv.ReadOnly), wrap: true);
+        Row(icons, "\uE8A5", "34C759", "그림 위 아이콘 점", "켜면 모니터 그림에 작은 점으로 보여요.", Switch(PreviewIcons, v => { PreviewIcons = v; Render("presets", false); }, true), wrap: true);
         if (profile.Icons.Count == 0) return;
         var scroll = new ScrollViewer { MaxHeight = 132, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         var wrap = new WrapPanel { Margin = new Thickness(8, 4, 8, 8) };
@@ -543,13 +545,11 @@ public partial class MainWindow
             availW = view > 320 ? view - 4 : 680;
         }
         double availH = Scroller.ViewportHeight > 240 ? Scroller.ViewportHeight : 560;
-        var (cw, ch) = ProfileChrome.Stage(availW, availH);
-        const int pad = 22;
+        var (cw, fitH) = ProfileChrome.Stage(availW, availH);
+        const int pad = 16;
         var boxes = profile.Monitors.Select(m => m.Box).ToList();
-        var scene = ProfileSnap.Fit(boxes, cw, ch, pad);
-        int usedH = pad * 2 + (int)Math.Ceiling(scene.Bounds.H * scene.Scale);
-        int extraY = Math.Max(0, (ch - usedH) / 2);
-        scene = new ProfileScene(scene.Scale, scene.OriginX, scene.OriginY + extraY, scene.Bounds);
+        var scene = ProfileSnap.Fit(boxes, cw, fitH, pad);
+        int ch = ProfileChrome.PaintedHeight(scene.Bounds.H, scene.Scale, pad);
         var stage = new Canvas { Width = cw, Height = ch, Margin = new Thickness(0, 0, 0, 6), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Top, SnapsToDevicePixels = true, UseLayoutRounding = true, Background = Brushes.Transparent };
         ProfileStage = stage;
         var preview = new Border
@@ -606,7 +606,8 @@ public partial class MainWindow
                 FontSize = numberSize,
                 FontWeight = FontWeights.Bold,
                 TextWrapping = TextWrapping.NoWrap,
-                TextTrimming = TextTrimming.CharacterEllipsis
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Tag = "monitor-label"
             });
             if (detail.Length > 0)
                 badge.Children.Add(new TextBlock
@@ -616,7 +617,8 @@ public partial class MainWindow
                     FontSize = 11,
                     Opacity = 0.85,
                     TextWrapping = TextWrapping.NoWrap,
-                    TextTrimming = TextTrimming.CharacterEllipsis
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    Tag = "monitor-label"
                 });
             frame.Child = badge;
             chipSpots[mon.Number] = new List<DipRect>();
@@ -660,18 +662,37 @@ public partial class MainWindow
                 SaveProfiles();
                 Render("presets", false);
             };
+            frame.Tag = "monitor-tile";
             Canvas.SetZIndex(frame, 1);
             stage.Children.Add(frame);
         }
         int tileZ = 10;
+        var counted = new HashSet<int>();
         foreach (var app in profile.Apps)
         {
             var home = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors[0];
             var homeView = ProfileSnap.ToCanvas(home.Box, scene, 8, 8);
             string homeDetail = ProfileChrome.Detail(homeView.W, homeView.H, home.W, home.H, home.Scale, home.Orientation, home.Primary, home.Connected);
-            double band = ProfileChrome.BadgeBand(homeView.H, homeDetail.Length > 0);
-            var chip = ProfileChrome.WindowChip(app.X, app.Y, app.W, app.H, home.W, home.H, homeView.X, homeView.Y, homeView.W, homeView.H, band);
+            double band = ProfileChrome.BadgeBand(homeView.W, homeView.H, homeDetail.Length > 0);
+            int onHome = profile.Apps.Count(a => a.Monitor == home.Number);
+            DipRect chip;
+            string chipText;
+            bool countOnly = ProfileChrome.NeedsCountChip(homeView.W, homeView.H, band, onHome);
+            if (countOnly)
+            {
+                if (!counted.Add(home.Number)) continue;
+                chip = ProfileChrome.CountChip(homeView.X, homeView.Y, homeView.W, homeView.H, band);
+                chipText = "□ " + onHome;
+            }
+            else
+            {
+                chip = ProfileChrome.WindowChip(app.X, app.Y, app.W, app.H, home.W, home.H, homeView.X, homeView.Y, homeView.W, homeView.H, band);
+                string shownName = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
+                chipText = shownName.Length > 0 ? shownName : "창";
+            }
             if (chip.W < 8 || chip.H < 8) continue;
+            if (chip.Y < homeView.Y + band) chip = new DipRect(chip.X, homeView.Y + band, chip.W, Math.Max(0, chip.Bottom - (homeView.Y + band)));
+            if (chip.H < 12) continue;
             if (chipSpots.TryGetValue(home.Number, out var spots)) spots.Add(chip);
             bool selectedTile = app.Id == selectedAppId;
             var tile = new Border
@@ -683,7 +704,8 @@ public partial class MainWindow
                 BorderBrush = selectedTile ? (Brush)FindResource("Accent") : new SolidColorBrush(Color.FromArgb(0x66, 255, 255, 255)),
                 BorderThickness = new Thickness(selectedTile ? 2 : 1),
                 Cursor = Cursors.SizeAll,
-                ToolTip = (app.Name.Length > 0 ? app.Name : app.Title) + "\n" + app.W + "×" + app.H
+                ToolTip = (app.Name.Length > 0 ? app.Name : app.Title) + "\n" + app.W + "×" + app.H,
+                Tag = "window-chip"
             };
             Canvas.SetLeft(tile, chip.X);
             Canvas.SetTop(tile, chip.Y);
@@ -691,13 +713,15 @@ public partial class MainWindow
             var head = new Grid { Margin = new Thickness(6, 3, 4, 0) };
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             head.ColumnDefinitions.Add(new ColumnDefinition());
-            var mark = AppFace(app.Process, app.Path);
-            if (mark is FrameworkElement face) face.VerticalAlignment = VerticalAlignment.Center;
-            head.Children.Add(mark);
-            string shown = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
+            if (!countOnly)
+            {
+                var mark = AppFace(app.Process, app.Path);
+                if (mark is FrameworkElement face) face.VerticalAlignment = VerticalAlignment.Center;
+                head.Children.Add(mark);
+            }
             var nameBlock = new TextBlock
             {
-                Text = shown.Length > 0 ? shown : "창",
+                Text = chipText,
                 Foreground = Brushes.White,
                 FontSize = chip.W < 72 ? 11 : 12,
                 FontWeight = FontWeights.SemiBold,
@@ -825,31 +849,31 @@ public partial class MainWindow
             };
             stage.Children.Add(tile);
         }
-        foreach (var icon in profile.Icons)
-        {
-            var home = profile.Monitors.FirstOrDefault(m => icon.X >= m.X && icon.Y >= m.Y && icon.X < m.X + m.W && icon.Y < m.Y + m.H);
-            if (home == null) continue;
-            var homeView = ProfileSnap.ToCanvas(home.Box, scene, 8, 8);
-            string homeDetail = ProfileChrome.Detail(homeView.W, homeView.H, home.W, home.H, home.Scale, home.Orientation, home.Primary, home.Connected);
-            double band = ProfileChrome.BadgeBand(homeView.H, homeDetail.Length > 0);
-            chipSpots.TryGetValue(home.Number, out var occupied);
-            var dot = ProfileChrome.IconDot(icon.X, icon.Y, home.X, home.Y, home.W, home.H, homeView.X, homeView.Y, homeView.W, homeView.H, band, occupied);
-            if (dot.W < 1) continue;
-            var mark = new Border
+        if (PreviewIcons)
+            foreach (var icon in profile.Icons)
             {
-                Width = dot.W,
-                Height = dot.H,
-                CornerRadius = new CornerRadius(3),
-                Background = new SolidColorBrush(Color.FromArgb(icon.Show ? (byte)0xEE : (byte)0x66, 0x34, 0xC7, 0x59)),
-                IsHitTestVisible = false,
-                ToolTip = icon.Name + (icon.Show ? "" : " · 숨김"),
-                Child = ProfileMarks.Icon("app", 8)
-            };
-            Canvas.SetLeft(mark, dot.X);
-            Canvas.SetTop(mark, dot.Y);
-            Canvas.SetZIndex(mark, 3);
-            stage.Children.Add(mark);
-        }
+                var home = profile.Monitors.FirstOrDefault(m => icon.X >= m.X && icon.Y >= m.Y && icon.X < m.X + m.W && icon.Y < m.Y + m.H);
+                if (home == null) continue;
+                var homeView = ProfileSnap.ToCanvas(home.Box, scene, 8, 8);
+                string homeDetail = ProfileChrome.Detail(homeView.W, homeView.H, home.W, home.H, home.Scale, home.Orientation, home.Primary, home.Connected);
+                double band = ProfileChrome.BadgeBand(homeView.W, homeView.H, homeDetail.Length > 0);
+                chipSpots.TryGetValue(home.Number, out var occupied);
+                var dot = ProfileChrome.IconDot(icon.X, icon.Y, home.X, home.Y, home.W, home.H, homeView.X, homeView.Y, homeView.W, homeView.H, band, occupied);
+                if (dot.W < 1) continue;
+                var mark = new Ellipse
+                {
+                    Width = dot.W,
+                    Height = dot.H,
+                    Fill = new SolidColorBrush(Color.FromArgb(icon.Show ? (byte)0xB0 : (byte)0x55, 0x5A, 0xC8, 0x7A)),
+                    IsHitTestVisible = false,
+                    ToolTip = (icon.Name.Length > 0 ? icon.Name : "아이콘") + (icon.Show ? "" : " · 숨김"),
+                    Tag = "icon-dot"
+                };
+                Canvas.SetLeft(mark, dot.X);
+                Canvas.SetTop(mark, dot.Y);
+                Canvas.SetZIndex(mark, 3);
+                stage.Children.Add(mark);
+            }
         Canvas.SetZIndex(guideLine, 90);
         Canvas.SetZIndex(preview, 5);
         stage.Children.Add(guideLine);

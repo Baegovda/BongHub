@@ -888,7 +888,12 @@ var midDetail = ProfileChrome.Detail(120, 70, 2400, 1350, 100, 0, false, true);
 var wideDetail = ProfileChrome.Detail(220, 130, 3840, 2160, 125, 0, true, true);
 var chipBox = ProfileChrome.WindowChip(80, 40, 900, 600, 3840, 2160, 10, 20, 220, 140, 46);
 var iconDot = ProfileChrome.IconDot(20, 30, 0, 0, 3840, 2160, 10, 20, 220, 140, 46, new[] { chipBox });
-Check("small tiles drop detail and chips stay clear of the number", stage.Width == 700 && stage.Height == 300 && narrowDetail.Length == 0 && midDetail == "2400×1350" && wideDetail.Contains("3840") && wideDetail.Contains("주") && chipBox.Y >= 66 && chipBox.Bottom <= 160 && iconDot.W == 10 && !iconDot.Hits(chipBox) && !iconDot.Hits(new DipRect(10, 20, 220, 46)) && ProfileGlyph.Kinds.Length == 9 && ProfileGlyph.Known("ellipsis") && ProfileGlyph.Known("trash"));
+double headerBand = ProfileChrome.BadgeBand(180, 110, true);
+var underChip = ProfileChrome.WindowChip(120, 80, 1400, 900, 3840, 2160, 0, 0, 180, 110, headerBand);
+var wideBoxes = ownerDesk.Select(s => new ProfileBox(s.X, s.Y, s.W, s.H)).ToList();
+var deskScene = ProfileSnap.Fit(wideBoxes, stage.Width, stage.FitHeight, 16);
+int painted = ProfileChrome.PaintedHeight(deskScene.Bounds.H, deskScene.Scale, 16);
+Check("small tiles drop detail and chips stay clear of the number", stage.Width == 700 && stage.FitHeight == 252 && narrowDetail.Length == 0 && midDetail == "2400×1350" && wideDetail.Contains("3840") && wideDetail.Contains("주") && chipBox.Y >= 66 && chipBox.Bottom <= 160 && iconDot.W == 6 && !iconDot.Hits(chipBox) && !iconDot.Hits(new DipRect(10, 20, 220, 46)) && headerBand >= 60 && underChip.Y >= headerBand && underChip.Bottom <= 110 && painted < stage.FitHeight && painted > 70 && ProfileGlyph.Kinds.Length == 9 && ProfileGlyph.Known("ellipsis") && ProfileGlyph.Known("trash"));
 string profileRoot = Path.Combine(Path.GetTempPath(), "bonghub_profile_" + Environment.ProcessId);
 try
 {

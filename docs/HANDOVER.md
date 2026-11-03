@@ -70,7 +70,7 @@ dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Relea
 
 | 명령 | 결과 |
 |---|---|
-| `--smoketest` | **137 PASS**. 임시 폴더만 써요. `--data`와 `BONGHUB_DATA`는 무시해요. |
+| `--smoketest` | **139 PASS**. 임시 폴더만 써요. `--data`와 `BONGHUB_DATA`는 무시해요. |
 | `--notetest --data <복사본>` | **144 PASS**. `data/` 원본이 아니라 복사본만 넘겨요. |
 | PatchTests | `RESULT PASS` |
 | RichEditTests | 1×1 `\pngblip` 왕복 `RESULT PASS` |
@@ -151,7 +151,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 | 1.3.0 | 링크는 화면에만 칠해요. 복사가 클립보드에 남아요. 대비가 부족한 중간 색만 조금 밝혀요. 옛 기본 글자색은 자동 글씨로 바꿔요. 그림을 다 못 담으면 pending에 남겨요. | 123 / 127 |
 | 1.3.1 | Run·Paragraph 클릭이 예외를 던지지 않아요. | 123 / 128 |
 | 1.3.2 | 접힌·최소·최대 크기가 복원 크기를 덮지 않아요. 그림 가드는 화면에 남은 그림만 봐요. 게시는 자기 포함 `win-x64`예요. | 123 / 144 |
-| 1.4.0 | 모니터 프로필을 화면 설정처럼 깊게 고쳤어요. 라이브 배치, 가장자리 스냅, 창 크기, 조준, 단축키, 아이콘 미리보기. | 137 / 144 |
+| 1.4.0 | 모니터 프로필을 화면 설정처럼 깊게 고쳤어요. 라이브 배치, 가장자리 스냅, 창 크기, 조준, 단축키, 아이콘 미리보기. | 139 / 144 |
 
 ## 7. 시험할 때 지키면 안 되는 것
 
