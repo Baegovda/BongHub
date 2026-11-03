@@ -185,14 +185,14 @@ public static class NoteColors
 {
     public static readonly string[] Keys = { "yellow", "green", "pink", "purple", "blue", "gray", "charcoal" };
     public static readonly string[] Names = { "노랑", "초록", "분홍", "보라", "파랑", "회색", "차콜" };
-    static readonly Color[] swatch = { C(79, 69, 46), C(47, 79, 58), C(97, 60, 72), C(82, 64, 99), C(55, 71, 94), C(70, 71, 74), C(58, 59, 64) };
-    static readonly Color[] partner = { C(65, 55, 34), C(35, 65, 45), C(79, 44, 56), C(64, 47, 82), C(40, 56, 77), C(53, 56, 61), C(44, 45, 52) };
+    static readonly Color[] swatch = { C(59, 51, 32), C(33, 56, 40), C(74, 44, 54), C(60, 46, 74), C(39, 53, 71), C(49, 51, 54), C(50, 51, 56) };
+    static readonly Color[] partner = { C(46, 38, 22), C(22, 44, 29), C(58, 30, 39), C(44, 31, 58), C(26, 38, 56), C(35, 37, 42), C(36, 37, 44) };
     public static readonly string[][] Gradients = {
-        new[] { "g:mint", "민트", "2E4C46", "223F39" }, new[] { "g:peach", "복숭아", "594334", "493426" },
-        new[] { "g:rose", "장미", "633C42", "522C32" }, new[] { "g:lagoon", "라군", "2E4C4F", "223E41" },
-        new[] { "g:olive", "올리브", "464A32", "393D26" }, new[] { "g:sand", "샌드", "4C463C", "3F382D" },
-        new[] { "g:night", "밤하늘", "424461", "31344F" }, new[] { "g:cocoa", "코코아", "54423B", "45342C" },
-        new[] { "g:ocean", "바다", "344954", "273B45" } };
+        new[] { "g:mint", "민트", "213833", "162C27" }, new[] { "g:peach", "복숭아", "423024", "342318" },
+        new[] { "g:rose", "장미", "4C2C2F", "3C1E20" }, new[] { "g:lagoon", "라군", "20383B", "162C2E" },
+        new[] { "g:olive", "올리브", "323623", "272A18" }, new[] { "g:sand", "샌드", "38322A", "2C261D" },
+        new[] { "g:night", "밤하늘", "30324A", "21233A" }, new[] { "g:cocoa", "코코아", "40312B", "32241E" },
+        new[] { "g:ocean", "바다", "25353D", "192830" } };
     /// <summary>Older preset names still open. They render as the nearest current color.</summary>
     static readonly Dictionary<string, string> Alias = new(StringComparer.Ordinal)
     {
