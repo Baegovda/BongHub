@@ -228,7 +228,7 @@ public partial class MainWindow
         else auto += " · 화면 구성마다 자동 저장은 일반 실행에서 보여요.";
         Row(icons, "\uE8A5", "5AC8FA", "이 화면 구성", auto, null, tight: true);
         Row(icons, "\uE8A5", "5AC8FA", "적용할 때 아이콘 되돌리기", "보이는 아이콘만 옮겨요.", Switch(profile.RestoreIcons, v => { profile.RestoreIcons = v; SaveProfiles(); }, !AppEnv.ReadOnly), tight: true);
-        Row(icons, "\uE8A5", "34C759", "그림 위 아이콘 점", "켜면 모니터 그림에 작은 점으로 보여요.", Switch(PreviewIcons, v => { PreviewIcons = v; Render("presets", false); }, true), tight: true);
+        Row(icons, "\uE8A5", "34C759", "모니터맵 위 아이콘 점", "켜면 모니터맵에 작은 점으로 보여요.", Switch(PreviewIcons, v => { PreviewIcons = v; Render("presets", false); }, true), tight: true);
         if (profile.Icons.Count == 0) return;
         var scroll = new ScrollViewer { MaxHeight = 132, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         var wrap = new WrapPanel { Margin = new Thickness(8, 4, 8, 8) };
@@ -495,7 +495,7 @@ public partial class MainWindow
         void Commit()
         {
             int nx = ParseNum(x.Text, app.X), ny = ParseNum(y.Text, app.Y), nw = ParseNum(w.Text, app.W), nh = ParseNum(h.Text, app.H);
-            var box = ProfileSnap.Resize(new ProfileBox(mon.X + nx, mon.Y + ny, nw, nh), mon.Box, "", 0, 0, 120);
+            var box = ProfileSnap.Resize(new ProfileBox(mon.X + nx, mon.Y + ny, nw, nh), mon.Work, "", 0, 0, 120);
             app.X = box.X - mon.X;
             app.Y = box.Y - mon.Y;
             app.W = box.W;
@@ -909,6 +909,23 @@ public partial class MainWindow
             if (main) monitorFrames[mon.Number] = frame;
             Canvas.SetZIndex(frame, 1);
             stage.Children.Add(frame);
+            foreach (var strip in ProfileSnap.TaskbarStrips(mon))
+            {
+                var band = ProfileSnap.ToCanvas(strip, scene, 1, 1);
+                if (band.W < 1 || band.H < 1) continue;
+                var shade = new System.Windows.Shapes.Rectangle
+                {
+                    Width = band.W,
+                    Height = band.H,
+                    Fill = new SolidColorBrush(Color.FromArgb(0x55, 0x3A, 0x3D, 0x48)),
+                    IsHitTestVisible = false,
+                    Tag = "taskbar-strip"
+                };
+                Canvas.SetLeft(shade, band.X);
+                Canvas.SetTop(shade, band.Y);
+                Canvas.SetZIndex(shade, 2);
+                stage.Children.Add(shade);
+            }
         }
         int tileZ = 10;
         StackPanel? fallbackTools = null;
@@ -1062,7 +1079,7 @@ public partial class MainWindow
                 edge = EdgeAt(grab, tile.ActualWidth, tile.ActualHeight);
                 int sx = Vx(chipX + grab.X), sy = Vy(chipY + grab.Y);
                 var startHost = HostAt(sx, sy) ?? home;
-                startedKind = ProfileSnap.PreviewAt(sx, sy, startHost.Box).Kind;
+                startedKind = ProfileSnap.PreviewAt(sx, sy, startHost.Work).Kind;
                 leftZone = startedKind.Length == 0;
                 tile.Cursor = CursorFor(edge);
                 e.Handled = true;
@@ -1080,8 +1097,8 @@ public partial class MainWindow
                 bool movedFar = Math.Abs(p.X - (chipX + grab.X)) + Math.Abs(p.Y - (chipY + grab.Y)) > 6;
                 if (edge.Length > 0)
                 {
-                    var resized = ProfileSnap.Resize(appStart, host.Box, edge, vdxLive, vdyLive, 120);
-                    ShowCue(new SnapCue(resized, resized.X == host.X, resized.Right == host.X + host.W, resized.Y == host.Y, resized.Bottom == host.Y + host.H, ""));
+                    var resized = ProfileSnap.Resize(appStart, host.Work, edge, vdxLive, vdyLive, 120);
+                    ShowCue(new SnapCue(resized, resized.X == host.Work.X, resized.Right == host.Work.Right, resized.Y == host.Work.Y, resized.Bottom == host.Work.Bottom, ""));
                     var hostView = ProfileSnap.ToCanvas(host.Box, scene, 8, 8);
                     var view = ProfileChrome.WindowChip(resized.X - host.X, resized.Y - host.Y, resized.W, resized.H, host.W, host.H, hostView.X, hostView.Y, hostView.W, hostView.H);
                     if (view.W >= 2 && view.H >= 2)
@@ -1099,7 +1116,7 @@ public partial class MainWindow
                 }
                 else
                 {
-                    var hit = ProfileSnap.PreviewAt(px, py, host.Box);
+                    var hit = ProfileSnap.PreviewAt(px, py, host.Work);
                     if (startedKind.Length > 0 && hit.Kind != startedKind) leftZone = true;
                     bool arm = ProfileSnap.ArmZone(leftZone ? "" : startedKind, hit.Kind, movedFar);
                     if (arm)
@@ -1116,7 +1133,7 @@ public partial class MainWindow
                     var movedBox = new ProfileBox(appStart.X + vdxLive, appStart.Y + vdyLive, appStart.W, appStart.H);
                     var siblings = profile.Apps.Where(a => a != app && a.Monitor == host.Number).Select(a => new ProfileBox(host.X + a.X, host.Y + a.Y, a.W, a.H)).ToList();
                     string zone = arm && hit.Kind.Length > 0 ? hit.Kind : "";
-                    ShowCue(SnapCueMath.Window(movedBox, host.Box, siblings, 1, ProfileSnap.EdgeSlop(scene.Scale), zone, hit.Box));
+                    ShowCue(SnapCueMath.Window(movedBox, host.Work, siblings, 1, ProfileSnap.EdgeSlop(scene.Scale), zone, hit.Box));
                     Canvas.SetLeft(tile, p.X - grab.X);
                     Canvas.SetTop(tile, p.Y - grab.Y);
                 }
@@ -1132,7 +1149,7 @@ public partial class MainWindow
                 int vdy = (int)Math.Round((p.Y - (chipY + grab.Y)) / scene.Scale);
                 if (edge.Length > 0)
                 {
-                    var resized = ProfileSnap.Resize(appStart, host.Box, edge, vdx, vdy, 120);
+                    var resized = ProfileSnap.Resize(appStart, host.Work, edge, vdx, vdy, 120);
                     app.Monitor = host.Number;
                     app.X = resized.X - host.X;
                     app.Y = resized.Y - host.Y;
@@ -1142,7 +1159,7 @@ public partial class MainWindow
                 }
                 else
                 {
-                    var hit = ProfileSnap.PreviewAt(px, py, host.Box);
+                    var hit = ProfileSnap.PreviewAt(px, py, host.Work);
                     bool movedFar = Math.Abs(p.X - (chipX + grab.X)) + Math.Abs(p.Y - (chipY + grab.Y)) > 6;
                     if (startedKind.Length > 0 && hit.Kind != startedKind) leftZone = true;
                     bool arm = ProfileSnap.ArmZone(leftZone ? "" : startedKind, hit.Kind, movedFar);
@@ -1161,7 +1178,7 @@ public partial class MainWindow
                         var (index, local) = ProfileSnap.Transfer(moved, profile.Monitors.Select(m => m.Box).ToList());
                         var landed = profile.Monitors[index];
                         var siblings = profile.Apps.Where(a => a != app && a.Monitor == landed.Number).Select(a => new ProfileBox(landed.X + a.X, landed.Y + a.Y, a.W, a.H)).ToList();
-                        var snapped = ProfileSnap.SnapWindow(new ProfileBox(landed.X + local.X, landed.Y + local.Y, local.W, local.H), landed.Box, siblings, 1, ProfileSnap.EdgeSlop(scene.Scale));
+                        var snapped = ProfileSnap.SnapWindow(new ProfileBox(landed.X + local.X, landed.Y + local.Y, local.W, local.H), landed.Work, siblings, 1, ProfileSnap.EdgeSlop(scene.Scale));
                         app.Monitor = landed.Number;
                         app.X = snapped.X - landed.X;
                         app.Y = snapped.Y - landed.Y;
@@ -1257,7 +1274,7 @@ public partial class MainWindow
         stage.Children.Add(guideLine);
         stage.Children.Add(guideLine2);
         stage.Children.Add(preview);
-        var expand = VectorButton("expand", "크게 편집", () => OpenProfileEditor(), box: 26);
+        var expand = VectorButton("expand", "모니터맵을 크게", () => OpenProfileEditor(), box: 26);
         Canvas.SetLeft(expand, Math.Max(4, cw - 36));
         Canvas.SetTop(expand, 4);
         Canvas.SetZIndex(expand, 80);
@@ -1265,7 +1282,7 @@ public partial class MainWindow
         var card = new DockPanel { Margin = new Thickness(0, 0, 0, 6), LastChildFill = true };
         var bar = new Grid { Height = 32, Margin = new Thickness(2, 0, 2, 2) };
         var pills = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        pills.Children.Add(StatePill(AppSettings.ChipsVisible, "eye", "eyeoff", "창 칩", "칩 숨김", "저장된 창 칩을 캔버스에 보여요.", "chip-visibility", () =>
+        pills.Children.Add(StatePill(AppSettings.ChipsVisible, "eye", "eyeoff", "창 칩", "칩 숨김", "저장된 창 칩을 모니터맵에 보여요.", "chip-visibility", () =>
         {
             AppSettings.SetChipsVisible(!AppSettings.ChipsVisible);
             Render("presets", false);
@@ -1534,7 +1551,7 @@ public partial class MainWindow
         var mon = profile?.Monitors.FirstOrDefault(m => m.Number == app?.Monitor);
         if (profile == null || app == null || mon == null) return false;
         selectedAppId = app.Id;
-        var resized = ProfileSnap.Resize(new ProfileBox(mon.X + app.X, mon.Y + app.Y, app.W, app.H), mon.Box, edge, dx, dy, 120);
+        var resized = ProfileSnap.Resize(new ProfileBox(mon.X + app.X, mon.Y + app.Y, app.W, app.H), mon.Work, edge, dx, dy, 120);
         app.X = resized.X - mon.X;
         app.Y = resized.Y - mon.Y;
         app.W = resized.W;

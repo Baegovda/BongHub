@@ -246,6 +246,8 @@ public sealed class ProfileMonitor
     /// <summary>Windows Display Settings number, the same one Identify shows.</summary>
     public int Number = 1;
     public int X, Y, W = 1920, H = 1080;
+    /// <summary>Work area in the same pixels as <see cref="X"/>. Zero size means the full monitor, for profiles saved before the taskbar was recorded.</summary>
+    public int WorkX, WorkY, WorkW, WorkH;
     public bool Primary = true;
     public bool Enabled = true;
     public string Device = "";
@@ -258,6 +260,8 @@ public sealed class ProfileMonitor
     /// <summary>Runtime. False when this saved screen is not in the current display list.</summary>
     public bool Connected = true;
     public ProfileBox Box => new(X, Y, W, H);
+    /// <summary>Snap target. Half, maximize, quarter, and dock-flush use this, not the full monitor.</summary>
+    public ProfileBox Work => WorkW > 8 && WorkH > 8 ? new ProfileBox(WorkX, WorkY, WorkW, WorkH) : Box;
 }
 
 public sealed class ProfileApp
@@ -589,6 +593,20 @@ public static class ProfileSnap
         return new ProfileBox(x, y, Math.Max(min, w), Math.Max(min, h));
     }
 
+    /// <summary>Bands of the monitor that are not in the work area. Empty when no taskbar was stored.</summary>
+    public static List<ProfileBox> TaskbarStrips(ProfileMonitor m)
+    {
+        var list = new List<ProfileBox>();
+        if (m == null || m.WorkW <= 8 || m.WorkH <= 8) return list;
+        var full = m.Box;
+        var work = m.Work;
+        if (work.Y > full.Y) list.Add(new ProfileBox(full.X, full.Y, full.W, work.Y - full.Y));
+        if (work.Bottom < full.Bottom) list.Add(new ProfileBox(full.X, work.Bottom, full.W, full.Bottom - work.Bottom));
+        if (work.X > full.X) list.Add(new ProfileBox(full.X, full.Y, work.X - full.X, full.H));
+        if (work.Right < full.Right) list.Add(new ProfileBox(work.Right, full.Y, full.Right - work.Right, full.H));
+        return list;
+    }
+
     public static ProfileBox SnapWindow(ProfileBox window, ProfileBox monitor, IReadOnlyList<ProfileBox> others, int grid, int? edgeSlop = null)
     {
         int g = grid < 1 ? 1 : grid;
@@ -705,6 +723,8 @@ public sealed class ScreenInfo
     public int Scale = 100;
     /// <summary>0, 90, 180, or 270.</summary>
     public int Orientation;
+    /// <summary>Work area in screen pixels. Zero size means the caller did not measure a taskbar.</summary>
+    public int WorkX, WorkY, WorkW, WorkH;
 }
 
 /// <summary>Binds saved monitors to physical screens. No display API.</summary>
@@ -777,6 +797,7 @@ public static class ScreenBind
             m.Edid = hit.Edid ?? "";
             m.W = hit.W;
             m.H = hit.H;
+            ApplyWork(m, hit);
             string hitPath = hit.Path ?? "";
             string hitDevice = hit.Device ?? "";
             if ((m.Id ?? "").Length == 0) m.Id = hitPath.Length > 0 ? hitPath : hitDevice;
@@ -789,6 +810,8 @@ public static class ScreenBind
                 Id = (s.Path ?? "").Length > 0 ? s.Path ?? "" : s.Device ?? "",
                 Number = s.Number,
                 X = s.X, Y = s.Y, W = s.W, H = s.H,
+                WorkX = s.WorkW > 8 ? s.WorkX : s.X, WorkY = s.WorkH > 8 ? s.WorkY : s.Y,
+                WorkW = s.WorkW > 8 ? s.WorkW : s.W, WorkH = s.WorkH > 8 ? s.WorkH : s.H,
                 Primary = s.Primary, Enabled = true, Connected = true,
                 Device = s.Device ?? "", Path = s.Path ?? "", Edid = s.Edid ?? ""
             };
@@ -833,6 +856,7 @@ public static class ScreenBind
             m.Connected = true;
             m.Number = hit.Number;
             m.X = hit.X; m.Y = hit.Y; m.W = hit.W; m.H = hit.H;
+            ApplyWork(m, hit);
             m.Primary = hit.Primary;
             m.Device = hit.Device ?? "";
             m.Path = hit.Path ?? "";
@@ -846,6 +870,8 @@ public static class ScreenBind
             {
                 Id = (s.Path ?? "").Length > 0 ? s.Path ?? "" : s.Number.ToString(),
                 Number = s.Number, X = s.X, Y = s.Y, W = s.W, H = s.H,
+                WorkX = s.WorkW > 8 ? s.WorkX : s.X, WorkY = s.WorkH > 8 ? s.WorkY : s.Y,
+                WorkW = s.WorkW > 8 ? s.WorkW : s.W, WorkH = s.WorkH > 8 ? s.WorkH : s.H,
                 Primary = s.Primary, Enabled = true, Connected = true,
                 Device = s.Device ?? "", Path = s.Path ?? "", Edid = s.Edid ?? ""
             };
@@ -872,7 +898,9 @@ public static class ScreenBind
     {
         if (live == null || live.Count == 0) return "";
         return string.Join("|", live.OrderBy(s => s.Number).ThenBy(s => s.X).ThenBy(s => s.Y).Select(s =>
-            s.Number + "@" + s.X + "," + s.Y + " " + s.W + "x" + s.H + " " + (s.Scale <= 0 ? 100 : s.Scale) + "% r" + s.Orientation
+            s.Number + "@" + s.X + "," + s.Y + " " + s.W + "x" + s.H
+            + " w" + s.WorkX + "," + s.WorkY + " " + s.WorkW + "x" + s.WorkH
+            + " " + (s.Scale <= 0 ? 100 : s.Scale) + "% r" + s.Orientation
             + (s.Primary ? "*" : "") + " " + (s.Device ?? "")));
     }
 
@@ -919,6 +947,22 @@ public static class ScreenBind
         ProfileDoc.SyncLists(profile);
     }
 
+    static void ApplyWork(ProfileMonitor m, ScreenInfo s)
+    {
+        if (s.WorkW > 8 && s.WorkH > 8)
+        {
+            m.WorkX = s.WorkX;
+            m.WorkY = s.WorkY;
+            m.WorkW = s.WorkW;
+            m.WorkH = s.WorkH;
+            return;
+        }
+        m.WorkX = s.X;
+        m.WorkY = s.Y;
+        m.WorkW = s.W;
+        m.WorkH = s.H;
+    }
+
     static void CopyLive(ProfileMonitor m, ScreenInfo hit)
     {
         m.Connected = true;
@@ -927,6 +971,7 @@ public static class ScreenBind
         m.Y = hit.Y;
         m.W = hit.W;
         m.H = hit.H;
+        ApplyWork(m, hit);
         m.Scale = hit.Scale <= 0 ? 100 : hit.Scale;
         m.Orientation = hit.Orientation;
         m.Primary = hit.Primary;
@@ -945,6 +990,8 @@ public static class ScreenBind
             Id = path.Length > 0 ? path : (device.Length > 0 ? device : s.Number.ToString()),
             Number = s.Number,
             X = s.X, Y = s.Y, W = s.W, H = s.H,
+            WorkX = s.WorkW > 8 ? s.WorkX : s.X, WorkY = s.WorkH > 8 ? s.WorkY : s.Y,
+            WorkW = s.WorkW > 8 ? s.WorkW : s.W, WorkH = s.WorkH > 8 ? s.WorkH : s.H,
             Scale = s.Scale <= 0 ? 100 : s.Scale,
             Orientation = s.Orientation,
             Primary = s.Primary,
@@ -1304,7 +1351,7 @@ public static class ProfileDoc
             used.Add(hit.Id);
             var mon = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors.FirstOrDefault();
             if (mon == null) continue;
-            if (app.State is "top" or "max") surface.Maximize(hit.Id, new WorkRect(mon.X, mon.Y, mon.W, mon.H));
+            if (app.State is "top" or "max") surface.Maximize(hit.Id, new WorkRect(mon.Work.X, mon.Work.Y, mon.Work.W, mon.Work.H));
             else if (app.State == "min") surface.Minimize(hit.Id);
             else
             {
@@ -1338,7 +1385,7 @@ public static class ProfileDoc
 
     static ProfileBox ZoneBoxRelative(string state, ProfileMonitor mon)
     {
-        var abs = ProfileSnap.ZoneBox(state, mon.Box);
+        var abs = ProfileSnap.ZoneBox(state, mon.Work);
         return abs;
     }
 
@@ -1358,6 +1405,7 @@ public static class ProfileDoc
             monitors.Add(new JsonObject
             {
                 ["id"] = m.Id, ["number"] = m.Number, ["x"] = m.X, ["y"] = m.Y, ["w"] = m.W, ["h"] = m.H,
+                ["workX"] = m.Work.X, ["workY"] = m.Work.Y, ["workW"] = m.Work.W, ["workH"] = m.Work.H,
                 ["scale"] = m.Scale <= 0 ? 100 : m.Scale, ["orientation"] = m.Orientation,
                 ["primary"] = m.Primary, ["enabled"] = m.Enabled, ["device"] = m.Device, ["path"] = m.Path, ["edid"] = m.Edid
             });
@@ -1443,6 +1491,10 @@ public static class ProfileDoc
                     Y = Num(item["y"]),
                     W = Num(item["w"], 1920),
                     H = Num(item["h"], 1080),
+                    WorkX = Num(item["workX"]),
+                    WorkY = Num(item["workY"]),
+                    WorkW = Num(item["workW"]),
+                    WorkH = Num(item["workH"]),
                     Primary = Bool(item["primary"]),
                     Enabled = item["enabled"] == null || Bool(item["enabled"]),
                     Scale = Num(item["scale"], 100),

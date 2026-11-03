@@ -19,7 +19,7 @@ public static class IdentifyFlash
         {
             if (mon.W < 8 || mon.H < 8) continue;
             var card = IdentifyLayout.Of(mon);
-            var host = NewCard(CardBody(mon.Number.ToString(), mon.Primary, 72), card, mon.Scale, "identify-card");
+            var host = NewCard(CardBody(mon.Number.ToString(), 72), card, mon.Scale, "identify-card");
             var life = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(Fx.Enabled ? 2500 : 2500) };
             life.Tick += (_, _) =>
             {
@@ -95,7 +95,7 @@ public static class IdentifyFlash
             try { host.Close(); } catch { }
     }
 
-    public static Border CardBody(string text, bool primary, double font)
+    public static Border CardBody(string text, double font)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         row.Children.Add(new TextBlock
@@ -106,18 +106,6 @@ public static class IdentifyFlash
             Foreground = Brushes.White,
             VerticalAlignment = VerticalAlignment.Center
         });
-        if (primary)
-        {
-            var star = new TextBlock
-            {
-                Text = "★",
-                FontSize = font * 0.42,
-                Foreground = Brushes.White,
-                Margin = new Thickness(font * 0.12, 0, 0, font * 0.28),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            row.Children.Add(star);
-        }
         return new Border
         {
             CornerRadius = new CornerRadius(36),

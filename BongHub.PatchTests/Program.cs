@@ -1066,6 +1066,36 @@ var snapCue = SnapCueMath.Window(new ProfileBox(12, 40, 400, 300), new ProfileBo
 var snapFlush = SnapCueMath.Window(new ProfileBox(3, 40, 400, 300), new ProfileBox(0, 0, 1920, 1080), null, 1, 8, "", default);
 Check("snap preview marks the zone and the flush edge", snapCue.Kind == "left" && snapCue.Left && snapCue.Box.W == 960 && snapFlush.Left && snapFlush.Box.X == 0);
 Check("hotkey capture shows held modifiers", HotkeyChord.Caps(false, true, true, false) == "Ctrl + Alt + …" && HotkeyChord.Caps(false, false, false, false).Length == 0 && HotkeyChord.ListenPrompt == "키를 누르세요…");
+var barBottom = new ProfileMonitor { Number = 1, X = 0, Y = 0, W = 1920, H = 1080, Primary = true, WorkX = 0, WorkY = 0, WorkW = 1920, WorkH = 1040 };
+var barLeft = new ProfileMonitor { Number = 2, X = 1920, Y = 0, W = 1600, H = 1200, Primary = false, WorkX = 1968, WorkY = 0, WorkW = 1552, WorkH = 1200 };
+var barTop = new ProfileMonitor { Number = 3, X = -2560, Y = -1440, W = 2560, H = 1440, Primary = false, WorkX = -2560, WorkY = -1400, WorkW = 2560, WorkH = 1400 };
+var bottomHalf = ProfileSnap.ZoneBox("left", barBottom.Work);
+var bottomMax = ProfileSnap.ZoneBox("top", barBottom.Work);
+var bottomDock = ProfileSnap.SnapWindow(new ProfileBox(40, 980, 400, 80), barBottom.Work, Array.Empty<ProfileBox>(), 1, 8);
+var leftHalf = ProfileSnap.ZoneBox("left", barLeft.Work);
+var leftQuarter = ProfileSnap.PreviewAt(1980, 20, barLeft.Work);
+var inTaskbar = ProfileSnap.PreviewAt(1930, 400, barLeft.Work);
+var topMax = ProfileSnap.ZoneBox("top", barTop.Work);
+var topQuarter = ProfileSnap.ZoneBox("tl", barTop.Work);
+var stripsBottom = ProfileSnap.TaskbarStrips(barBottom);
+var stripsLeft = ProfileSnap.TaskbarStrips(barLeft);
+var stripsTop = ProfileSnap.TaskbarStrips(barTop);
+var workProfile = new MonitorProfile { Name = "작업" };
+workProfile.Monitors.Add(barBottom);
+var workBack = ProfileDoc.Parse(ProfileDoc.ToJson(new[] { workProfile }))[0].Monitors[0];
+bool workOk = bottomHalf.X == 0 && bottomHalf.Y == 0 && bottomHalf.W == 960 && bottomHalf.H == 1040
+    && bottomMax.H == 1040 && bottomMax.Y == 0 && bottomMax.Bottom == 1040
+    && bottomDock.Y + bottomDock.H == 1040
+    && leftHalf.X == 1968 && leftHalf.W == 776 && leftHalf.H == 1200
+    && leftQuarter.Kind == "tl" && leftQuarter.Box.X == 1968
+    && inTaskbar.Kind.Length == 0
+    && topMax.Y == -1400 && topMax.H == 1400
+    && topQuarter.Y == -1400 && topQuarter.X == -2560
+    && stripsBottom.Count == 1 && stripsBottom[0].Y == 1040 && stripsBottom[0].H == 40
+    && stripsLeft.Count == 1 && stripsLeft[0].X == 1920 && stripsLeft[0].W == 48
+    && stripsTop.Count == 1 && stripsTop[0].Y == -1440 && stripsTop[0].H == 40
+    && workBack.WorkH == 1040 && workBack.WorkY == 0 && workBack.H == 1080;
+Check("snap zones use each monitor's work area, including a taskbar on a side monitor", workOk, $"half {bottomHalf.W}x{bottomHalf.H} dock {bottomDock.Y} left {leftHalf.X},{leftHalf.W} top {topMax.Y} strip {stripsLeft[0].W}");
 Check("notes ignore a transient work area", noteStory.Length == 0, noteStory);
 string profileRoot = Path.Combine(Path.GetTempPath(), "bonghub_profile_" + Environment.ProcessId);
 try

@@ -415,6 +415,8 @@ internal static class Win32
                     Number = ScreenBind.WindowsNumber(device),
                     W = mi.rcMonitor.Width, H = mi.rcMonitor.Height,
                     X = mi.rcMonitor.Left, Y = mi.rcMonitor.Top,
+                    WorkX = mi.rcWork.Left, WorkY = mi.rcWork.Top,
+                    WorkW = mi.rcWork.Width, WorkH = mi.rcWork.Height,
                     Primary = (mi.dwFlags & 1) != 0,
                     Device = device,
                     Scale = DpiPercent(m),
