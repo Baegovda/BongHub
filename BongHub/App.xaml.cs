@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -8,6 +9,13 @@ namespace BongHub;
 
 public partial class App : Application
 {
+    static App()
+    {
+        // Before any HWND. A later AirDock window must not start the tablet thread:
+        // shutting the dispatcher down calls ReleaseCapture, and that waits forever on PenThreadWorker.
+        AppContext.SetSwitch("Switch.System.Windows.Input.Stylus.DisableStylusAndTouchSupport", true);
+    }
+
     public static App Instance => (App)Current;
     /// <summary>True only after a real exit was requested (tray 종료, --quit, session end). Window closes before that just hide.</summary>
     public static bool ShuttingDown { get; private set; }
@@ -259,10 +267,38 @@ public partial class App : Application
         if (ShuttingDown) return;
         ShuttingDown = true;
         Environment.ExitCode = exitCode;
+        ReleasePointer();
         // Tray 종료 and --quit both land here. Flush uses the image-guard path, including a pending sidecar.
         NoteManager.FlushAll();
         tray?.Dispose(); tray = null;
         Shutdown(exitCode);
+    }
+
+    /// <summary>
+    /// Smoke already wrote its log. Close every dock, drop mouse capture, then leave.
+    /// <see cref="Shutdown"/> disposes mouse providers and can deadlock in <c>PenThreadWorker.WorkerGetTabletsInfo</c>
+    /// while a window still holds capture.
+    /// </summary>
+    public void ExitSmoke(int exitCode)
+    {
+        if (ShuttingDown) return;
+        ShuttingDown = true;
+        Environment.ExitCode = exitCode;
+        ReleasePointer();
+        try { NoteManager.FlushAll(); } catch { }
+        try { NoteHotkey.Stop(); } catch { }
+        try { ProfileHotkey.Stop(); } catch { }
+        try { AirDockHotkey.Stop(); } catch { }
+        try { tray?.Dispose(); } catch { }
+        tray = null;
+        AppEnv.ReleaseWriter();
+        Environment.Exit(exitCode);
+    }
+
+    static void ReleasePointer()
+    {
+        try { AirDockWindow.ShutdownForExit(); } catch { }
+        try { Mouse.Capture(null); } catch { }
     }
 
     protected override void OnExit(ExitEventArgs e)

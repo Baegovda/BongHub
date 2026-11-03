@@ -22,6 +22,7 @@ public sealed class AirDockWindow : Window
         this.cells = cells;
         cellsVisual = new Border[items.Length];
         ThemeMark.SetOn(this, true);
+        WithoutStylus(this);
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -32,6 +33,12 @@ public sealed class AirDockWindow : Window
         Width = Math.Max(40, cells.Width);
         Height = Math.Max(40, cells.Height);
         Content = Build();
+        Closed += (_, _) =>
+        {
+            try { ReleaseMouseCapture(); } catch { }
+            try { Mouse.Capture(null); } catch { }
+            if (ReferenceEquals(current, this)) current = null;
+        };
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key != Key.Escape) return;
@@ -79,6 +86,7 @@ public sealed class AirDockWindow : Window
         current = dock;
         dock.Left = -32000;
         dock.Top = -32000;
+        WithoutStylus(dock);
         dock.Show();
         double scale = Math.Max(96, dpi) / 100.0;
         var hwnd = Win32.Handle(dock);
@@ -95,8 +103,37 @@ public sealed class AirDockWindow : Window
         dock.WindowStartupLocation = WindowStartupLocation.Manual;
         dock.Left = -32000;
         dock.Top = -32000;
+        WithoutStylus(dock);
         dock.Show();
         return dock;
+    }
+
+    /// <summary>Close every dock and drop mouse capture. Call this before the dispatcher shuts down.</summary>
+    public static void ShutdownForExit()
+    {
+        try { Mouse.Capture(null); } catch { }
+        AirDockWindow[] open;
+        try { open = Application.Current?.Windows.OfType<AirDockWindow>().ToArray() ?? Array.Empty<AirDockWindow>(); }
+        catch { open = current == null ? Array.Empty<AirDockWindow>() : new[] { current }; }
+        current = null;
+        foreach (var dock in open)
+        {
+            try { dock.ReleaseMouseCapture(); } catch { }
+            try { dock.Close(); } catch { }
+        }
+        try { Mouse.Capture(null); } catch { }
+    }
+
+    static void WithoutStylus(Window window)
+    {
+        try
+        {
+            Stylus.SetIsFlicksEnabled(window, false);
+            Stylus.SetIsPressAndHoldEnabled(window, false);
+            Stylus.SetIsTapFeedbackEnabled(window, false);
+            Stylus.SetIsTouchFeedbackEnabled(window, false);
+        }
+        catch { }
     }
 
     public static string? ReleasePath()

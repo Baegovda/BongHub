@@ -127,12 +127,17 @@ public partial class MainWindow
             {
                 if (e.OriginalSource is DependencyObject source && IsInside(source, remove)) return;
                 drag = index;
-                row.CaptureMouse();
+                Mouse.Capture(row);
+            };
+            row.Unloaded += (_, _) =>
+            {
+                if (drag == index) drag = -1;
+                if (Mouse.Captured == row) Mouse.Capture(null);
             };
             row.PreviewMouseLeftButtonUp += (_, e) =>
             {
+                if (Mouse.Captured == row) Mouse.Capture(null);
                 if (drag < 0) return;
-                row.ReleaseMouseCapture();
                 int from = drag;
                 drag = -1;
                 var point = e.GetPosition(list);

@@ -95,7 +95,7 @@ dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Relea
 `.github/workflows/repo-check.yml`
 
 - `ubuntu-latest`: `check-versions.sh` (csproj `Version` / `FileVersion`, `AppEnv.Version`, `AppInfo.Version`이 **1.6.0** / **1.6.0.0**으로 같은지), PR에서 `sync:`가 아닌 `data/` 변경이 있으면 실패, PatchTests.
-- `windows-latest`: 게시 후 스모크, 그다음 노트 시험. 노트 시험 단계는 `if: always()`라서 스모크가 실패해도 돌아요. 프로세스는 `Start-Process -Wait -PassThru`로 기다리고 종료 코드로 판단해요. 로그는 `--out`과 exe 옆을 둘 다 봐요. 산출물은 `wpf-tests`로 올라가요.
+- `windows-latest`: 게시 후 스모크, 그다음 노트 시험. 노트 시험 단계는 `if: always()`라서 스모크가 실패해도 돌아요. 스모크는 120초 안에 프로세스가 끝나지 않으면 실패예요. 노트 시험은 `Start-Process -Wait -PassThru`로 기다리고 종료 코드로 판단해요. 로그는 `--out`과 exe 옆을 둘 다 봐요. 산출물은 `wpf-tests`로 올라가요.
 
 Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI가 담당이에요.
 

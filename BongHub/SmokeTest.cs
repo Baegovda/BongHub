@@ -3,6 +3,7 @@ using System.Text;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -25,8 +26,10 @@ public static class SmokeTest
         t.Save("smoketest.txt");
         int code = t.Fails > 0 ? 1 : 0;
         Environment.ExitCode = code;
+        try { AirDockWindow.ShutdownForExit(); } catch { }
+        try { Mouse.Capture(null); } catch { }
         if (tray != null) tray.OnExit();
-        app.RequestShutdown(code);
+        app.ExitSmoke(code);
     }
 
     static void ContrastCheck(TestKit t, Window w, FrameworkElement? el, string name, double need)
@@ -704,7 +707,7 @@ public static class SmokeTest
         bool moved = w.MoveAirProgram(0, 1);
         var preview = AirDockWindow.Present(ConfigStore.AirItems, ConfigStore.AirIcon);
         bool offDock = preview.Left <= -20000 && !preview.ShowActivated;
-        preview.Close();
+        AirDockWindow.ShutdownForExit();
         t.Check("airdock page keeps exe and lnk only, and the preview stays off-screen", added && !again && !text && link && moved && w.AirCount == 2 && w.AirNames[0] == "Calc" && w.AirNames[1] == "Notes" && offDock && AirDockLaunch.NativeStarts == 0, string.Join(",", w.AirNames));
         viewer.Close();
 
