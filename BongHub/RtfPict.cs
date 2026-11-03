@@ -129,6 +129,24 @@ static class RtfPict
         return Latin1.GetBytes(sb.ToString());
     }
 
+    /// <summary>The same RTF with every pict group removed. Text and other controls stay.</summary>
+    public static byte[] RemoveGroups(byte[] rtf)
+    {
+        if (rtf == null || rtf.Length == 0) return rtf ?? [];
+        var s = Latin1.GetString(rtf);
+        var groups = Find(s);
+        if (groups.Count == 0) return rtf;
+        var sb = new StringBuilder(s.Length);
+        int at = 0;
+        foreach (var (a, b) in groups)
+        {
+            if (a > at) sb.Append(s, at, a - at);
+            at = b;
+        }
+        if (at < s.Length) sb.Append(s, at, s.Length - at);
+        return Latin1.GetBytes(sb.ToString());
+    }
+
     /// <summary>Replace each pict group in <paramref name="saved"/> with the original group, in order. Null when the counts differ.</summary>
     public static string? Splice(string saved, List<Pict> originals)
     {

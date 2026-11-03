@@ -16,15 +16,16 @@ if ($running.Count -gt 0) {
     Fail "BongHub is already running. Quit that process first."
 }
 
-Write-Host 'dotnet publish (Release, win-x64, framework-dependent ReadyToRun)'
-& dotnet publish (Join-Path $root 'BongHub\BongHub.csproj') -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=true
+Write-Host 'dotnet publish (Release, win-x64, self-contained ReadyToRun)'
+& dotnet publish (Join-Path $root 'BongHub\BongHub.csproj') -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true
 if ($LASTEXITCODE -ne 0) { Fail "dotnet publish exited $LASTEXITCODE" }
 
 $pub = Join-Path $root 'BongHub\bin\Release\net10.0-windows\win-x64\publish'
 $exe = Join-Path $pub 'BongHub.exe'
 $rt = Join-Path $pub 'BongHub.runtimeconfig.json'
 if (-not (Test-Path $exe)) { Fail "missing $exe" }
-if (Test-Path (Join-Path $pub 'coreclr.dll')) { Fail 'publish is self-contained (coreclr.dll is present)' }
+if (-not (Test-Path (Join-Path $pub 'coreclr.dll'))) { Fail 'publish is missing coreclr.dll (expected self-contained)' }
+if (-not (Test-Path (Join-Path $pub 'BongHub.dll'))) { Fail 'BongHub.dll missing; single-file publish is not used' }
 $deps = [IO.File]::ReadAllText((Join-Path $pub 'BongHub.deps.json'))
 if ($deps -match 'System\.Windows\.Forms') { Fail 'deps.json still references System.Windows.Forms' }
 if ($deps -notmatch 'H\.NotifyIcon') { Fail 'deps.json is missing H.NotifyIcon' }

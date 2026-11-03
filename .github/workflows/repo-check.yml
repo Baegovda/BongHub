@@ -43,7 +43,11 @@ jobs:
           global-json-file: global.json
 
       - name: Publish BongHub
-        run: dotnet publish BongHub/BongHub.csproj -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=true -o artifacts/publish
+        run: |
+          dotnet publish BongHub/BongHub.csproj -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true -o artifacts/publish
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path artifacts/publish/coreclr.dll)) { Write-Error 'self-contained publish is missing coreclr.dll'; exit 1 }
+          if (-not (Test-Path artifacts/publish/BongHub.dll)) { Write-Error 'BongHub.dll missing; single-file publish is not used'; exit 1 }
 
       - name: Build patch tests
         run: dotnet build BongHub.PatchTests/BongHub.PatchTests.csproj -c Release --nologo

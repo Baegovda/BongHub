@@ -17,15 +17,33 @@ public partial class StickyNoteWindow : Window
     public const double NoteMinHeight = 90;
     public const double NoteMaxWidth = 30000;
     public const double NoteMaxHeight = 30000;
-    /// <summary>Physical size WPF will actually show. Stored notes can sit outside <see cref="NoteMinWidth"/>–<see cref="NoteMaxHeight"/>.</summary>
+    /// <summary>Physical pixels the window shows, and the range a new save may write. A file may still hold an older out-of-range size until the user moves the note.</summary>
     public static int ClampNoteSpan(int value, double min, double max) => (int)Math.Clamp(value, min, max);
+    public readonly record struct NoteSpan(int X, int Y, int W, int H);
+    /// <summary>
+    /// Next stored rectangle. Minimized, maximized, and a collapsed or out-of-range live rect keep <paramref name="stored"/>.
+    /// Showing the clamp of a legacy size is not a user resize, so that file value stays until the note actually moves.
+    /// </summary>
+    public static bool TryNoteSize(NoteSpan stored, int liveX, int liveY, int liveW, int liveH, bool iconic, bool zoomed, out NoteSpan next)
+    {
+        next = stored;
+        if (iconic || zoomed) return false;
+        if (liveW < NoteMinWidth || liveH < NoteMinHeight || liveW > NoteMaxWidth || liveH > NoteMaxHeight) return false;
+        int w = ClampNoteSpan(liveW, NoteMinWidth, NoteMaxWidth);
+        int h = ClampNoteSpan(liveH, NoteMinHeight, NoteMaxHeight);
+        if (liveX == stored.X && liveY == stored.Y && w == stored.W && h == stored.H) return false;
+        if (liveX == stored.X && liveY == stored.Y
+            && w == ClampNoteSpan(stored.W, NoteMinWidth, NoteMaxWidth)
+            && h == ClampNoteSpan(stored.H, NoteMinHeight, NoteMaxHeight))
+            return false;
+        next = new NoteSpan(liveX, liveY, w, h);
+        return true;
+    }
 
     public NoteMeta Meta { get; }
     public bool Ready { get; private set; }
     public bool TextDirty { get; private set; }
     public int RtfWrites, MetaWrites, ImageGuardHits;
-    /// <summary>Picts in the on-disk RTF when a newer pending file has fewer. A later save must not replace that file.</summary>
-    int richerPicts;
     public string LoadStatus = "ok";          // ok | empty | corrupt | missing
     /// <summary>Longest edge of a picture bitmap actually shown. 0 when the note has no picture.</summary>
     public int DisplayImageMaxEdge { get; private set; }
@@ -43,7 +61,6 @@ public partial class StickyNoteWindow : Window
     bool loading, metaDirty, corruptBackedUp, closing, discarding, sizing, stylingLinks;
     Brush linkBrush = Brushes.Transparent;
     Run? hoveredLink;
-    int sourcePictCount;
     RichTextBox? editor;
     public bool IsEditing => editor != null;
     FlowDocument Document
@@ -157,14 +174,18 @@ public partial class StickyNoteWindow : Window
     // ---------- placement (3.4.7 stores physical pixels) ----------
     void PlacePhysical()
     {
-        int x = Meta.X, y = Meta.Y, w = Math.Max(60, Meta.W), h = Math.Max(60, Meta.H);
+        int x = Meta.X, y = Meta.Y;
+        int w = ClampNoteSpan(Meta.W, NoteMinWidth, NoteMaxWidth);
+        int h = ClampNoteSpan(Meta.H, NoteMinHeight, NoteMaxHeight);
         if (!AppEnv.Off)
         {
-            var areas = Win32.WorkAreas();
+            var areas = Win32.WorkAreas().Where(a => a.W >= NoteMinWidth && a.H >= NoteMinHeight).ToArray();
             if (areas.Length > 0)
             {
                 var c = NoteLayout.Clamp(new NoteLayout.Box(x, y, w, h), areas, 38);
-                x = c.X; y = c.Y; w = Math.Max(60, c.W); h = Math.Max(60, c.H);
+                x = c.X; y = c.Y;
+                w = ClampNoteSpan(c.W, NoteMinWidth, NoteMaxWidth);
+                h = ClampNoteSpan(c.H, NoteMinHeight, NoteMaxHeight);
             }
             else if (!Win32.OnAnyMonitor(x, y, w, h)) { var a = Win32.WorkAreaAtCursor(); x = a.Left + 60; y = a.Top + 60; }
         }
@@ -186,18 +207,35 @@ public partial class StickyNoteWindow : Window
         else if (msg == Win32.WM_EXITSIZEMOVE) { sizing = false; CaptureRect(); FlushMeta(); if (TextDirty) textTimer.Start(); }
         else if (msg == Win32.WM_MOUSEACTIVATE) Win32.AllowActivate(h);
         else if (msg == Win32.WM_DISPLAYCHANGE && !AppEnv.Off) Dispatcher.BeginInvoke(ClampToScreens);
-        else if ((msg == Win32.WM_MOVE || msg == Win32.WM_SIZE) && Ready && !sizing) { if (CaptureRect()) MarkMeta(); }
+        else if ((msg == Win32.WM_MOVE || msg == Win32.WM_SIZE) && Ready && !sizing)
+        {
+            // SIZE_MINIMIZED / SIZE_MAXIMIZED carry the iconic or zoomed rect, not the restore size.
+            if (msg == Win32.WM_SIZE && (wp == (IntPtr)Win32.SIZE_MINIMIZED || wp == (IntPtr)Win32.SIZE_MAXIMIZED))
+                return IntPtr.Zero;
+            if (CaptureRect()) MarkMeta();
+        }
         return IntPtr.Zero;
     }
     public void ClampToScreens()
     {
         if (AppEnv.Off) return;
-        var areas = Win32.WorkAreas();
+        var hwnd = Win32.Handle(this);
+        if (hwnd != IntPtr.Zero && (Win32.IsIconic(hwnd) || Win32.IsZoomed(hwnd) || WindowState != WindowState.Normal))
+            return;
+        var areas = Win32.WorkAreas().Where(a => a.W >= NoteMinWidth && a.H >= NoteMinHeight).ToArray();
         if (areas.Length == 0) return;
-        var c = NoteLayout.Clamp(new NoteLayout.Box(Meta.X, Meta.Y, Math.Max(60, Meta.W), Math.Max(60, Meta.H)), areas, 38);
-        if (c.X == Meta.X && c.Y == Meta.Y && c.W == Meta.W && c.H == Meta.H) return;
-        Meta.X = c.X; Meta.Y = c.Y; Meta.W = c.W; Meta.H = c.H;
-        Win32.Place(this, c.X + AppEnv.OffsetX, c.Y + AppEnv.OffsetY, c.W, c.H);
+        int w = ClampNoteSpan(Meta.W, NoteMinWidth, NoteMaxWidth);
+        int h = ClampNoteSpan(Meta.H, NoteMinHeight, NoteMaxHeight);
+        var c = NoteLayout.Clamp(new NoteLayout.Box(Meta.X, Meta.Y, w, h), areas, 38);
+        w = ClampNoteSpan(c.W, NoteMinWidth, NoteMaxWidth);
+        h = ClampNoteSpan(c.H, NoteMinHeight, NoteMaxHeight);
+        bool moved = c.X != Meta.X || c.Y != Meta.Y;
+        if (!moved && w == Meta.W && h == Meta.H) return;
+        // The display clamp of a legacy size is not a resize. Leave that file alone until the note moves.
+        if (!moved && w == ClampNoteSpan(Meta.W, NoteMinWidth, NoteMaxWidth) && h == ClampNoteSpan(Meta.H, NoteMinHeight, NoteMaxHeight))
+            return;
+        Meta.X = c.X; Meta.Y = c.Y; Meta.W = w; Meta.H = h;
+        Win32.Place(this, c.X + AppEnv.OffsetX, c.Y + AppEnv.OffsetY, w, h);
         metaDirty = true; FlushMeta();
     }
     public void EnableDuringModal()
@@ -205,14 +243,25 @@ public partial class StickyNoteWindow : Window
         var h = Win32.Handle(this);
         if (h != IntPtr.Zero) Win32.EnableWindow(h, true);
     }
-    /// <summary>Copies the real window rect into Meta; true when it changed.</summary>
+    /// <summary>Copies the restored window rect into Meta. Minimized, maximized, and collapsed rects do not count.</summary>
     bool CaptureRect()
     {
         if (!Ready) return false;
+        var hwnd = Win32.Handle(this);
+        if (hwnd == IntPtr.Zero) return false;
         var r = Win32.Rect(this);
-        int x = r.Left - AppEnv.OffsetX, y = r.Top - AppEnv.OffsetY;
-        if (x == Meta.X && y == Meta.Y && r.Width == Meta.W && r.Height == Meta.H) return false;
-        Meta.X = x; Meta.Y = y; Meta.W = r.Width; Meta.H = r.Height; metaDirty = true; return true;
+        bool iconic = Win32.IsIconic(hwnd) || WindowState == WindowState.Minimized;
+        bool zoomed = Win32.IsZoomed(hwnd) || WindowState == WindowState.Maximized;
+        return CaptureSizeForTest(r.Left - AppEnv.OffsetX, r.Top - AppEnv.OffsetY, r.Width, r.Height, iconic, zoomed);
+    }
+    /// <summary>Same decision as <see cref="CaptureRect"/>, with the rectangle supplied by the caller. Tests use this so they never minimize a real window.</summary>
+    public bool CaptureSizeForTest(int x, int y, int w, int h, bool iconic, bool zoomed)
+    {
+        if (!TryNoteSize(new NoteSpan(Meta.X, Meta.Y, Meta.W, Meta.H), x, y, w, h, iconic, zoomed, out var next))
+            return false;
+        Meta.X = next.X; Meta.Y = next.Y; Meta.W = next.W; Meta.H = next.H;
+        metaDirty = true;
+        return true;
     }
 
     RichTextBox EnsureEditor()
@@ -558,25 +607,19 @@ public partial class StickyNoteWindow : Window
         loading = true;
         try
         {
+            NoteStore.PrunePending(Meta.Id);
             var path = NoteStore.RtfPath(Meta.Id);
             string? pendingPath = NoteStore.NewestPendingRtf(Meta.Id);
             bool pendingWins = pendingPath != null && (!File.Exists(path) || File.GetLastWriteTimeUtc(pendingPath) >= File.GetLastWriteTimeUtc(path));
             var loadPath = pendingWins ? pendingPath! : path;
             var bytes = File.Exists(loadPath) ? File.ReadAllBytes(loadPath) : null;
-            richerPicts = 0;
-            if (pendingWins && File.Exists(path))
-            {
-                int mainCount = CountPict(File.ReadAllBytes(path));
-                int loadedCount = bytes == null ? 0 : CountPict(bytes);
-                if (mainCount > loadedCount) richerPicts = mainCount;
-            }
             if (bytes == null) LoadStatus = "missing";
             else if (bytes.Length == 0) LoadStatus = "empty";
             if (bytes is { Length: > 0 })
             {
-                sourcePictCount = CountPict(bytes);
-                var picts = sourcePictCount > 0 ? RtfPict.Parse(bytes) : [];
-                bool proxy = picts.Count > 0 && picts.Count == sourcePictCount;
+                int pictCount = CountPict(bytes);
+                var picts = pictCount > 0 ? RtfPict.Parse(bytes) : [];
+                bool proxy = picts.Count > 0 && picts.Count == pictCount;
                 try
                 {
                     var doc = LoadFlow(proxy ? RtfPict.Placeholder(bytes) : bytes);
@@ -763,16 +806,17 @@ public partial class StickyNoteWindow : Window
             if (merged != null) rtf = RtfPict.Latin1.GetBytes(merged);
         }
         int emitted = rtf == null ? 0 : CountPict(rtf);
-        if (originalPicts.Count > 0 && emitted != originalPicts.Count && DocImageCount() == originalPicts.Count && CountPict(wpfRtf) == 0)
+        if (!DropPictsForTest && originalPicts.Count > 0 && emitted != originalPicts.Count && DocImageCount() == originalPicts.Count && CountPict(wpfRtf) == 0)
         {
             // WPF kept the images on screen but did not write \pict. Insert the groups we already built.
             var injected = InjectPicts(wpfRtf, originalPicts);
-            if (injected != null) { rtf = injected; emitted = CountPict(rtf); }
+            if (injected != null) rtf = injected;
         }
         if (rtf != null) rtf = NoteRtf.StripAutomaticInk(rtf);
+        if (DropPictsForTest && rtf != null) rtf = RtfPict.RemoveGroups(rtf);
         byte[] onDisk = [];
         try { if (File.Exists(NoteStore.RtfPath(Meta.Id))) onDisk = File.ReadAllBytes(NoteStore.RtfPath(Meta.Id)); } catch { onDisk = []; }
-        int held = Math.Max(originalPicts.Count, richerPicts);
+        int held = originalPicts.Count;
         var chosen = NoteRtf.Choose(onDisk.Length > 0 ? onDisk : (rtf ?? []), rtf ?? [], DocImageCount(), held, out var dropWarn);
         Meta.Text = PlainText();
         if (dropWarn != null)
@@ -793,8 +837,6 @@ public partial class StickyNoteWindow : Window
         if (NoteStore.SaveRtf(Meta, rtf!))
         {
             RtfWrites++;
-            sourcePictCount = originalPicts.Count > 0 ? originalPicts.Count : emitted;
-            richerPicts = 0;
             NoteStore.ClearPendingRtf(Meta.Id);
             WarnIfLarge();
         }
@@ -808,7 +850,12 @@ public partial class StickyNoteWindow : Window
     void AdoptScreenImages()
     {
         var images = CollectImages(Document);
-        if (images.Count == 0) return;
+        if (images.Count == 0)
+        {
+            originalPicts.Clear();
+            pictViews.Clear();
+            return;
+        }
         int fit = Math.Max(80, (int)(EditorHost.ActualWidth > 1 ? EditorHost.ActualWidth - 24 : 260));
         var nextPicts = new List<RtfPict.Pict>();
         var nextViews = new List<Image>();
@@ -843,7 +890,19 @@ public partial class StickyNoteWindow : Window
             nextPicts.Add(new RtfPict.Pict { Group = built.Group, GoalW = built.GoalW, GoalH = built.GoalH, SourceW = built.PxW, SourceH = built.PxH });
             nextViews.Add(image);
         }
-        if (nextViews.Count != images.Count) return;
+        if (nextViews.Count != images.Count)
+        {
+            // Keep groups for pictures still on screen. A deleted picture must not stay in the count.
+            var live = new HashSet<Image>(images);
+            for (int i = pictViews.Count - 1; i >= 0; i--)
+            {
+                if (live.Contains(pictViews[i])) continue;
+                pictViews.RemoveAt(i);
+                if (i < originalPicts.Count) originalPicts.RemoveAt(i);
+            }
+            while (originalPicts.Count > pictViews.Count) originalPicts.RemoveAt(originalPicts.Count - 1);
+            return;
+        }
         originalPicts.Clear();
         originalPicts.AddRange(nextPicts);
         pictViews.Clear();
@@ -915,15 +974,28 @@ public partial class StickyNoteWindow : Window
         var color = (run?.Foreground as SolidColorBrush)?.Color;
         return color.HasValue && color.Value.R == r && color.Value.G == g && color.Value.B == b;
     }
-    /// <summary>Drops WPF pictures without updating the saved groups, so the next flush has to keep the file.</summary>
+    /// <summary>Pictures stay on screen, but the next flush writes an RTF with the picts removed. That is a real loss the guard must refuse.</summary>
+    public bool DropPictsForTest { get; set; }
     public void ForcePictMismatchForTest()
     {
-        if (originalPicts.Count == 0) return;
+        if (originalPicts.Count == 0 && DocImageCount() == 0) return;
+        var para = Document.Blocks.OfType<Paragraph>().FirstOrDefault();
+        if (para == null) { para = new Paragraph(); Document.Blocks.Add(para); }
+        para.Inlines.Add(new Run("떨어짐"));
+        DropPictsForTest = true;
+        TextDirty = true;
+    }
+    /// <summary>Removes pictures from the document the way a backspace does, and leaves the tracked groups for the next save to drop.</summary>
+    public void RemoveImagesFromDocumentForTest()
+    {
         loading = true;
         try
         {
-            Document.Blocks.Clear();
-            Document.Blocks.Add(new Paragraph(new Run("떨어짐")));
+            foreach (var image in CollectImages(Document).ToList())
+            {
+                if (image.Parent is InlineUIContainer box && box.Parent is Paragraph para)
+                    para.Inlines.Remove(box);
+            }
         }
         finally { loading = false; }
         TextDirty = true;
@@ -1202,7 +1274,6 @@ public partial class StickyNoteWindow : Window
         var pict = new RtfPict.Pict { Group = built.Group, GoalW = built.GoalW, GoalH = built.GoalH, SourceW = built.PxW, SourceH = built.PxH };
         if (index >= originalPicts.Count) { originalPicts.Add(pict); pictViews.Add(image); }
         else { originalPicts.Insert(index, pict); pictViews.Insert(index, image); }
-        sourcePictCount = originalPicts.Count;
         TextDirty = true; textTimer.Stop(); textTimer.Start();
         UpdateHint();
         return true;
@@ -1278,7 +1349,6 @@ public partial class StickyNoteWindow : Window
             pictViews.RemoveAt(index);
         }
         originalPicts.RemoveAt(index);
-        sourcePictCount = originalPicts.Count;
         if (selectedImage != null && !pictViews.Contains(selectedImage)) selectedImage = null;
         TextDirty = true; textTimer.Stop(); textTimer.Start();
         UpdateHint();

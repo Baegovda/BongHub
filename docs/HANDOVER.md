@@ -1,6 +1,6 @@
 # BongHub 인수인계
 
-지금 제품은 **BongHub 1.3.1** 하나예요. WPF 앱이고 실행 파일은 `BongHub.exe`예요. WinForms 3.4.x 소스(`app/`, `build.ps1`)는 저장소에 없어요. 메모·설정 파일과 `%LOCALAPPDATA%\BongHub`, `Local\BongHub_NotesWriter`는 3.4.x와 같이 읽혀요.
+지금 제품은 **BongHub 1.3.2** 하나예요. WPF 앱이고 실행 파일은 `BongHub.exe`예요. WinForms 3.4.x 소스(`app/`, `build.ps1`)는 저장소에 없어요. 메모·설정 파일과 `%LOCALAPPDATA%\BongHub`, `Local\BongHub_NotesWriter`는 3.4.x와 같이 읽혀요.
 
 이 문서가 절차의 기준이에요. 예전에 있던 `docs/HANDOFF.md`와 `docs/PORTING_PLAN.md`는 0.x 계획과 3.4.9 배포 기록이 섞여 있어서 뺐어요. 그 글은 git 기록에 있어요. 버전별 사용자 변화는 `CHANGELOG.md`예요.
 
@@ -12,7 +12,7 @@
 
 | 경로 | 역할 |
 |---|---|
-| `BongHub/` | WPF 앱. `net10.0-windows`, SDK `global.json`의 **10.0.403**. ReadyToRun, `win-x64`, 프레임워크 종속. 단일 파일·트림·Native AOT는 꺼져 있어요. `ConcurrentGarbageCollection`은 켜져 있어요. |
+| `BongHub/` | WPF 앱. `net10.0-windows`, SDK `global.json`의 **10.0.403**. ReadyToRun, `win-x64`, 자기 포함. 단일 파일·트림·Native AOT는 꺼져 있어요. `ConcurrentGarbageCollection`은 켜져 있어요. |
 | `BongHub.PatchTests/` | 창 없는 콘솔. 설정 바이트 패치와 모니터 프로필·창·아이콘 목을 돌려요. `ImplicitUsings`가 켜져 있어요. |
 | `BongHub.RichEditTests/` | 창 없이 `NoteRtf`만 컴파일해요. 전역 using이 없어요. `NoteRtf.cs`는 그 파일 안에서 `using`을 닫아야 해요. |
 | `legacy/BongAd/` | 카카오톡 광고 제거 도우미 원본. 앱이 쓰는 실행 파일은 `BongHub/res/BongAd.exe`예요. |
@@ -25,7 +25,7 @@
 | 파일 | 하는 일 |
 |---|---|
 | `StickyNoteWindow.xaml.cs` | 메모 창. 제목, 본문, 링크, 붙여넣기, 그림, 저장, 클릭. `OriginalSource`가 `Run`이나 `Paragraph`이면 비주얼이 아니라서, `NextParent`가 그 둘은 `LogicalTreeHelper`, `Visual`과 `Visual3D`만 `VisualTreeHelper`를 탑니다. |
-| `NoteRtf.cs` | WPF `TextRange`로 RTF를 읽고 써요. msftedit는 쓰지 않아요. 화면 그림보다 `\pict`가 적으면 `Choose`가 기존 바이트를 돌려요. `#F0F0F6`, `#ECECF0`, `#1C1C1E`에 걸린 `\cf`는 저장 때 빼요. |
+| `NoteRtf.cs` | WPF `TextRange`로 RTF를 읽고 써요. msftedit는 쓰지 않아요. 화면에 남아 있는 그림보다 `\pict`가 적으면 `Choose`가 기존 바이트를 돌려요. 사용자가 지운 그림은 막지 않아요. `#F0F0F6`, `#ECECF0`, `#1C1C1E`에 걸린 `\cf`는 저장 때 빼요. |
 | `RtfPict.cs` | `\pngblip` / `\jpegblip` 묶음. 화면은 긴 변 1280 이하로 디코딩하고, 저장할 때 원본 묶음을 다시 끼워요. |
 | `NoteStore.cs` | `notes\<id>.json` / `.rtf`. 팔레트와 자동 글씨(`NoteColors.Ink`). |
 | `NoteImages.cs` | 새 그림. 1600px 이하 PNG/JPEG는 바이트를 유지하고, GIF처럼 못 넣는 형식은 PNG로 바꿔요. |
@@ -59,19 +59,19 @@
 Windows, 저장소 루트:
 
 ```powershell
-dotnet publish BongHub\BongHub.csproj -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=true
+dotnet publish BongHub\BongHub.csproj -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true
 dotnet run --project BongHub.PatchTests\BongHub.PatchTests.csproj -c Release
 dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Release
 ```
 
-게시 결과는 `BongHub\bin\Release\net10.0-windows\win-x64\publish\BongHub.exe`예요. `coreclr.dll`이 있으면 자기 포함 게시라서 잘못된 거예요.
+게시 결과는 `BongHub\bin\Release\net10.0-windows\win-x64\publish\BongHub.exe`예요. 자기 포함이라 `coreclr.dll`이 있어야 하고, `BongHub.dll`도 따로 있어야 해요. 단일 파일이 아니에요.
 
 기대값:
 
 | 명령 | 결과 |
 |---|---|
 | `--smoketest` | **123 PASS**. 임시 폴더만 써요. `--data`와 `BONGHUB_DATA`는 무시해요. |
-| `--notetest --data <복사본>` | **128 PASS**. `data/` 원본이 아니라 복사본만 넘겨요. |
+| `--notetest --data <복사본>` | **144 PASS**. `data/` 원본이 아니라 복사본만 넘겨요. |
 | PatchTests | `RESULT PASS` |
 | RichEditTests | 1×1 `\pngblip` 왕복 `RESULT PASS` |
 
@@ -94,7 +94,7 @@ dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Relea
 
 `.github/workflows/repo-check.yml`
 
-- `ubuntu-latest`: `check-versions.sh` (csproj `Version` / `FileVersion`, `AppEnv.Version`, `AppInfo.Version`이 **1.3.1** / **1.3.1.0**으로 같은지), PR에서 `sync:`가 아닌 `data/` 변경이 있으면 실패, PatchTests.
+- `ubuntu-latest`: `check-versions.sh` (csproj `Version` / `FileVersion`, `AppEnv.Version`, `AppInfo.Version`이 **1.3.2** / **1.3.2.0**으로 같은지), PR에서 `sync:`가 아닌 `data/` 변경이 있으면 실패, PatchTests.
 - `windows-latest`: 게시 후 스모크, 그다음 노트 시험. 노트 시험 단계는 `if: always()`라서 스모크가 실패해도 돌아요. 프로세스는 `Start-Process -Wait -PassThru`로 기다리고 종료 코드로 판단해요. 로그는 `--out`과 exe 옆을 둘 다 봐요. 산출물은 `wpf-tests`로 올라가요.
 
 Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI가 담당이에요.
@@ -108,9 +108,9 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 1. 떠 있는 앱을 `BongHub.exe --quit`으로 끝내요. 이벤트가 `Local\BongHub.Quit`예요. 받는 쪽은 메모를 저장하고 `Local\BongHub.SingleInstance`와 `Local\BongHub_NotesWriter`를 놓은 뒤 종료해요. 프로세스가 남아 있으면 파일을 덮지 않아요.
 2. 3.4.x 트레이가 `Local\BongHub_Tray`를 잡고 있으면 WPF는 메모를 읽기 전용으로만 열어요. 그 프로세스도 끝낸 뒤에 복사해요. WPF는 그 뮤텍스를 만들지 않고, 있는지만 봐요.
 3. 지금 폴더를 `backup\<시각>`으로 옮긴 뒤, `backup\`에는 **가장 최근 백업만** 남겨요. 더 오래된 백업 폴더는 지워요.
-4. 위의 게시 결과를 배포 폴더에 복사해요. 런타임은 그 PC에 설치된 .NET 10 데스크톱을 써요.
+4. 위의 게시 결과를 배포 폴더에 복사해요. 런타임은 그 폴더 안에 같이 있어요. `coreclr.dll`이 있어야 자기 포함 게시가 맞아요.
 
-2026-11-02 기록에는 그 폴더의 exe가 아직 3.4.9(파일 버전 3.4.9.0)였어요. 복사 전에 파일 버전을 확인해요. 소스 1.3.1이 이미 깔려 있다고 가정하지 않아요.
+배포 폴더의 exe는 파일 버전 **1.3.1.0**으로 확인됐어요. 1.3.2를 복사하기 전에 떠 있는 프로세스를 끝내고, 덮어쓰기 전에 파일 버전을 다시 봐요.
 
 ## 5. 데이터 호환
 
@@ -121,20 +121,22 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 | `config.json` | 3.4.x 필드 유지. 한 키를 고칠 때 그 값의 바이트만 바꾸고, 같으면 다시 쓰지 않아요. |
 | `notes\<id>.json` | 3.4.7 `NoteMeta` 필드 순서와 `\/Date(ms)\/`. `Title`은 비어 있으면 생략해서 옛 리더가 앞 필드를 그대로 읽어요. |
 | `notes\<id>.rtf` | `\pngblip` / `\jpegblip`. 화면용으로 줄인 비트맵을 파일에 다시 그리지 않아요. |
-| `notes\<id>.rtf.pending-<시각>` | 이미지 가드가 기존 파일을 덮지 못할 때 새 RTF. 다음에 열면 더 새로운 쪽을 읽어요. 기존 파일의 `\pict`가 더 많으면 그 파일은 이후 저장으로도 덮지 않아요. |
+| `notes\<id>.rtf.pending-<시각>` | 이미지 가드가 기존 파일을 덮지 못할 때 새 RTF. 메모마다 하나예요. 정상 저장이 되거나, pending이 rtf보다 오래되면 지워요. 다음에 열 때 pending이 더 새로우면 그 쪽을 읽어요. |
 | `desktop\layouts.json` | 3.4.x 아이콘 배치. |
 | `profiles.json` | 1.1.0 이후 모니터 프로필. 옛 config를 대체하지 않아요. |
 | `settings.json` | `ReduceMotion`만. 3.4.x와 공유하지 않아요. |
 
 저장권은 `Local\BongHub_NotesWriter`예요. 기본 데이터 폴더를 쓰는 일반 실행만 잡아요. 시험과 `--data` 임시 폴더는 잡지 않아요. 못 잡거나 3.4 트레이가 떠 있으면 읽기 전용이에요.
 
-이미지 가드: 저장 RTF의 `\pict`가 화면 그림이나 보관 중인 묶음보다 적으면 `error.log`에 `image guard: kept existing rtf`를 남기고, 새 바이트는 pending에만 써요. GIF·메타파일처럼 WPF가 `\pict`로 못 쓰는 화면 그림은 그 전에 PNG로 바꿔 묶어요. 이미 PNG/JPEG인 원본 바이트는 유지해요.
+이미지 가드: 저장 RTF의 `\pict`가 화면에 남아 있는 그림보다 적으면 `error.log`에 `image guard: kept existing rtf`를 남기고, 새 바이트는 pending 하나에만 써요. 화면 그림 수와 `\pict` 수가 같으면 저장해요. 사용자가 지운 그림이 보관 묶음에 남아 있어도 그 묶음은 세지 않아요. GIF·메타파일처럼 WPF가 `\pict`로 못 쓰는 화면 그림은 그 전에 PNG로 바꿔 묶어요. 이미 PNG/JPEG인 원본 바이트는 유지해요.
+
+창 크기: 최소화·최대화·접힌 상태의 사각형은 저장하지 않아요. `GetWindowRect`가 그때 돌려주는 값은 복원 크기가 아니에요. 최소화하면 높이가 34처럼 작거나 너비가 모니터를 훨씬 넘고, 그다음 배치가 그 값을 모니터 너비와 60으로 다시 적었어요. 너비와 높이는 저장할 때와 화면에 놓을 때 `NoteMinWidth`–`NoteMaxWidth`, `NoteMinHeight`–`NoteMaxHeight` 안으로 맞춰요. 이미 한계 밖에 저장된 파일은 사용자가 노트를 옮길 때까지 그대로 두고, 창은 그 최소·최대로 맞춘 크기로 보여요.
 
 옛 글자색: RTF에 박힌 `#F0F0F6`, `#ECECF0`, 자동 어두운 글씨 `#1C1C1E`는 열 때 지우고 노트 색의 `NoteColors.Ink`를 상속해요. 저장할 때 그 색은 다시 쓰지 않아요. 직접 고른 색(예: 파랑)은 남아요. 중간 밝기라 검정과 밝은 글씨가 둘 다 7:1에 못 미치면 색조를 유지한 채 표면만 조금 옮겨요. 레몬과 노랑 원색은 그대로예요.
 
 `data/`는 클라우드가 `sync: <기기> yyyy-MM-dd HH:mm:ss`로 커밋해요. PR에서 그 접두사가 아닌 커밋이 `data/`를 바꾸면 CI가 실패해요.
 
-## 6. 버전 1.0.0–1.3.1
+## 6. 버전 1.0.0–1.3.2
 
 번호는 사용자에게 나간 WPF 앱이에요. 0.x는 `CHANGELOG.md`의 이식 단계예요.
 
@@ -148,6 +150,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 | 1.2.0 | 프로필을 화면 설정처럼 단순하게 정리했어요. 창 규칙 목록과 작업 영역 페이지는 뺐어요. | 112 / 93 |
 | 1.3.0 | 링크는 화면에만 칠해요. 복사가 클립보드에 남아요. 대비가 부족한 중간 색만 조금 밝혀요. 옛 기본 글자색은 자동 글씨로 바꿔요. 그림을 다 못 담으면 pending에 남겨요. | 123 / 127 |
 | 1.3.1 | Run·Paragraph 클릭이 예외를 던지지 않아요. | 123 / 128 |
+| 1.3.2 | 접힌·최소·최대 크기가 복원 크기를 덮지 않아요. 그림 가드는 화면에 남은 그림만 봐요. 게시는 자기 포함 `win-x64`예요. | 123 / 144 |
 
 ## 7. 시험할 때 지키면 안 되는 것
 
@@ -161,9 +164,8 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 
 ## 8. 알려진 문제와 남은 일
 
-- 동기화된 `data/notes` 일부는 창 한계 밖의 크기를 저장하고 있어요. 높이가 34·60으로 `NoteMinHeight`(90)보다 작고, 한 메모는 너비가 40826으로 `NoteMaxWidth`(30000)보다 커요. 접히거나 최소화된 채 `CaptureRect`가 창 크기를 그대로 적은 것으로 보여요. 확인이 필요해요. 파일은 고치지 않아요. 노트 시험은 저장된 수가 아니라 그 최소·최대로 맞춘 크기를 기대해요.
-- 그림이 PNG로도 안 담기면 가드가 기존 `.rtf`를 남기고 pending만 갱신해요. 본문 수정은 pending과 json `Text`에 있고, 그림이 더 많은 파일은 디스크에 그대로예요. 사용자가 그 pending을 열면 그림이 적은 쪽이 화면에 나와요.
-- 배포 PC의 exe가 1.3.1인지는 2026-11-02 기록만으로는 확인되지 않아요. 파일 버전을 본 뒤에 복사해요.
+- 동기화된 `data/notes` 일부는 아직 한계 밖의 크기를 갖고 있어요. 1.3.2는 그 파일을 열 때 고치지 않아요. 창만 최소·최대로 맞추고, 사용자가 옮기면 그 한계 안의 크기를 저장해요.
+- 가드가 막은 저장을 다시 열면 pending이 더 새로워서 그 내용이 보여요. 화면 그림 수와 맞는 다음 저장은 rtf를 갱신하고 pending을 지워요.
 - 실제 모니터·밝기·아이콘·카톡·git 경로는 자동화 시험이 없어요. 목과 “호출하면 예외”만 확인해요.
 - 프로필 캔버스에서 창 이름이 머리줄 밖으로 나가면, 타일 높이와 28px 계단을 `DrawProfileCanvas`에서 보면 돼요. 1.3.0에서 계단을 머리줄에 맞췄어요.
 - 클라우드 `sync:` 커밋이 `main`에 자주 올라와요. 문서 PR은 그 커밋 위에 두고, `data/`는 끌어오지 않은 채로 충돌을 만들지 않아요.
