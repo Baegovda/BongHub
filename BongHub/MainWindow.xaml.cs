@@ -47,7 +47,13 @@ public partial class MainWindow : Window
             // on Mica the tint is translucent so the wallpaper glow comes through; otherwise fully opaque
             byte a = WindowFx.Of(this).Backdrop ? (byte)0xD0 : (byte)0xFF;
             TintA.Color = Color.FromArgb(a, 0x0D, 0x10, 0x18); TintB.Color = Color.FromArgb(a, 0x14, 0x12, 0x24);
-            if (AppEnv.Off) { ShowInTaskbar = false; Win32.Place(this, AppEnv.OffsetX + 100, AppEnv.OffsetY + 100, (int)(Width * Win32.Scale(this)), (int)(Height * Win32.Scale(this))); }
+            if (AppEnv.Off)
+            {
+                ShowInTaskbar = false;
+                ShowActivated = false;
+                Win32.KeepInactive(Win32.Handle(this));
+                Win32.Place(this, AppEnv.OffsetX + 100, AppEnv.OffsetY + 100, (int)(Width * Win32.Scale(this)), (int)(Height * Win32.Scale(this)));
+            }
         };
         if (AppEnv.Off) { ShowActivated = false; WindowStartupLocation = WindowStartupLocation.Manual; Left = -30000; Top = -30000; }
         ContentRendered += (_, _) => EverShown = true;

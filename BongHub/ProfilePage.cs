@@ -815,15 +815,19 @@ public partial class MainWindow
             Canvas.SetZIndex(tile, selectedTile ? 40 : 20);
             double nameFont = chip.W < 70 || chip.H < 34 ? 10 : 12;
             bool roomForSize = chip.H >= 56 && chip.W >= 72;
-            double labelH = nameFont + 6 + (roomForSize ? 14 : 0);
             double toolBox = chip.W >= 120 && chip.H >= 64 ? 16 : 12;
             double toolBand = toolBox * 2 + 8;
-            // Buttons occupy the chip's bottom-right corner. A chip that cannot hold that corner and the name hides them.
-            bool cornerRoom = chip.H >= labelH + toolBox + 2 && chip.W >= toolBand + 16;
-            bool showIcon = !countOnly && contentInset.Icon >= 10 && chip.W >= (cornerRoom ? toolBand : 0) + 46;
+            // Buttons own the bottom-right. The name keeps the rest of the width, and a short chip hides the buttons.
+            bool cornerRoom = chip.H >= nameFont + toolBox + 16 && chip.W >= toolBand + 48;
             double insetL = contentInset.Left > 0.5 ? contentInset.Left : 0;
             double insetT = contentInset.Top > 0.5 ? contentInset.Top : 0;
-            double nameMax = Math.Max(20, chip.W - 12 - insetL - (showIcon ? Math.Min(contentInset.Icon, 14) + 6 : 0));
+            double iconW = !countOnly && contentInset.Icon >= 10 ? Math.Min(contentInset.Icon, 14) + 6 : 0;
+            double nameRoom = chip.W - 12 - insetL - iconW;
+            // The button column is reserved even when the buttons sit at the bottom, so the name cannot run through them.
+            bool buttonsFit = cornerRoom && nameRoom - toolBand >= 28;
+            if (!buttonsFit) cornerRoom = false;
+            bool showIcon = iconW > 0 && nameRoom >= 36;
+            double nameMax = Math.Max(20, cornerRoom ? nameRoom - toolBand : nameRoom);
             var nameBlock = new TextBlock
             {
                 Text = chipText,

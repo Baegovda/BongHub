@@ -154,9 +154,13 @@ public partial class App : Application
             WindowFx.Of(w).AfterFirstFrame += w.ShowDecorations;
         }
         bool bring = user && !AppEnv.Off;
-        // Captured before Show. The first window is often activated when its cloak drops, which is
-        // after this method returns, so a passive show keeps trying to hand that focus back.
+        // Captured before Show. Under --off the window keeps WS_EX_NOACTIVATE and is never activated.
         IntPtr previous = bring ? IntPtr.Zero : Win32.GetForegroundWindow();
+        if (!bring && AppEnv.Off)
+        {
+            w.ShowActivated = false;
+            Win32.KeepInactive(new System.Windows.Interop.WindowInteropHelper(w).EnsureHandle());
+        }
         if (first && !bring)
             WindowFx.Of(w).AfterFirstFrame += () => PassiveKeep(w, previous);
         if (!w.IsVisible) { AppEnv.Mark("show_begin"); w.Show(); if (first) AppEnv.Mark("show_returned"); if (!first) w.Reappear(); }
@@ -191,14 +195,10 @@ public partial class App : Application
             if (gen != passiveGen) { timer.Stop(); return; }
             n++;
             var hwnd = Win32.Handle(w);
+            if (AppEnv.Off) Win32.KeepInactive(hwnd);
             bool foreground = hwnd != IntPtr.Zero && Win32.GetForegroundWindow() == hwnd;
-            bool hot = foreground || w.IsActive;
             if (foreground) Win32.ReleaseIfStole(hwnd, previous);
-            else if (w.IsActive)
-            {
-                try { System.Windows.Input.Keyboard.ClearFocus(); } catch { }
-            }
-            Win32.NotePassive(n, clock.ElapsedMilliseconds, hot);
+            Win32.NotePassive(n, clock.ElapsedMilliseconds, foreground);
             if (n >= 8) timer.Stop();
         };
         timer.Start();
