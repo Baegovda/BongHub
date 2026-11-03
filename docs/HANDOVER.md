@@ -1,0 +1,169 @@
+# BongHub 인수인계
+
+지금 제품은 **BongHub 1.3.1** 하나예요. WPF 앱이고 실행 파일은 `BongHub.exe`예요. WinForms 3.4.x 소스(`app/`, `build.ps1`)는 저장소에 없어요. 메모·설정 파일과 `%LOCALAPPDATA%\BongHub`, `Local\BongHub_NotesWriter`는 3.4.x와 같이 읽혀요.
+
+이 문서가 절차의 기준이에요. 예전에 있던 `docs/HANDOFF.md`와 `docs/PORTING_PLAN.md`는 0.x 계획과 3.4.9 배포 기록이 섞여 있어서 뺐어요. 그 글은 git 기록에 있어요. 버전별 사용자 변화는 `CHANGELOG.md`예요.
+
+비밀값(토큰, 암호)은 여기 적지 않아요.
+
+## 1. 구조
+
+### 프로젝트
+
+| 경로 | 역할 |
+|---|---|
+| `BongHub/` | WPF 앱. `net10.0-windows`, SDK `global.json`의 **10.0.403**. ReadyToRun, `win-x64`, 프레임워크 종속. 단일 파일·트림·Native AOT는 꺼져 있어요. `ConcurrentGarbageCollection`은 켜져 있어요. |
+| `BongHub.PatchTests/` | 창 없는 콘솔. 설정 바이트 패치와 모니터 프로필·창·아이콘 목을 돌려요. `ImplicitUsings`가 켜져 있어요. |
+| `BongHub.RichEditTests/` | 창 없이 `NoteRtf`만 컴파일해요. 전역 using이 없어요. `NoteRtf.cs`는 그 파일 안에서 `using`을 닫아야 해요. |
+| `legacy/BongAd/` | 카카오톡 광고 제거 도우미 원본. 앱이 쓰는 실행 파일은 `BongHub/res/BongAd.exe`예요. |
+| `data/` | 클라우드 동기화 페이로드. **커밋되어 있고, 사람이 고치면 안 돼요.** |
+
+설정 탭은 여섯 개예요. 모니터 프로필, 스티커 메모, 카톡 광고 제거, PowerToys, 일반, 정보.
+
+### 메모
+
+| 파일 | 하는 일 |
+|---|---|
+| `StickyNoteWindow.xaml.cs` | 메모 창. 제목, 본문, 링크, 붙여넣기, 그림, 저장, 클릭. `OriginalSource`가 `Run`이나 `Paragraph`이면 비주얼이 아니라서, `NextParent`가 그 둘은 `LogicalTreeHelper`, `Visual`과 `Visual3D`만 `VisualTreeHelper`를 탑니다. |
+| `NoteRtf.cs` | WPF `TextRange`로 RTF를 읽고 써요. msftedit는 쓰지 않아요. 화면 그림보다 `\pict`가 적으면 `Choose`가 기존 바이트를 돌려요. `#F0F0F6`, `#ECECF0`, `#1C1C1E`에 걸린 `\cf`는 저장 때 빼요. |
+| `RtfPict.cs` | `\pngblip` / `\jpegblip` 묶음. 화면은 긴 변 1280 이하로 디코딩하고, 저장할 때 원본 묶음을 다시 끼워요. |
+| `NoteStore.cs` | `notes\<id>.json` / `.rtf`. 팔레트와 자동 글씨(`NoteColors.Ink`). |
+| `NoteImages.cs` | 새 그림. 1600px 이하 PNG/JPEG는 바이트를 유지하고, GIF처럼 못 넣는 형식은 PNG로 바꿔요. |
+| `NoteManager.cs` | 열고 닫고, 종료 때 `FlushAll`. |
+| `NotePaste.cs`, `NoteClip.cs` | 클립보드를 조각으로 읽고, 시험에서는 `NoteClipSession.Fake`만 써요. |
+| `NoteLinks.cs` | http, https, www. 화면에서만 칠하고 RTF에는 링크 서식을 넣지 않아요. |
+
+유휴 메모는 `FlowDocumentScrollViewer`만 두고, `RichTextBox`는 고칠 때 만들어요.
+
+### 모니터 프로필 캔버스
+
+`ProfilePage.cs`의 `DrawProfileCanvas`가 설정 창 안에 모니터 사각형과 창 타일을 그려요. 실제 디스플레이로 창을 옮기는 코드가 아니에요. 창이 겹치면 머리줄(28px) 간격으로 내려 이름이 보이게 해요. 번호는 Windows `\\.\DISPLAYn`을 따라요. 끊긴 화면은 흐리게 두고 창 목록은 남겨요. 저장은 `%LOCALAPPDATA%\BongHub\profiles.json`이에요. `config.json`의 3.4.x 필드는 지우지 않아요.
+
+### 서비스와 가짜
+
+실제 장치로 가는 문은 게이트예요. `Allow`가 꺼져 있거나 시험·`--off`이면 `Demand`가 예외를 던지고, 네이티브 호출 수는 0이에요. 스모크와 노트 시험은 게이트를 무장하지 않아요.
+
+| 게이트 | 실제 구현 | 시험이 쓰는 것 |
+|---|---|---|
+| `DisplayGate` | `DisplayNative` (모니터, 밝기) | `FakeDisplay`, `FakeBright` |
+| `WindowGate` | `LiveWindowSurface` | `FakeWindowSurface`. 아이콘은 `AppIcon.Fake` |
+| `DesktopGate` | `ExplorerIconSurface` (탐색기 목록) | 가짜 아이콘 목록 |
+| `PtGate` | PowerToys 계산 외의 실제 동작 | 가짜 입력만 |
+| `KakaoGate` | `KakaoNative` + `BongAd.exe` | `FakeKakaoHost` |
+| `CloudGate` | `GitCloudTransport` | 메모리 원격. 시험은 git을 실행하지 않아요. |
+
+클립보드 시험은 `NoteClipSession.Fake`와 `SequenceIsFake`예요.
+
+## 2. 빌드와 시험
+
+Windows, 저장소 루트:
+
+```powershell
+dotnet publish BongHub\BongHub.csproj -c Release -r win-x64 --self-contained false -p:PublishReadyToRun=true
+dotnet run --project BongHub.PatchTests\BongHub.PatchTests.csproj -c Release
+dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Release
+```
+
+게시 결과는 `BongHub\bin\Release\net10.0-windows\win-x64\publish\BongHub.exe`예요. `coreclr.dll`이 있으면 자기 포함 게시라서 잘못된 거예요.
+
+기대값:
+
+| 명령 | 결과 |
+|---|---|
+| `--smoketest` | **123 PASS**. 임시 폴더만 써요. `--data`와 `BONGHUB_DATA`는 무시해요. |
+| `--notetest --data <복사본>` | **128 PASS**. `data/` 원본이 아니라 복사본만 넘겨요. |
+| PatchTests | `RESULT PASS` |
+| RichEditTests | 1×1 `\pngblip` 왕복 `RESULT PASS` |
+
+플래그:
+
+| 플래그 | 동작 |
+|---|---|
+| `--smoketest` | 화면 밖(`--off`). 설정과 메모를 그리고 종료해요. 저장권 뮤텍스를 잡지 않아요. |
+| `--notetest` | 화면 밖. 복사한 데이터로 메모 시험을 하고 종료해요. |
+| `--quit` | 이 프로세스는 데이터를 열지 않아요. `Local\BongHub.Quit`를 켜서 이미 떠 있는 앱이 `RequestShutdown`으로 저장한 뒤 끝나게 해요. |
+| `--tray` | `--off`와 같이 쓰면 설정 창 없이 트레이만 올려요. 메모리 기준선용이에요. |
+| `--off` | 창을 (-30000, -30000)에 두고 활성화하지 않아요. 게이트는 무장하지 않아요. |
+| `--idle-hidden` | `--off`로 설정을 한 프레임 보여 준 뒤 숨겨요. |
+| `--data <폴더>` | 그 폴더를 데이터 루트로 써요. 환경 변수 `BONGHUB_DATA`와 같아요. 스모크는 둘 다 무시해요. |
+| `--out <폴더>` | `smoketest.txt`, `notetest.txt`를 여기 써요. |
+
+메모리 기준선은 `measure-baseline.ps1`예요. 이미 켜진 BongHub를 끝낸 다음에 실행해요. `data/`와 `%LOCALAPPDATA%\BongHub`는 읽지도 쓰지도 않아요. 창은 화면 밖이에요. 0.4.0에서 확인된 유휴(작업 집합/private)는 트레이 **8/18MB**, 설정 **20/64MB**, 메모 7개 **22/94MB**를 넘기면 안 돼요. 로그는 로컬 `test-logs\`에만 남기고 커밋하지 않아요.
+
+## 3. CI
+
+`.github/workflows/repo-check.yml`
+
+- `ubuntu-latest`: `check-versions.sh` (csproj `Version` / `FileVersion`, `AppEnv.Version`, `AppInfo.Version`이 **1.3.1** / **1.3.1.0**으로 같은지), PR에서 `sync:`가 아닌 `data/` 변경이 있으면 실패, PatchTests.
+- `windows-latest`: 게시 후 스모크, 그다음 노트 시험. 노트 시험 단계는 `if: always()`라서 스모크가 실패해도 돌아요. 프로세스는 `Start-Process -Wait -PassThru`로 기다리고 종료 코드로 판단해요. 로그는 `--out`과 exe 옆을 둘 다 봐요. 산출물은 `wpf-tests`로 올라가요.
+
+Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI가 담당이에요.
+
+## 4. 배포
+
+배포 폴더는 `C:\Users\Revaptor_FX\BongHub`예요. 자동 시작은 `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\BongHub.lnk`가 그 안의 `BongHub.exe`를 가리켜요.
+
+순서:
+
+1. 떠 있는 앱을 `BongHub.exe --quit`으로 끝내요. 이벤트가 `Local\BongHub.Quit`예요. 받는 쪽은 메모를 저장하고 `Local\BongHub.SingleInstance`와 `Local\BongHub_NotesWriter`를 놓은 뒤 종료해요. 프로세스가 남아 있으면 파일을 덮지 않아요.
+2. 3.4.x 트레이가 `Local\BongHub_Tray`를 잡고 있으면 WPF는 메모를 읽기 전용으로만 열어요. 그 프로세스도 끝낸 뒤에 복사해요. WPF는 그 뮤텍스를 만들지 않고, 있는지만 봐요.
+3. 지금 폴더를 `backup\<시각>`으로 옮긴 뒤, `backup\`에는 **가장 최근 백업만** 남겨요. 더 오래된 백업 폴더는 지워요.
+4. 위의 게시 결과를 배포 폴더에 복사해요. 런타임은 그 PC에 설치된 .NET 10 데스크톱을 써요.
+
+2026-11-02 기록에는 그 폴더의 exe가 아직 3.4.9(파일 버전 3.4.9.0)였어요. 복사 전에 파일 버전을 확인해요. 소스 1.3.1이 이미 깔려 있다고 가정하지 않아요.
+
+## 5. 데이터 호환
+
+런타임은 `%LOCALAPPDATA%\BongHub\`예요.
+
+| 파일 | 호환 |
+|---|---|
+| `config.json` | 3.4.x 필드 유지. 한 키를 고칠 때 그 값의 바이트만 바꾸고, 같으면 다시 쓰지 않아요. |
+| `notes\<id>.json` | 3.4.7 `NoteMeta` 필드 순서와 `\/Date(ms)\/`. `Title`은 비어 있으면 생략해서 옛 리더가 앞 필드를 그대로 읽어요. |
+| `notes\<id>.rtf` | `\pngblip` / `\jpegblip`. 화면용으로 줄인 비트맵을 파일에 다시 그리지 않아요. |
+| `notes\<id>.rtf.pending-<시각>` | 이미지 가드가 기존 파일을 덮지 못할 때 새 RTF. 다음에 열면 더 새로운 쪽을 읽어요. 기존 파일의 `\pict`가 더 많으면 그 파일은 이후 저장으로도 덮지 않아요. |
+| `desktop\layouts.json` | 3.4.x 아이콘 배치. |
+| `profiles.json` | 1.1.0 이후 모니터 프로필. 옛 config를 대체하지 않아요. |
+| `settings.json` | `ReduceMotion`만. 3.4.x와 공유하지 않아요. |
+
+저장권은 `Local\BongHub_NotesWriter`예요. 기본 데이터 폴더를 쓰는 일반 실행만 잡아요. 시험과 `--data` 임시 폴더는 잡지 않아요. 못 잡거나 3.4 트레이가 떠 있으면 읽기 전용이에요.
+
+이미지 가드: 저장 RTF의 `\pict`가 화면 그림이나 보관 중인 묶음보다 적으면 `error.log`에 `image guard: kept existing rtf`를 남기고, 새 바이트는 pending에만 써요. GIF·메타파일처럼 WPF가 `\pict`로 못 쓰는 화면 그림은 그 전에 PNG로 바꿔 묶어요. 이미 PNG/JPEG인 원본 바이트는 유지해요.
+
+옛 글자색: RTF에 박힌 `#F0F0F6`, `#ECECF0`, 자동 어두운 글씨 `#1C1C1E`는 열 때 지우고 노트 색의 `NoteColors.Ink`를 상속해요. 저장할 때 그 색은 다시 쓰지 않아요. 직접 고른 색(예: 파랑)은 남아요. 중간 밝기라 검정과 밝은 글씨가 둘 다 7:1에 못 미치면 색조를 유지한 채 표면만 조금 옮겨요. 레몬과 노랑 원색은 그대로예요.
+
+`data/`는 클라우드가 `sync: <기기> yyyy-MM-dd HH:mm:ss`로 커밋해요. PR에서 그 접두사가 아닌 커밋이 `data/`를 바꾸면 CI가 실패해요.
+
+## 6. 버전 1.0.0–1.3.1
+
+번호는 사용자에게 나간 WPF 앱이에요. 0.x는 `CHANGELOG.md`의 이식 단계예요.
+
+| 버전 | 요지 | 시험 |
+|---|---|---|
+| 1.0.0 | 3.4.x 트레이를 빼고 이 WPF가 `BongHub.exe`가 됐어요. 데이터와 저장권은 그대로예요. | 스모크 107, 노트 89 |
+| 1.0.1 | 문서와 부제에 남은 옛 제품 이름을 뺐어요. | 107 / 89 |
+| 1.0.2 | 글과 그림을 함께 복사해요. 이미 적용 중인 프리셋은 다시 적용하지 않아요. | 109 / 89 |
+| 1.1.0 | 모니터 프리셋, 창 위치, 바탕화면 아이콘을 모니터 프로필 한 탭으로 모았어요. | 102 / 89 |
+| 1.1.1 | 메모 제목, 도구 막대, 스크롤·캐럿, 글과 그림 복사. | 106 / 93 |
+| 1.2.0 | 프로필을 화면 설정처럼 단순하게 정리했어요. 창 규칙 목록과 작업 영역 페이지는 뺐어요. | 112 / 93 |
+| 1.3.0 | 링크는 화면에만 칠해요. 복사가 클립보드에 남아요. 대비가 부족한 중간 색만 조금 밝혀요. 옛 기본 글자색은 자동 글씨로 바꿔요. 그림을 다 못 담으면 pending에 남겨요. | 123 / 127 |
+| 1.3.1 | Run·Paragraph 클릭이 예외를 던지지 않아요. | 123 / 128 |
+
+## 7. 시험할 때 지키면 안 되는 것
+
+- 프리셋 CLI, `workspace`, `resize` 인자로 모니터나 창을 움직이지 않아요. BongHub에도 그 인자로 화면을 바꾸는 기능이 없어요.
+- 실제 모니터, 밝기, 바탕화면 아이콘을 읽거나 고치지 않아요. 게이트가 시험과 `--off`에서 닫혀 있어야 하고, 그 호출 수는 0이어야 해요.
+- GUI 시험은 숨긴 데스크톱에서, 창은 화면 밖 (-30000, -30000)에서만 해요. 포커스를 가져가지 않아요.
+- 노트 시험의 `--data`는 **복사본**만 받아요. `%LOCALAPPDATA%\BongHub`를 넘기지 않아요.
+- `data/`는 고치지 않아요. 클라우드 커밋이 아닌 PR에 그 차이가 들어가면 안 돼요.
+- AutoHotkey를 쓰지 않아요. 전역 후킹(`SetWindowsHookEx`)도 메모 단축키에 쓰지 않아요. 메모 단축키는 `RegisterHotKey`이고, 시험은 그 API를 호출하지 않아요.
+- 스모크·노트 시험·`--off`·CI는 git, GitHub, 카톡 창, `BongAd.exe`, 탐색기 목록, DDC/CI를 실행하지 않아요.
+
+## 8. 알려진 문제와 남은 일
+
+- 동기화된 `data/notes` 일부는 창 한계 밖의 크기를 저장하고 있어요. 높이가 34·60으로 `NoteMinHeight`(90)보다 작고, 한 메모는 너비가 40826으로 `NoteMaxWidth`(30000)보다 커요. 접히거나 최소화된 채 `CaptureRect`가 창 크기를 그대로 적은 것으로 보여요. 확인이 필요해요. 파일은 고치지 않아요. 노트 시험은 저장된 수가 아니라 그 최소·최대로 맞춘 크기를 기대해요.
+- 그림이 PNG로도 안 담기면 가드가 기존 `.rtf`를 남기고 pending만 갱신해요. 본문 수정은 pending과 json `Text`에 있고, 그림이 더 많은 파일은 디스크에 그대로예요. 사용자가 그 pending을 열면 그림이 적은 쪽이 화면에 나와요.
+- 배포 PC의 exe가 1.3.1인지는 2026-11-02 기록만으로는 확인되지 않아요. 파일 버전을 본 뒤에 복사해요.
+- 실제 모니터·밝기·아이콘·카톡·git 경로는 자동화 시험이 없어요. 목과 “호출하면 예외”만 확인해요.
+- 프로필 캔버스에서 창 이름이 머리줄 밖으로 나가면, 타일 높이와 28px 계단을 `DrawProfileCanvas`에서 보면 돼요. 1.3.0에서 계단을 머리줄에 맞췄어요.
+- 클라우드 `sync:` 커밋이 `main`에 자주 올라와요. 문서 PR은 그 커밋 위에 두고, `data/`는 끌어오지 않은 채로 충돌을 만들지 않아요.
