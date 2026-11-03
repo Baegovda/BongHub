@@ -44,6 +44,80 @@ public static class DisplayNative
         }
     }
 
+    /// <summary>
+    /// One topology commit. Positions are matched by target path, staged, then applied together.
+    /// There is no per-monitor enable and no <c>CDS_SET_PRIMARY</c>, which would slide the origin.
+    /// </summary>
+    public static void ApplyArrangement(IReadOnlyList<DeskScreen> desired)
+    {
+        DisplayGate.Demand();
+        var known = new List<DeskScreen>();
+        foreach (var s in Win32.DisplayIdentities())
+            known.Add(new DeskScreen
+            {
+                StableId = s.Path.Length > 0 ? s.Path : (s.Edid.Length > 0 ? s.Edid : "display:" + s.Number),
+                Number = s.Number,
+                Device = s.Device ?? "",
+                X = s.X, Y = s.Y, W = s.W, H = s.H,
+                Primary = s.Primary,
+                Enabled = true,
+                Scale = s.Scale <= 0 ? 100 : s.Scale
+            });
+        string error = DeskArrange.Validate(desired);
+        if (error.Length > 0) throw new InvalidOperationException(error);
+        var steps = DeskArrange.Steps(desired, known);
+        if (!StageAll(steps))
+            throw new InvalidOperationException("화면 배치를 적용하지 못했어요.");
+    }
+
+    static bool StageAll(IReadOnlyList<DeskStep> steps)
+    {
+        int staged = 0;
+        foreach (var step in steps)
+        {
+            if (!step.Enabled || step.Device.Length == 0) continue;
+            if (!Stage(step.Device, step.X, step.Y, step.W, step.H)) return false;
+            staged++;
+        }
+        if (staged == 0) return true;
+        CommitStaged();
+        return true;
+    }
+
+    static bool Stage(string device, int x, int y, int w, int h)
+    {
+        IntPtr buf = Marshal.AllocHGlobal(256);
+        try
+        {
+            for (int i = 0; i < 256; i++) Marshal.WriteByte(buf, i, 0);
+            Marshal.WriteInt16(buf, 68, 220);
+            if (!EnumDisplaySettings(device, -1, buf)) return false;
+            int fields = Marshal.ReadInt32(buf, 72);
+            fields |= 0x20 | 0x80000 | 0x100000;
+            Marshal.WriteInt32(buf, 72, fields);
+            Marshal.WriteInt32(buf, 76, x);
+            Marshal.WriteInt32(buf, 80, y);
+            Marshal.WriteInt32(buf, 172, w);
+            Marshal.WriteInt32(buf, 176, h);
+            int rc = ChangeDisplaySettingsEx(device, buf, IntPtr.Zero, CdsUpdate | CdsNoReset, IntPtr.Zero);
+            DisplaySystem.ChangeDisplaySettingsExCalls++;
+            return rc == 0;
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    static void CommitStaged()
+    {
+        ChangeDisplaySettingsEx(null, IntPtr.Zero, IntPtr.Zero, 0, IntPtr.Zero);
+        DisplaySystem.SetDisplayConfigCalls++;
+    }
+
+    const uint CdsUpdate = 0x1;
+    const uint CdsNoReset = 0x10000000;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettingsEx(string? device, IntPtr mode, IntPtr hwnd, uint flags, IntPtr param);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "EnumDisplaySettingsW")] static extern bool EnumDisplaySettings(string device, int mode, IntPtr devMode);
+
     static string ToArg(string cmd)
     {
         if (string.IsNullOrWhiteSpace(cmd)) return "";

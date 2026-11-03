@@ -305,6 +305,10 @@ public sealed class MonitorProfile
     public List<ProfileIcon> Icons = new();
     /// <summary>1.1.0 files stored window rects in the 320×180 editor, not in monitor pixels.</summary>
     public bool LiftCanvas;
+    /// <summary>Snapshot every visible window when leaving this profile. Missing JSON means on.</summary>
+    public bool RememberWindows = true;
+    public string SessionSaved = "";
+    public List<SessionWindow> Session = new();
 }
 
 public readonly record struct SnapPreview(string Kind, ProfileBox Box);
@@ -312,9 +316,10 @@ public readonly record struct SnapPreview(string Kind, ProfileBox Box);
 public readonly record struct ProfileScene(double Scale, int OriginX, int OriginY, ProfileBox Bounds);
 
 /// <summary>The shared edge the pointer can cross after a monitor snap. Empty when nothing snapped.</summary>
-public readonly record struct SnapGuide(int X1, int Y1, int X2, int Y2)
+public readonly record struct SnapGuide(int X1, int Y1, int X2, int Y2, int X3 = 0, int Y3 = 0, int X4 = 0, int Y4 = 0)
 {
     public bool Active => X1 != X2 || Y1 != Y2;
+    public bool Corner => X3 != X4 || Y3 != Y4;
 }
 
 public readonly record struct MonitorSnap(ProfileBox Box, SnapGuide Guide);
@@ -328,6 +333,24 @@ public static class ProfileSnap
     public const int WindowSnap = 4;
     /// <summary>How deep a half / maximize zone reaches into the monitor, as a percent of that side.</summary>
     public const int ZonePercent = 18;
+    /// <summary>Window-to-monitor-edge magnet, in virtual pixels. A couple of canvas pixels at most.</summary>
+    public const int MonitorEdgeSnap = 2;
+
+    /// <summary>Edge magnet in virtual pixels for a canvas scale. Never more than <see cref="MonitorEdgeSnap"/>.</summary>
+    public static int EdgeSlop(double canvasScale)
+    {
+        if (canvasScale < 0.01 || double.IsNaN(canvasScale) || double.IsInfinity(canvasScale)) canvasScale = 0.01;
+        int seen = (int)Math.Round(2.5 * canvasScale);
+        return Math.Min(MonitorEdgeSnap, Math.Max(0, seen));
+    }
+
+    /// <summary>Half, max, and quarter apply only after the pointer enters that zone during a drag. A click that starts inside one does not stick.</summary>
+    public static bool ArmZone(string? startedIn, string? now, bool moved)
+    {
+        if (!moved || string.IsNullOrEmpty(now)) return false;
+        if (!string.IsNullOrEmpty(startedIn) && startedIn == now) return false;
+        return true;
+    }
 
     public static ProfileBox SnapMonitor(ProfileBox moving, IReadOnlyList<ProfileBox> others, int threshold)
         => SnapMonitorWithGuide(moving, others, threshold).Box;
@@ -352,6 +375,18 @@ public static class ProfileSnap
                 ConsiderY(o.Bottom, o, i, true);
                 ConsiderY(o.Y - moving.H, o, i, false);
             }
+        }
+        bool didX = x != moving.X, didY = y != moving.Y;
+        if (others != null && threshold >= 0 && didX != didY)
+            guide = SnapMissingAxis(moving, others, threshold, ref x, ref y, didX, guide);
+        didX = x != moving.X;
+        didY = y != moving.Y;
+        if (didX && didY && guide.Active && !guide.Corner)
+        {
+            if (guide.Y1 == guide.Y2)
+                guide = new SnapGuide(guide.X1, guide.Y1, guide.X2, guide.Y2, x, Math.Min(y, moving.Y), x, Math.Max(y, moving.Y) + 1);
+            else
+                guide = new SnapGuide(guide.X1, guide.Y1, guide.X2, guide.Y2, Math.Min(x, moving.X), y, Math.Max(x, moving.X) + 1, y);
         }
         return new MonitorSnap(new ProfileBox(x, y, moving.W, moving.H), guide);
 
@@ -393,6 +428,65 @@ public static class ProfileSnap
             int right = Math.Min(nx + moving.W, o.Right);
             int gy = movingBelow ? o.Bottom : o.Y;
             guide = new SnapGuide(left, gy, right, gy);
+        }
+    }
+
+    static SnapGuide SnapMissingAxis(ProfileBox moving, IReadOnlyList<ProfileBox> others, int threshold, ref int x, ref int y, bool haveX, SnapGuide guide)
+    {
+        int ax = x, ay = y;
+        int best = threshold + 1;
+        int pick = haveX ? ay : ax;
+        int gx1 = 0, gy1 = 0, gx2 = 0, gy2 = 0;
+        bool found = false;
+        for (int i = 0; i < others.Count; i++)
+        {
+            var o = others[i];
+            if (haveX)
+            {
+                TryY(o.Bottom, o.X, o.Right);
+                TryY(o.Y - moving.H, o.X, o.Right);
+                TryY(o.Y, o.X, o.Right);
+                TryY(o.Bottom - moving.H, o.X, o.Right);
+            }
+            else
+            {
+                TryX(o.Right, o.Y, o.Bottom);
+                TryX(o.X - moving.W, o.Y, o.Bottom);
+                TryX(o.X, o.Y, o.Bottom);
+                TryX(o.Right - moving.W, o.Y, o.Bottom);
+            }
+        }
+        if (!found) return guide;
+        if (haveX) y = pick;
+        else x = pick;
+        return new SnapGuide(guide.X1, guide.Y1, guide.X2, guide.Y2, gx1, gy1, gx2, gy2);
+
+        void TryY(int targetY, int left, int right)
+        {
+            int dist = Math.Abs(targetY - moving.Y);
+            if (dist > threshold || dist >= best) return;
+            var box = new ProfileBox(ax, targetY, moving.W, moving.H);
+            if (InteriorsOverlapAny(box, others, -1)) return;
+            best = dist;
+            pick = targetY;
+            found = true;
+            int a = Math.Max(ax, left), b = Math.Min(ax + moving.W, right);
+            if (a >= b) b = a + 1;
+            gx1 = a; gx2 = b; gy1 = gy2 = targetY;
+        }
+
+        void TryX(int targetX, int top, int bot)
+        {
+            int dist = Math.Abs(targetX - moving.X);
+            if (dist > threshold || dist >= best) return;
+            var box = new ProfileBox(targetX, ay, moving.W, moving.H);
+            if (InteriorsOverlapAny(box, others, -1)) return;
+            best = dist;
+            pick = targetX;
+            found = true;
+            int a = Math.Max(ay, top), b = Math.Min(ay + moving.H, bot);
+            if (a >= b) b = a + 1;
+            gy1 = a; gy2 = b; gx1 = gx2 = targetX;
         }
     }
 
@@ -494,14 +588,14 @@ public static class ProfileSnap
         return new ProfileBox(x, y, Math.Max(min, w), Math.Max(min, h));
     }
 
-    public static ProfileBox SnapWindow(ProfileBox window, ProfileBox monitor, IReadOnlyList<ProfileBox> others, int grid)
+    public static ProfileBox SnapWindow(ProfileBox window, ProfileBox monitor, IReadOnlyList<ProfileBox> others, int grid, int? edgeSlop = null)
     {
         int g = grid < 1 ? 1 : grid;
         int x = monitor.X + (int)Math.Round((window.X - monitor.X) / (double)g) * g;
         int y = monitor.Y + (int)Math.Round((window.Y - monitor.Y) / (double)g) * g;
         int w = Math.Max(g, window.W);
         int h = Math.Max(g, window.H);
-        int slop = Math.Max(g, 8);
+        int slop = edgeSlop ?? MonitorEdgeSnap;
         x = Pull(x, monitor.X, slop);
         x = Pull(x, monitor.Right - w, slop);
         y = Pull(y, monitor.Y, slop);
@@ -1203,7 +1297,7 @@ public static class ProfileDoc
         int n = 0;
         foreach (var app in profile.Apps)
         {
-            var hit = live.FirstOrDefault(w => AppMatch(app, w));
+            var hit = live.FirstOrDefault(w => AppMatch(app, w) && !SessionLayout.OwnProcess(w));
             if (hit == null) continue;
             var mon = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors.FirstOrDefault();
             if (mon == null) continue;
@@ -1287,12 +1381,27 @@ public static class ProfileDoc
         foreach (var b in p.Brightness) bright.Add(new JsonObject { ["monitor"] = b.Monitor, ["value"] = b.Value });
         return new JsonObject
         {
-            ["id"] = p.Id, ["name"] = p.Name, ["hotkey"] = p.Hotkey, ["primary"] = p.Primary, ["layout"] = p.Layout, ["windowSpace"] = "pixels", ["iconsSaved"] = p.IconsSaved, ["restoreIcons"] = p.RestoreIcons,
+            ["id"] = p.Id, ["name"] = p.Name, ["hotkey"] = p.Hotkey, ["primary"] = p.Primary, ["layout"] = p.Layout, ["windowSpace"] = "pixels",             ["iconsSaved"] = p.IconsSaved, ["restoreIcons"] = p.RestoreIcons,
+            ["rememberWindows"] = p.RememberWindows, ["sessionSaved"] = p.SessionSaved ?? "",
             ["deskLayout"] = p.DeskLayout, ["icons"] = p.DeskLayout, ["workspace"] = p.Workspace,
             ["enable"] = new JsonArray(p.Enable.Select(s => JsonValue.Create(s)).ToArray()),
             ["disable"] = new JsonArray(p.Disable.Select(s => JsonValue.Create(s)).ToArray()),
-            ["brightness"] = bright, ["monitors"] = monitors, ["windows"] = windows, ["iconItems"] = icons
+            ["brightness"] = bright, ["monitors"] = monitors, ["windows"] = windows, ["iconItems"] = icons,
+            ["session"] = WriteSession(p.Session)
         };
+    }
+
+    static JsonArray WriteSession(List<SessionWindow>? session)
+    {
+        var arr = new JsonArray();
+        foreach (var s in session ?? new List<SessionWindow>())
+            arr.Add(new JsonObject
+            {
+                ["hwnd"] = JsonValue.Create(s.Hwnd), ["process"] = s.Process, ["path"] = s.Path, ["title"] = s.Title, ["class"] = s.Class,
+                ["monitor"] = s.MonitorId, ["x"] = s.X, ["y"] = s.Y, ["w"] = s.W, ["h"] = s.H,
+                ["state"] = s.State, ["z"] = s.Z, ["dpi"] = s.Dpi
+            });
+        return arr;
     }
 
     public static List<MonitorProfile> Parse(string? json)
@@ -1320,7 +1429,9 @@ public static class ProfileDoc
             DeskLayout = Str(node["deskLayout"]).Length > 0 ? Str(node["deskLayout"]) : Str(node["icons"]),
             Workspace = Str(node["workspace"]),
             IconsSaved = Str(node["iconsSaved"]),
-            RestoreIcons = node["restoreIcons"] == null || Bool(node["restoreIcons"])
+            RestoreIcons = node["restoreIcons"] == null || Bool(node["restoreIcons"]),
+            RememberWindows = node["rememberWindows"] == null || Bool(node["rememberWindows"]),
+            SessionSaved = Str(node["sessionSaved"])
         };
         if (profile.Id.Length == 0) profile.Id = NewId();
         Strings(node["enable"], profile.Enable);
@@ -1368,6 +1479,15 @@ public static class ProfileDoc
         if (node["iconItems"] is JsonArray iconItems)
             foreach (var item in iconItems.OfType<JsonObject>())
                 profile.Icons.Add(new ProfileIcon { Name = Str(item["name"]), X = Num(item["x"]), Y = Num(item["y"]), Show = item["show"] == null || Bool(item["show"]) });
+        if (node["session"] is JsonArray session)
+            foreach (var item in session.OfType<JsonObject>())
+                profile.Session.Add(new SessionWindow
+                {
+                    Hwnd = Num(item["hwnd"]),
+                    Process = Str(item["process"]), Path = Str(item["path"]), Title = Str(item["title"]), Class = Str(item["class"]),
+                    MonitorId = Str(item["monitor"]), X = Num(item["x"]), Y = Num(item["y"]), W = Num(item["w"]), H = Num(item["h"]),
+                    State = Str(item["state"]).Length > 0 ? Str(item["state"]) : "normal", Z = Num(item["z"]), Dpi = Num(item["dpi"], 100)
+                });
         string space = Str(node["windowSpace"]);
         profile.LiftCanvas = space != "pixels" && profile.Apps.Count > 0 && profile.Apps.All(ProfileLegacy.InCanvas);
         return profile;
@@ -2041,57 +2161,44 @@ public static class ProfileChrome
         return new DipRect(tileX + 6, top, w, h);
     }
 
-    /// <summary>Window chip inside the tile, under the number. A zero size means the tile is too small to draw one.</summary>
-    public static DipRect WindowChip(int localX, int localY, int localW, int localH, int monW, int monH, double tileX, double tileY, double tileW, double tileH, double badgeH)
+    /// <summary>Window chip at the real rectangle's scale on the tile. The number may sit underneath.</summary>
+    public static DipRect WindowChip(int localX, int localY, int localW, int localH, int monW, int monH, double tileX, double tileY, double tileW, double tileH)
     {
-        const double pad = 6;
-        double top = tileY + badgeH + 2;
-        double bottom = tileY + tileH - pad;
-        double left = tileX + pad;
-        double right = tileX + tileW - pad;
-        double innerW = right - left;
-        double innerH = bottom - top;
-        if (innerW < 28 || innerH < 18) return new DipRect(left, top, 0, 0);
-        double nx = Math.Clamp(localX / (double)Math.Max(1, monW), 0, 1);
-        double ny = Math.Clamp(localY / (double)Math.Max(1, monH), 0, 1);
-        double nw = Math.Clamp(localW / (double)Math.Max(1, monW), 0.12, 1);
-        double nh = Math.Clamp(localH / (double)Math.Max(1, monH), 0.12, 1);
-        double w = Math.Min(innerW, Math.Max(36, nw * innerW));
-        double h = Math.Min(innerH, Math.Max(20, nh * innerH));
-        double x = left + nx * Math.Max(0, innerW - w);
-        double y = top + ny * Math.Max(0, innerH - h);
+        if (monW < 1) monW = 1;
+        if (monH < 1) monH = 1;
+        if (tileW < 1 || tileH < 1) return new DipRect(tileX, tileY, 0, 0);
+        double x = tileX + localX / (double)monW * tileW;
+        double y = tileY + localY / (double)monH * tileH;
+        double w = localW / (double)monW * tileW;
+        double h = localH / (double)monH * tileH;
+        double right = Math.Min(tileX + tileW, x + Math.Max(0, w));
+        double bottom = Math.Min(tileY + tileH, y + Math.Max(0, h));
+        x = Math.Max(tileX, x);
+        y = Math.Max(tileY, y);
+        w = right - x;
+        h = bottom - y;
+        if (w < 1 || h < 1) return new DipRect(x, y, 0, 0);
         return new DipRect(x, y, w, h);
     }
 
-    /// <summary>Icon marker kept off the number band and off window chips. Zero size means there is no free spot.</summary>
-    public static DipRect IconDot(int iconX, int iconY, int monX, int monY, int monW, int monH, double tileX, double tileY, double tileW, double tileH, double badgeH, IReadOnlyList<DipRect>? occupied)
+    /// <summary>Icon dot at the icon's real position on the tile.</summary>
+    public static DipRect IconDot(int iconX, int iconY, int monX, int monY, int monW, int monH, double tileX, double tileY, double tileW, double tileH)
     {
         const double size = 6;
-        const double pad = 5;
-        double left = tileX + pad;
-        double right = tileX + tileW - pad - size;
-        double top = tileY + badgeH + 2;
-        double bottom = tileY + tileH - pad - size;
-        if (right < left || bottom < top) return new DipRect(0, 0, 0, 0);
-        double fx = monW <= 0 ? 0 : Math.Clamp((iconX - monX) / (double)monW, 0, 1);
-        double fy = monH <= 0 ? 1 : Math.Clamp((iconY - monY) / (double)monH, 0, 1);
-        fy = Math.Max(fy, 0.78);
-        var badge = new DipRect(tileX, tileY, Math.Max(0, tileW), badgeH);
-        bool Clear(DipRect dot) => dot.W > 0 && !dot.Hits(badge) && (occupied == null || !occupied.Any(o => o.W > 0 && dot.Hits(o)));
-        var first = new DipRect(left + fx * (right - left), top + fy * (bottom - top), size, size);
-        if (Clear(first)) return first;
-        for (double t = 0; t <= 1.001; t += 0.1)
-        {
-            var slide = new DipRect(left + t * (right - left), bottom, size, size);
-            if (Clear(slide)) return slide;
-        }
-        return new DipRect(0, 0, 0, 0);
+        if (monW < 1) monW = 1;
+        if (monH < 1) monH = 1;
+        if (tileW < size || tileH < size) return new DipRect(0, 0, 0, 0);
+        double x = tileX + (iconX - monX) / (double)monW * tileW - size / 2;
+        double y = tileY + (iconY - monY) / (double)monH * tileH - size / 2;
+        x = Math.Max(tileX, Math.Min(x, tileX + tileW - size));
+        y = Math.Max(tileY, Math.Min(y, tileY + tileH - size));
+        return new DipRect(x, y, size, size);
     }
 }
 
 /// <summary>Names of the profile-page symbols drawn as vectors, not as a font glyph.</summary>
 public static class ProfileGlyph
 {
-    public static readonly string[] Kinds = { "ellipsis", "trash", "pencil", "pin", "min", "app", "eye", "eyeoff", "undo" };
+    public static readonly string[] Kinds = { "ellipsis", "trash", "pencil", "pin", "min", "app", "eye", "eyeoff", "undo", "lock", "unlock" };
     public static bool Known(string? kind) => kind != null && Kinds.Contains(kind);
 }

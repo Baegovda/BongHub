@@ -886,14 +886,23 @@ var stage = ProfileChrome.Stage(700, 600);
 var narrowDetail = ProfileChrome.Detail(56, 40, 1200, 800, 150, 90, false, true);
 var midDetail = ProfileChrome.Detail(120, 70, 2400, 1350, 100, 0, false, true);
 var wideDetail = ProfileChrome.Detail(220, 130, 3840, 2160, 125, 0, true, true);
-var chipBox = ProfileChrome.WindowChip(80, 40, 900, 600, 3840, 2160, 10, 20, 220, 140, 46);
-var iconDot = ProfileChrome.IconDot(20, 30, 0, 0, 3840, 2160, 10, 20, 220, 140, 46, new[] { chipBox });
+var chipBox = ProfileChrome.WindowChip(0, 0, 1920, 1080, 3840, 2160, 10, 20, 400, 200);
+var iconDot = ProfileChrome.IconDot(40, 20, 0, 0, 3840, 2160, 10, 20, 400, 200);
 double headerBand = ProfileChrome.BadgeBand(180, 110, true);
-var underChip = ProfileChrome.WindowChip(120, 80, 1400, 900, 3840, 2160, 0, 0, 180, 110, headerBand);
+var underChip = ProfileChrome.WindowChip(0, 0, 1920, 1080, 3840, 2160, 0, 0, 180, 110);
 var wideBoxes = ownerDesk.Select(s => new ProfileBox(s.X, s.Y, s.W, s.H)).ToList();
 var deskScene = ProfileSnap.Fit(wideBoxes, stage.Width, stage.FitHeight, 16);
 int painted = ProfileChrome.PaintedHeight(deskScene.Bounds.H, deskScene.Scale, 16);
-Check("small tiles drop detail and chips stay clear of the number", stage.Width == 700 && stage.FitHeight == 252 && narrowDetail.Length == 0 && midDetail == "2400×1350" && wideDetail.Contains("3840") && wideDetail.Contains("주") && chipBox.Y >= 66 && chipBox.Bottom <= 160 && iconDot.W == 6 && !iconDot.Hits(chipBox) && !iconDot.Hits(new DipRect(10, 20, 220, 46)) && headerBand >= 60 && underChip.Y >= headerBand && underChip.Bottom <= 110 && painted < stage.FitHeight && painted > 70 && ProfileGlyph.Kinds.Length == 9 && ProfileGlyph.Known("ellipsis") && ProfileGlyph.Known("trash"));
+Check("small tiles drop detail and chips keep the real ratio", stage.Width == 700 && stage.FitHeight == 252 && narrowDetail.Length == 0 && midDetail == "2400×1350" && wideDetail.Contains("3840") && wideDetail.Contains("주") && Math.Abs(chipBox.W - 200) < 1.5 && Math.Abs(chipBox.H - 100) < 1.5 && chipBox.Y < 22 && iconDot.W == 6 && headerBand >= 60 && Math.Abs(underChip.W - 90) < 1.5 && underChip.Y < 2 && painted < stage.FitHeight && painted > 70 && ProfileGlyph.Kinds.Length == 11 && ProfileGlyph.Known("lock") && ProfileGlyph.Known("trash"));
+var loose = ProfileSnap.SnapWindow(new ProfileBox(6, 40, 100, 80), new ProfileBox(0, 0, 800, 600), Array.Empty<ProfileBox>(), 1);
+var corner = ProfileSnap.SnapMonitorWithGuide(new ProfileBox(1890, 1050, 400, 300), new[] { new ProfileBox(0, 0, 1920, 1080), new ProfileBox(1920, 0, 1920, 1080), new ProfileBox(0, 1080, 1920, 800) }, 40);
+Check("window edge magnet is tiny and corners snap on both axes", loose.X == 6 && corner.Box.X == 1920 && corner.Box.Y == 1080 && corner.Guide.Corner && !ProfileSnap.ArmZone("left", "left", true) && ProfileSnap.ArmZone("", "left", true), $"loose={loose.X} corner={corner.Box.X},{corner.Box.Y} guide={corner.Guide.X1},{corner.Guide.Y1}-{corner.Guide.X2},{corner.Guide.Y2}/{corner.Guide.X3},{corner.Guide.Y3}-{corner.Guide.X4},{corner.Guide.Y4}");
+string deskStory = ProfileSwitch.DisplayStory();
+string sessionStory = ProfileSwitch.SessionStory();
+string noteStory = NoteLayout.TopologyStory();
+Check("display apply is one commit and keeps the owner desk", deskStory.Length == 0, deskStory);
+Check("leaving a profile restores that session", sessionStory.Length == 0, sessionStory);
+Check("notes ignore a transient work area", noteStory.Length == 0, noteStory);
 string profileRoot = Path.Combine(Path.GetTempPath(), "bonghub_profile_" + Environment.ProcessId);
 try
 {

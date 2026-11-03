@@ -12,6 +12,8 @@
     <Compile Include="..\BongHub\WindowControl.cs" Link="WindowControl.cs" />
     <Compile Include="..\BongHub\PowerToysLogic.cs" Link="PowerToysLogic.cs" />
     <Compile Include="..\BongHub\DisplayPresets.cs" Link="DisplayPresets.cs" />
+    <Compile Include="..\BongHub\DeskArrange.cs" Link="DeskArrange.cs" />
+    <Compile Include="..\BongHub\NoteLayout.cs" Link="NoteLayout.cs" />
     <Compile Include="..\BongHub\KakaoLogic.cs" Link="KakaoLogic.cs" />
     <Compile Include="..\BongHub\CloudSync.cs" Link="CloudSync.cs" />
     <Compile Include="..\BongHub\NoteClip.cs" Link="NoteClip.cs" />

@@ -16,19 +16,22 @@ public partial class MainWindow
     }
 
     public Canvas? ProfileStage { get; private set; }
+    readonly Dictionary<int, Border> monitorFrames = new();
+    public int HoveredMonitor { get; private set; }
+    public string IconSaveNote { get; private set; } = "";
     public FrameworkElement? ProfileWindowList { get; private set; }
     public bool PreviewIcons { get; private set; }
 
-    Button VectorButton(string kind, string tip, Action click)
+    Button VectorButton(string kind, string tip, Action click, string? keep = null, double box = 26)
     {
         var b = new Button
         {
-            Content = ProfileMarks.Icon(kind, 14),
+            Content = ProfileMarks.Icon(kind, box >= 24 ? 14 : 11),
             Style = (Style)FindResource("IconButton"),
-            Width = 26,
-            Height = 26,
+            Width = box,
+            Height = box,
             ToolTip = tip,
-            Tag = "path-icon",
+            Tag = keep ?? "path-icon",
             Margin = new Thickness(2, 0, 0, 0),
             Padding = new Thickness(0),
             FontFamily = (FontFamily)FindResource("UiFont")
@@ -131,6 +134,8 @@ public partial class MainWindow
             TextWrapping = TextWrapping.Wrap
         };
         PageHost.Children.Add(note);
+        if (ProfileApplyNote.Length > 0)
+            PageHost.Children.Add(new TextBlock { Text = ProfileApplyNote, Margin = new Thickness(16, 0, 16, 8), FontSize = 13, Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x9F, 0x0A)), TextWrapping = TextWrapping.Wrap });
         DrawProfileCanvas(profile);
         DrawWindowStrip(profile);
         Header("선택");
@@ -147,8 +152,10 @@ public partial class MainWindow
             ? "아직 이 프로필에 담긴 배치가 없어요."
             : "담긴 " + profile.Icons.Count + "개 · 보이는 " + shown + "개" + (hidden > 0 ? " · 숨김 " + hidden + "개" : "")
               + (profile.IconsSaved.Length == 0 ? "" : " · " + profile.IconsSaved);
-        var save = Small("지금 저장", () => CaptureProfileIcons(profile));
+        var save = Small("배치 저장", () => CaptureProfileIcons(profile));
         Row(icons, "\uE8A9", "34C759", "아이콘 배치", when, save, wrap: true);
+        if (IconSaveNote.Length > 0)
+            Row(icons, "\uE8A5", "34C759", IconSaveNote, "저장한 개수와 시각이에요. 점은 모니터 그림에 바로 나와요.", null, wrap: true);
         string key = ScreenMap.Key(profile.Monitors.Where(m => m.Connected).Select(m => new MonitorSpec(m.W, m.H, m.X, m.Y, m.Primary)));
         string auto = ScreenMap.Describe(key);
         if (DesktopGate.RealAllowed)
@@ -258,7 +265,7 @@ public partial class MainWindow
                 row.Children.Add(label);
                 var tools = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
                 tools.Children.Add(VectorButton("pencil", "수치로 고치기", () => { selectedAppId = item.Id; selectedMonitorNumber = item.Monitor; Render("presets", false); }));
-                tools.Children.Add(VectorButton("trash", "창 빼기", () => RemoveApp(profile, item)));
+                tools.Children.Add(VectorButton("trash", "창 빼기", () => RemoveApp(profile, item), "keep:trash:" + item.Id));
                 Grid.SetColumn(tools, 2);
                 row.Children.Add(tools);
                 row.MouseLeftButtonUp += (_, _) => { selectedAppId = item.Id; selectedMonitorNumber = item.Monitor; Render("presets", false); };
@@ -276,6 +283,8 @@ public partial class MainWindow
         if (windowPickerOpen) stack.Children.Add(PickerBody(profile));
         scroll.Content = stack;
         var list = new Border { Style = (Style)FindResource("Group"), Child = scroll, Margin = new Thickness(0, 8, 0, 0) };
+        list.Tag = "keep:window-list";
+        list.Focusable = true;
         ProfileWindowList = list;
         PageHost.Children.Add(list);
     }
@@ -350,6 +359,9 @@ public partial class MainWindow
             Render("presets", false);
         };
         FieldRow(g, "단축키", Chip(hotkeyBox));
+        string remembered = profile.SessionSaved.Length == 0 ? "아직 남긴 배치가 없어요." : "마지막 기록 " + profile.SessionSaved + " · 창 " + profile.Session.Count + "개";
+        Row(g, "\uE8A5", "5AC8FA", "떠날 때 창 배치 기억", "다른 프로필로 바꾸기 직전에 열린 창을 남기고, 돌아오면 그 자리로 돌려요. 캔버스에 담은 창은 이 기록이 없을 때만 써요. " + remembered, Switch(profile.RememberWindows, v => { profile.RememberWindows = v; SaveProfiles(); }, !AppEnv.ReadOnly), wrap: true);
+        Row(g, "\uE7F8", "8E8E93", "모니터 위치 잠금", "켜 두면 창을 옮기는 동안 모니터가 따라 움직이지 않아요.", Switch(AppSettings.MonitorLocked, v => { AppSettings.SetMonitorLocked(v); Render("presets", false); }, true), wrap: true);
         if (hotkeyMessage.Length > 0)
             Row(g, "\uE7BA", "FF9500", hotkeyMessage, "Esc는 취소, Backspace는 지워요.", null, wrap: true);
         var app = profile.Apps.FirstOrDefault(a => a.Id == selectedAppId);
@@ -366,6 +378,11 @@ public partial class MainWindow
         var y = NumBox(app.Y.ToString());
         var w = NumBox(app.W.ToString());
         var h = NumBox(app.H.ToString());
+        liveX = x; liveY = y; liveW = w; liveH = h; liveAppId = app.Id;
+        x.Tag = "keep:x:" + app.Id;
+        y.Tag = "keep:y:" + app.Id;
+        w.Tag = "keep:w:" + app.Id;
+        h.Tag = "keep:h:" + app.Id;
         void Commit()
         {
             int nx = ParseNum(x.Text, app.X), ny = ParseNum(y.Text, app.Y), nw = ParseNum(w.Text, app.W), nh = ParseNum(h.Text, app.H);
@@ -397,17 +414,17 @@ public partial class MainWindow
     {
         string orient = mon.Orientation == 0 ? "" : " · " + mon.Orientation + "°";
         string state = mon.Connected
-            ? (mon.Enabled ? "이 프로필에서 사용" : "이 프로필에서 끔") + " · " + (mon.Scale <= 0 ? 100 : mon.Scale) + "%" + orient
+            ? (mon.Enabled ? "적용하면 켜 둠" : "적용하면 이 화면을 꺼요") + " · " + (mon.Scale <= 0 ? 100 : mon.Scale) + "%" + orient
             : "연결 안 됨";
         UIElement? primary = mon.Connected ? Small(mon.Primary ? "주 모니터" : "주로 지정", () => { ProfileDoc.SetPrimary(profile, mon.Number); selectedMonitorNumber = mon.Number; SaveProfiles(); Render("presets", false); }) : null;
         Row(g, "\uE7F4", mon.Connected ? "4C8AFE" : "8E8E93", mon.Number + "번 · " + mon.W + "×" + mon.H, state, primary, wrap: true);
         if (!mon.Connected) return;
-        Row(g, "\uE7F4", "34C759", "이 프로필에서 사용", "끄면 적용할 때 이 화면을 빼요.", Switch(mon.Enabled, v =>
+        Row(g, "\uE7F4", "34C759", "이 모니터 켜기", mon.Primary ? "주 모니터라 이 프로필에서도 항상 켜져 있어요." : "끄면 이 프로필을 적용할 때 이 화면을 꺼요. 창 배치와는 별개예요.", Switch(mon.Enabled, v =>
         {
-            if (!ProfileDoc.SetEnabled(profile, mon.Number, v)) return;
+            if (!ProfileDoc.SetEnabled(profile, mon.Number, v)) { Render("presets", false); return; }
             SaveProfiles();
             Render("presets", false);
-        }, !AppEnv.ReadOnly), wrap: true);
+        }, !AppEnv.ReadOnly && !mon.Primary), wrap: true);
         int bright = profile.Brightness.FirstOrDefault(b => string.Equals(b.Monitor, mon.Id, StringComparison.OrdinalIgnoreCase))?.Value ?? -1;
         bool brightOn = bright >= 0;
         Row(g, "\uE706", "FFCC00", "밝기", brightOn ? bright + "%" : "적용할 때 밝기는 그대로 둬요.", Switch(brightOn, v =>
@@ -564,21 +581,29 @@ public partial class MainWindow
         var previewLabel = new TextBlock { Foreground = Brushes.White, FontSize = 13, FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 8, 0, 0), IsHitTestVisible = false };
         preview.Child = previewLabel;
         var guideLine = new Line { Stroke = (Brush)FindResource("Accent"), StrokeThickness = 2, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        var guideLine2 = new Line { Stroke = (Brush)FindResource("Accent"), StrokeThickness = 2, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
         int Vx(double x) => scene.Bounds.X + (int)Math.Round((x - scene.OriginX) / scene.Scale);
         int Vy(double y) => scene.Bounds.Y + (int)Math.Round((y - scene.OriginY) / scene.Scale);
         void ShowGuide(SnapGuide guide)
         {
-            if (!guide.Active) { guideLine.Visibility = Visibility.Collapsed; return; }
+            if (!guide.Active) { guideLine.Visibility = Visibility.Collapsed; guideLine2.Visibility = Visibility.Collapsed; return; }
             var a = ProfileSnap.ToPoint(guide.X1, guide.Y1, scene);
             var b = ProfileSnap.ToPoint(guide.X2, guide.Y2, scene);
             guideLine.X1 = a.X; guideLine.Y1 = a.Y; guideLine.X2 = b.X; guideLine.Y2 = b.Y;
             guideLine.Visibility = Visibility.Visible;
+            if (!guide.Corner) { guideLine2.Visibility = Visibility.Collapsed; return; }
+            var c = ProfileSnap.ToPoint(guide.X3, guide.Y3, scene);
+            var d = ProfileSnap.ToPoint(guide.X4, guide.Y4, scene);
+            guideLine2.X1 = c.X; guideLine2.Y1 = c.Y; guideLine2.X2 = d.X; guideLine2.Y2 = d.Y;
+            guideLine2.Visibility = Visibility.Visible;
         }
         ProfileMonitor? HostAt(int x, int y)
             => profile.Monitors.FirstOrDefault(m => m.Connected && x >= m.X && y >= m.Y && x < m.X + m.W && y < m.Y + m.H)
                ?? profile.Monitors.FirstOrDefault(m => x >= m.X && y >= m.Y && x < m.X + m.W && y < m.Y + m.H)
                ?? profile.Monitors.FirstOrDefault();
+        monitorFrames.Clear();
         var chipSpots = new Dictionary<int, List<DipRect>>();
+        var badges = new List<(FrameworkElement El, DipRect Box)>();
         foreach (var mon in profile.Monitors)
         {
             var box = ProfileSnap.ToCanvas(mon.Box, scene, 8, 8);
@@ -592,7 +617,7 @@ public partial class MainWindow
                 BorderBrush = (Brush)FindResource(mon.Connected ? "Accent" : "Separator"),
                 Background = new SolidColorBrush(Color.FromArgb(mon.Connected ? (byte)36 : (byte)18, 0x4C, 0x8A, 0xFE)),
                 Opacity = !mon.Connected ? 0.38 : mon.Enabled ? 1 : 0.55,
-                Cursor = Cursors.SizeAll
+                Cursor = AppSettings.MonitorLocked ? Cursors.Hand : Cursors.SizeAll
             };
             Canvas.SetLeft(frame, box.X);
             Canvas.SetTop(frame, box.Y);
@@ -621,6 +646,7 @@ public partial class MainWindow
                     Tag = "monitor-label"
                 });
             frame.Child = badge;
+            badges.Add((badge, new DipRect(box.X, box.Y, box.W, Math.Min(box.H, ProfileChrome.BadgeBand(box.W, box.H, detail.Length > 0)))));
             chipSpots[mon.Number] = new List<DipRect>();
             var start = mon.Box;
             var origin = new Point(box.X, box.Y);
@@ -630,6 +656,12 @@ public partial class MainWindow
                 if (e.OriginalSource is Button) return;
                 selectedMonitorNumber = mon.Number;
                 selectedAppId = "";
+                if (AppSettings.MonitorLocked)
+                {
+                    Render("presets", false);
+                    e.Handled = true;
+                    return;
+                }
                 frame.CaptureMouse();
                 grab = e.GetPosition(stage);
                 origin = new Point(Canvas.GetLeft(frame), Canvas.GetTop(frame));
@@ -663,36 +695,20 @@ public partial class MainWindow
                 Render("presets", false);
             };
             frame.Tag = "monitor-tile";
+            monitorFrames[mon.Number] = frame;
             Canvas.SetZIndex(frame, 1);
             stage.Children.Add(frame);
         }
         int tileZ = 10;
-        var counted = new HashSet<int>();
         foreach (var app in profile.Apps)
         {
             var home = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors[0];
             var homeView = ProfileSnap.ToCanvas(home.Box, scene, 8, 8);
-            string homeDetail = ProfileChrome.Detail(homeView.W, homeView.H, home.W, home.H, home.Scale, home.Orientation, home.Primary, home.Connected);
-            double band = ProfileChrome.BadgeBand(homeView.W, homeView.H, homeDetail.Length > 0);
-            int onHome = profile.Apps.Count(a => a.Monitor == home.Number);
-            DipRect chip;
-            string chipText;
-            bool countOnly = ProfileChrome.NeedsCountChip(homeView.W, homeView.H, band, onHome);
-            if (countOnly)
-            {
-                if (!counted.Add(home.Number)) continue;
-                chip = ProfileChrome.CountChip(homeView.X, homeView.Y, homeView.W, homeView.H, band);
-                chipText = "□ " + onHome;
-            }
-            else
-            {
-                chip = ProfileChrome.WindowChip(app.X, app.Y, app.W, app.H, home.W, home.H, homeView.X, homeView.Y, homeView.W, homeView.H, band);
-                string shownName = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
-                chipText = shownName.Length > 0 ? shownName : "창";
-            }
-            if (chip.W < 8 || chip.H < 8) continue;
-            if (chip.Y < homeView.Y + band) chip = new DipRect(chip.X, homeView.Y + band, chip.W, Math.Max(0, chip.Bottom - (homeView.Y + band)));
-            if (chip.H < 12) continue;
+            var chip = ProfileChrome.WindowChip(app.X, app.Y, app.W, app.H, home.W, home.H, homeView.X, homeView.Y, homeView.W, homeView.H);
+            string shownName = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
+            string chipText = shownName.Length > 0 ? shownName : "창";
+            bool countOnly = false;
+            if (chip.W < 2 || chip.H < 2) continue;
             if (chipSpots.TryGetValue(home.Number, out var spots)) spots.Add(chip);
             bool selectedTile = app.Id == selectedAppId;
             var tile = new Border
@@ -735,6 +751,10 @@ public partial class MainWindow
             head.Children.Add(nameBlock);
             var body = new Grid();
             body.Children.Add(head);
+            var chipTools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = selectedTile ? Visibility.Visible : Visibility.Collapsed, Tag = "chip-tools" };
+            chipTools.Children.Add(VectorButton("pencil", "수치로 고치기", () => { selectedAppId = app.Id; selectedMonitorNumber = app.Monitor; Render("presets", false); }, "keep:edit:" + app.Id, 20));
+            chipTools.Children.Add(VectorButton("trash", "창 빼기", () => RemoveApp(profile, app), "keep:trash:" + app.Id, 20));
+            body.Children.Add(chipTools);
             if (chip.H >= 40)
             {
                 var size = new TextBlock
@@ -750,10 +770,13 @@ public partial class MainWindow
                 body.Children.Add(size);
             }
             tile.Child = body;
-            tile.MouseEnter += (_, _) => Canvas.SetZIndex(tile, 50);
+            tile.MouseEnter += (_, _) => { chipTools.Visibility = Visibility.Visible; Canvas.SetZIndex(tile, 50); };
+            tile.MouseLeave += (_, _) => { if (app.Id != selectedAppId) chipTools.Visibility = Visibility.Collapsed; };
             double chipX = chip.X, chipY = chip.Y;
             var appStart = new ProfileBox(home.X + app.X, home.Y + app.Y, app.W, app.H);
             string edge = "";
+            string startedKind = "";
+            bool leftZone = false;
             Point grab = default;
             tile.MouseMove += (_, e) =>
             {
@@ -770,6 +793,10 @@ public partial class MainWindow
                 tile.CaptureMouse();
                 grab = e.GetPosition(tile);
                 edge = EdgeAt(grab, tile.ActualWidth, tile.ActualHeight);
+                int sx = Vx(chipX + grab.X), sy = Vy(chipY + grab.Y);
+                var startHost = HostAt(sx, sy) ?? home;
+                startedKind = ProfileSnap.PreviewAt(sx, sy, startHost.Box).Kind;
+                leftZone = startedKind.Length == 0;
                 tile.Cursor = CursorFor(edge);
                 e.Handled = true;
             };
@@ -780,10 +807,35 @@ public partial class MainWindow
                 int px = Vx(p.X), py = Vy(p.Y);
                 var host = HostAt(px, py);
                 if (host == null) return;
-                if (edge.Length == 0)
+                PaintMonitorHover(host.Number);
+                int vdxLive = (int)Math.Round((p.X - (chipX + grab.X)) / scene.Scale);
+                int vdyLive = (int)Math.Round((p.Y - (chipY + grab.Y)) / scene.Scale);
+                bool movedFar = Math.Abs(p.X - (chipX + grab.X)) + Math.Abs(p.Y - (chipY + grab.Y)) > 6;
+                if (edge.Length > 0)
+                {
+                    preview.Visibility = Visibility.Collapsed;
+                    var resized = ProfileSnap.Resize(appStart, host.Box, edge, vdxLive, vdyLive, 120);
+                    var hostView = ProfileSnap.ToCanvas(host.Box, scene, 8, 8);
+                    var view = ProfileChrome.WindowChip(resized.X - host.X, resized.Y - host.Y, resized.W, resized.H, host.W, host.H, hostView.X, hostView.Y, hostView.W, hostView.H);
+                    if (view.W >= 2 && view.H >= 2)
+                    {
+                        tile.Width = view.W;
+                        tile.Height = view.H;
+                        Canvas.SetLeft(tile, view.X);
+                        Canvas.SetTop(tile, view.Y);
+                    }
+                    app.X = resized.X - host.X;
+                    app.Y = resized.Y - host.Y;
+                    app.W = resized.W;
+                    app.H = resized.H;
+                    SyncLiveFields(app);
+                }
+                else
                 {
                     var hit = ProfileSnap.PreviewAt(px, py, host.Box);
-                    if (hit.Kind.Length > 0)
+                    if (startedKind.Length > 0 && hit.Kind != startedKind) leftZone = true;
+                    bool arm = ProfileSnap.ArmZone(leftZone ? "" : startedKind, hit.Kind, movedFar);
+                    if (arm)
                     {
                         var c = ProfileSnap.ToCanvas(hit.Box, scene);
                         preview.Width = c.W;
@@ -794,9 +846,9 @@ public partial class MainWindow
                         preview.Visibility = Visibility.Visible;
                     }
                     else preview.Visibility = Visibility.Collapsed;
+                    Canvas.SetLeft(tile, p.X - grab.X);
+                    Canvas.SetTop(tile, p.Y - grab.Y);
                 }
-                Canvas.SetLeft(tile, edge.Length == 0 ? p.X - grab.X : Canvas.GetLeft(tile));
-                Canvas.SetTop(tile, edge.Length == 0 ? p.Y - grab.Y : Canvas.GetTop(tile));
             };
             tile.MouseLeftButtonUp += (_, e) =>
             {
@@ -820,7 +872,10 @@ public partial class MainWindow
                 else
                 {
                     var hit = ProfileSnap.PreviewAt(px, py, host.Box);
-                    if (hit.Kind.Length > 0)
+                    bool movedFar = Math.Abs(p.X - (chipX + grab.X)) + Math.Abs(p.Y - (chipY + grab.Y)) > 6;
+                    if (startedKind.Length > 0 && hit.Kind != startedKind) leftZone = true;
+                    bool arm = ProfileSnap.ArmZone(leftZone ? "" : startedKind, hit.Kind, movedFar);
+                    if (arm && hit.Kind.Length > 0)
                     {
                         app.Monitor = host.Number;
                         app.State = hit.Kind;
@@ -835,7 +890,7 @@ public partial class MainWindow
                         var (index, local) = ProfileSnap.Transfer(moved, profile.Monitors.Select(m => m.Box).ToList());
                         var landed = profile.Monitors[index];
                         var siblings = profile.Apps.Where(a => a != app && a.Monitor == landed.Number).Select(a => new ProfileBox(landed.X + a.X, landed.Y + a.Y, a.W, a.H)).ToList();
-                        var snapped = ProfileSnap.SnapWindow(new ProfileBox(landed.X + local.X, landed.Y + local.Y, local.W, local.H), landed.Box, siblings, 1);
+                        var snapped = ProfileSnap.SnapWindow(new ProfileBox(landed.X + local.X, landed.Y + local.Y, local.W, local.H), landed.Box, siblings, 1, ProfileSnap.EdgeSlop(scene.Scale));
                         app.Monitor = landed.Number;
                         app.X = snapped.X - landed.X;
                         app.Y = snapped.Y - landed.Y;
@@ -855,10 +910,7 @@ public partial class MainWindow
                 var home = profile.Monitors.FirstOrDefault(m => icon.X >= m.X && icon.Y >= m.Y && icon.X < m.X + m.W && icon.Y < m.Y + m.H);
                 if (home == null) continue;
                 var homeView = ProfileSnap.ToCanvas(home.Box, scene, 8, 8);
-                string homeDetail = ProfileChrome.Detail(homeView.W, homeView.H, home.W, home.H, home.Scale, home.Orientation, home.Primary, home.Connected);
-                double band = ProfileChrome.BadgeBand(homeView.W, homeView.H, homeDetail.Length > 0);
-                chipSpots.TryGetValue(home.Number, out var occupied);
-                var dot = ProfileChrome.IconDot(icon.X, icon.Y, home.X, home.Y, home.W, home.H, homeView.X, homeView.Y, homeView.W, homeView.H, band, occupied);
+                var dot = ProfileChrome.IconDot(icon.X, icon.Y, home.X, home.Y, home.W, home.H, homeView.X, homeView.Y, homeView.W, homeView.H);
                 if (dot.W < 1) continue;
                 var mark = new Ellipse
                 {
@@ -874,9 +926,27 @@ public partial class MainWindow
                 Canvas.SetZIndex(mark, 3);
                 stage.Children.Add(mark);
             }
+        foreach (var badge in badges)
+        {
+            bool covered = false;
+            foreach (var spots in chipSpots.Values)
+                if (spots.Any(s => s.Hits(badge.Box))) { covered = true; break; }
+            badge.El.Opacity = covered ? 0.28 : 1;
+        }
+        var lockBtn = VectorButton(AppSettings.MonitorLocked ? "lock" : "unlock", AppSettings.MonitorLocked ? "모니터 위치가 잠겨 있어요" : "모니터 위치를 잠글 수 있어요", () =>
+        {
+            AppSettings.SetMonitorLocked(!AppSettings.MonitorLocked);
+            Render("presets", false);
+        }, "monitor-lock", 28);
+        Canvas.SetLeft(lockBtn, Math.Max(8, cw - 44));
+        Canvas.SetTop(lockBtn, 8);
+        Canvas.SetZIndex(lockBtn, 80);
+        stage.Children.Add(lockBtn);
         Canvas.SetZIndex(guideLine, 90);
+        Canvas.SetZIndex(guideLine2, 90);
         Canvas.SetZIndex(preview, 5);
         stage.Children.Add(guideLine);
+        stage.Children.Add(guideLine2);
         stage.Children.Add(preview);
         PageHost.Children.Add(stage);
     }
@@ -988,28 +1058,117 @@ public partial class MainWindow
         menu.IsOpen = true;
     }
 
+    public void RequestCaptureProfileIcons()
+    {
+        var profile = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId) ?? Profiles.FirstOrDefault();
+        if (profile != null) CaptureProfileIcons(profile);
+    }
+
     void CaptureProfileIcons(MonitorProfile profile)
     {
-        if (!DesktopGate.RealAllowed)
+        if (DesktopGate.RealAllowed)
         {
-            DesktopBlocks++;
-            DesktopAction = "blocked";
+            try
+            {
+                using var icons = new ExplorerIconSurface();
+                StoreIcons(profile, icons.Read(), auto: true);
+            }
+            catch (Exception ex) { DesktopAction = ex.Message; IconSaveNote = ex.Message; Render("presets", false); }
             return;
         }
-        try
+        if (IconPreview.Source != null)
         {
-            using var icons = new ExplorerIconSurface();
-            var current = icons.Read();
-            profile.Icons = ProfileDoc.CaptureIcons(current);
-            foreach (var icon in profile.Icons) icon.Show = true;
-            profile.IconsSaved = DateTime.Now.ToString("M월 d일 HH:mm");
-            if (profile.Icons.Count > 0) profile.DeskLayout = "";
+            StoreIcons(profile, IconPreview.Source(), auto: false);
+            return;
+        }
+        DesktopBlocks++;
+        DesktopAction = "blocked";
+        IconSaveNote = "바탕화면을 읽지 않았어요.";
+        Render("presets", false);
+    }
+
+    void StoreIcons(MonitorProfile profile, IReadOnlyList<DeskIcon> current, bool auto)
+    {
+        profile.Icons = ProfileDoc.CaptureIcons(current);
+        foreach (var icon in profile.Icons) icon.Show = true;
+        profile.IconsSaved = DateTime.Now.ToString("M월 d일 HH:mm");
+        PreviewIcons = true;
+        IconSaveNote = profile.Icons.Count + "개를 저장했어요 · " + profile.IconsSaved;
+        if (profile.Icons.Count > 0) profile.DeskLayout = "";
+        if (auto)
+        {
             var key = ScreenMap.Key(profile.Monitors.Where(m => m.Connected).Select(m => new MonitorSpec(m.W, m.H, m.X, m.Y, m.Primary)));
             try { IconLibrary.SaveAuto(LayoutStore.Default, current, key); } catch { }
-            SaveProfiles();
-            Render("presets", false);
         }
-        catch (Exception ex) { DesktopAction = ex.Message; }
+        SaveProfiles();
+        Render("presets", false);
+    }
+
+    TextBox? liveX, liveY, liveW, liveH;
+    string liveAppId = "";
+
+    void SyncLiveFields(ProfileApp app)
+    {
+        if (liveAppId != app.Id) return;
+        if (liveX != null) liveX.Text = app.X.ToString();
+        if (liveY != null) liveY.Text = app.Y.ToString();
+        if (liveW != null) liveW.Text = app.W.ToString();
+        if (liveH != null) liveH.Text = app.H.ToString();
+    }
+
+    void PaintMonitorHover(int number)
+    {
+        HoveredMonitor = number;
+        foreach (var pair in monitorFrames)
+        {
+            bool hot = pair.Key == number;
+            pair.Value.BorderThickness = new Thickness(hot ? 3 : pair.Key == selectedMonitorNumber ? 2 : 1);
+            pair.Value.Tag = hot ? "monitor-hot" : "monitor-tile";
+            if (hot) pair.Value.Background = new SolidColorBrush(Color.FromArgb(0x77, 0x4C, 0x8A, 0xFE));
+        }
+    }
+
+    public bool NudgeMonitor(int number, int dx, int dy)
+    {
+        if (AppSettings.MonitorLocked) return false;
+        var profile = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId) ?? Profiles.FirstOrDefault();
+        var mon = profile?.Monitors.FirstOrDefault(m => m.Number == number);
+        if (profile == null || mon == null) return false;
+        var others = profile.Monitors.Where(m => m != mon).Select(m => m.Box).ToList();
+        var snapped = ProfileSnap.SnapMonitor(new ProfileBox(mon.X + dx, mon.Y + dy, mon.W, mon.H), others, 48);
+        mon.X = snapped.X;
+        mon.Y = snapped.Y;
+        SaveProfiles();
+        Render("presets", false);
+        return true;
+    }
+
+    public bool ResizeChipLive(string appId, string edge, int dx, int dy)
+    {
+        var profile = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId) ?? Profiles.FirstOrDefault();
+        var app = profile?.Apps.FirstOrDefault(a => a.Id == appId);
+        var mon = profile?.Monitors.FirstOrDefault(m => m.Number == app?.Monitor);
+        if (profile == null || app == null || mon == null) return false;
+        selectedAppId = app.Id;
+        var resized = ProfileSnap.Resize(new ProfileBox(mon.X + app.X, mon.Y + app.Y, app.W, app.H), mon.Box, edge, dx, dy, 120);
+        app.X = resized.X - mon.X;
+        app.Y = resized.Y - mon.Y;
+        app.W = resized.W;
+        app.H = resized.H;
+        Render("presets", false);
+        SyncLiveFields(app);
+        return true;
+    }
+
+    public void HoverChip(int monitorNumber) => PaintMonitorHover(monitorNumber);
+
+    public bool RemoveShownApp()
+    {
+        var profile = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId) ?? Profiles.FirstOrDefault();
+        var app = profile?.Apps.FirstOrDefault();
+        if (profile == null || app == null) return false;
+        RemoveApp(profile, app);
+        return true;
     }
 
     void RestoreSelectedIcons(MonitorProfile profile, IReadOnlyList<string> names)
@@ -1095,6 +1254,8 @@ static class ProfileMarks
             {
                 "trash" => "M6,1.4 H10 L10.7,3.1 H14.2 V4.6 H1.8 V3.1 H5.3 Z M3.5,6 H12.5 L11.7,14.6 H4.3 Z",
                 "pencil" => "M11.4,1.6 L14.4,4.6 L5.4,13.6 L2,14.2 L2.6,10.8 Z",
+                "lock" => "M5.1,7.2 H10.9 V4.7 C10.9,3.1 9.6,2 8,2 C6.4,2 5.1,3.1 5.1,4.7 Z M3.2,7 H12.8 V14.6 H3.2 Z",
+                "unlock" => "M5.1,7.2 H10.9 V4.2 H12.4 V2.6 H9.4 V4.7 C9.4,3.1 8.2,2 6.8,2 C5.2,2 4,3.2 4,4.8 V7.2 H3.2 V14.6 H12.8 V7.2 Z",
                 "pin" => "M8,1.4 C5.8,1.4 4.6,3 4.6,4.6 V8 L2.6,10.6 H7.2 V14.6 H8.8 V10.6 H13.4 L11.4,8 V4.6 C11.4,3 10.2,1.4 8,1.4 Z",
                 "min" => "M2.4,7.1 H13.6 V8.9 H2.4 Z",
                 "undo" => "M3.2,7.2 L7.4,3 L7.4,5.4 L12.6,5.4 L12.6,9.2 L7.4,9.2 L7.4,11.6 Z",

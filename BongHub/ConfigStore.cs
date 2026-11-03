@@ -271,14 +271,38 @@ public static class ConfigStore
 public static class AppSettings
 {
     public static bool ReduceMotion { get; private set; }
+    /// <summary>When on, monitor tiles on the profile canvas do not drag. Missing JSON means on.</summary>
+    public static bool MonitorLocked { get; private set; } = true;
     public static void Load()
     {
-        try { if (File.Exists(AppEnv.SettingsPath) && JsonNode.Parse(File.ReadAllText(AppEnv.SettingsPath)) is JsonObject o) ReduceMotion = o["ReduceMotion"]?.GetValue<bool>() ?? false; } catch { }
+        try
+        {
+            if (File.Exists(AppEnv.SettingsPath) && JsonNode.Parse(File.ReadAllText(AppEnv.SettingsPath)) is JsonObject o)
+            {
+                ReduceMotion = o["ReduceMotion"]?.GetValue<bool>() ?? false;
+                MonitorLocked = o["MonitorLocked"] == null || (o["MonitorLocked"]?.GetValue<bool>() ?? true);
+            }
+        }
+        catch { }
         Fx.Enabled = !ReduceMotion;
     }
     public static void SetReduceMotion(bool v)
     {
         ReduceMotion = v; Fx.Enabled = !v;
-        try { Directory.CreateDirectory(Path.GetDirectoryName(AppEnv.SettingsPath)!); File.WriteAllText(AppEnv.SettingsPath, new JsonObject { ["ReduceMotion"] = v }.ToJsonString()); } catch { }
+        Write();
+    }
+    public static void SetMonitorLocked(bool v)
+    {
+        MonitorLocked = v;
+        Write();
+    }
+    static void Write()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(AppEnv.SettingsPath)!);
+            File.WriteAllText(AppEnv.SettingsPath, new JsonObject { ["ReduceMotion"] = ReduceMotion, ["MonitorLocked"] = MonitorLocked }.ToJsonString());
+        }
+        catch { }
     }
 }
