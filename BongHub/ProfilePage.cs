@@ -283,15 +283,27 @@ public partial class MainWindow
             var inner = new Grid();
             inner.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             inner.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var title = new TextBlock
+            var titleRow = new StackPanel { Orientation = Orientation.Horizontal };
+            var face = AppFace(item.Process, item.Path);
+            if (face is FrameworkElement faceEl)
+            {
+                faceEl.Width = 16;
+                faceEl.Height = 16;
+                faceEl.Margin = new Thickness(0, 0, 6, 0);
+                faceEl.VerticalAlignment = VerticalAlignment.Center;
+            }
+            titleRow.Children.Add(face);
+            titleRow.Children.Add(new TextBlock
             {
                 Text = (mon != null ? mon.Number + "  " : "") + (name.Length > 0 ? name : "창"),
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
                 TextTrimming = TextTrimming.CharacterEllipsis,
-                TextWrapping = TextWrapping.NoWrap
-            };
-            inner.Children.Add(title);
+                TextWrapping = TextWrapping.NoWrap,
+                VerticalAlignment = VerticalAlignment.Center,
+                MaxWidth = 110
+            });
+            inner.Children.Add(titleRow);
             var foot = new DockPanel { Margin = new Thickness(0, 3, 0, 0), LastChildFill = true };
             var tools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             tools.Children.Add(VectorButton("pencil", "수치로 고치기", () => { selectedAppId = item.Id; selectedMonitorNumber = item.Monitor; Render("presets", false); }, null, 18));
@@ -791,7 +803,7 @@ public partial class MainWindow
                 Width = chip.W,
                 Height = chip.H,
                 CornerRadius = new CornerRadius(parked ? 8 : 10),
-                Background = new SolidColorBrush(Color.FromArgb(0xE6, 0x1C, 0x1C, 0x1E)),
+                Background = new SolidColorBrush(Color.FromArgb(0xF5, 0x1C, 0x1C, 0x1E)),
                 BorderBrush = selectedTile ? (Brush)FindResource("Accent") : new SolidColorBrush(Color.FromArgb(0x66, 255, 255, 255)),
                 BorderThickness = new Thickness(selectedTile ? 2 : 1),
                 Cursor = Cursors.SizeAll,
@@ -806,7 +818,7 @@ public partial class MainWindow
             double toolBand = toolBox * 2 + 6;
             bool showIcon = !countOnly && contentInset.Icon >= 10 && chip.W >= toolBand + 46;
             double nameFont = chip.W < 70 || chip.H < 34 ? 10 : 12;
-            double nameMax = Math.Max(28, chip.W - 10 - (tallChip ? 0 : toolBand) - (showIcon ? contentInset.Icon + 6 : 0));
+            double nameMax = Math.Max(28, chip.W - 12 - (showIcon ? contentInset.Icon + 6 : 0));
             var nameBlock = new TextBlock
             {
                 Text = chipText,
@@ -820,7 +832,9 @@ public partial class MainWindow
                 MaxWidth = nameMax,
                 IsHitTestVisible = false
             };
-            var body = new Grid { Margin = new Thickness(4, tallChip ? 3 + contentInset.Top : 2, 3, 2) };
+            var body = new Grid { Margin = new Thickness(4, 2, 3, 2) };
+            body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var lines = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Left };
             if (showIcon)
             {
@@ -858,11 +872,13 @@ public partial class MainWindow
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = tallChip ? VerticalAlignment.Bottom : VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 1, 0, 0),
                 Visibility = showTools ? Visibility.Visible : Visibility.Hidden,
                 IsHitTestVisible = showTools,
                 Tag = "chip-tools"
             };
+            Grid.SetRow(chipTools, 1);
             chipTools.Children.Add(VectorButton("pencil", "수치로 고치기", () => { selectedAppId = app.Id; selectedMonitorNumber = app.Monitor; Render("presets", false); }, "keep:edit:" + app.Id, toolBox));
             chipTools.Children.Add(VectorButton("trash", "창 빼기", () => RemoveApp(profile, app), "keep:trash:" + app.Id, toolBox));
             body.Children.Add(chipTools);
