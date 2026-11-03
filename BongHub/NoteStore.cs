@@ -185,20 +185,24 @@ public static class NoteColors
 {
     public static readonly string[] Keys = { "yellow", "green", "pink", "purple", "blue", "gray", "charcoal" };
     public static readonly string[] Names = { "노랑", "초록", "분홍", "보라", "파랑", "회색", "차콜" };
-    static readonly Color[] swatch = { C(214, 197, 143), C(132, 184, 144), C(217, 155, 186), C(197, 182, 226), C(144, 174, 218), C(173, 173, 179), C(52, 52, 58) };
-    static readonly Color[] partner = { C(224, 169, 148), C(144, 193, 189), C(193, 162, 230), C(211, 152, 220), C(155, 180, 228), C(181, 183, 191), C(40, 41, 54) };
+    static readonly Color[] swatch = { C(79, 69, 46), C(47, 79, 58), C(97, 60, 72), C(82, 64, 99), C(55, 71, 94), C(70, 71, 74), C(58, 59, 64) };
+    static readonly Color[] partner = { C(65, 55, 34), C(35, 65, 45), C(79, 44, 56), C(64, 47, 82), C(40, 56, 77), C(53, 56, 61), C(44, 45, 52) };
     public static readonly string[][] Gradients = {
-        new[] { "g:blocks", "블록", "93AEE2", "D9A8E1" }, new[] { "g:aurora", "오로라", "86BCDF", "ADA6E7" }, new[] { "g:grape", "포도", "C2AEEA", "D398DC" },
-        new[] { "g:lagoon", "라군", "83C8C4", "93AEE2" }, new[] { "g:mint", "민트", "6AC39F", "7FB2D7" }, new[] { "g:forest", "숲", "90C59C", "73B9B1" },
-        new[] { "g:lemon", "레몬", "CBBF6C", "9AC087" }, new[] { "g:peach", "복숭아", "DBAD76", "E396B6" }, new[] { "g:sunset", "노을", "DE9F82", "D79DB9" },
-        new[] { "g:ember", "불씨", "E09B8A", "D2ADC7" }, new[] { "g:rose", "장미", "E396AF", "C4A6E7" }, new[] { "g:ocean", "바다", "86B4DF", "ACA6E7" },
-        new[] { "g:night", "밤하늘", "464B69", "33334F" }, new[] { "g:slate", "슬레이트", "484B52", "464B57" },
-        new[] { "g:sage", "세이지", "A9AEA3", "B2B6AF" }, new[] { "g:dustrose", "더스티 로즈", "BCA9AC", "C1B8BB" }, new[] { "g:mauve", "모브", "524950", "524B54" },
-        new[] { "g:bluegray", "블루 그레이", "A4ADB2", "B0B6BA" }, new[] { "g:sand", "샌드", "B3AB9D", "B9B4AC" }, new[] { "g:clay", "클레이", "BBA99F", "C1B6AE" },
-        new[] { "g:olive", "올리브", "AEAD9E", "B7B6A9" }, new[] { "g:ink", "잉크", "494E55", "474C54" }, new[] { "g:lavendergray", "라벤더 그레이", "ADACB9", "B9B9C1" },
-        new[] { "g:petrol", "페트롤", "414D4B", "3F4E4B" }, new[] { "g:cocoa", "코코아", "554C47", "544A45" }, new[] { "g:rosetaupe", "로즈 토프", "B8ABA8", "BFB7B5" },
-        new[] { "g:mist", "미스트", "989894", "70706C" }, new[] { "g:mustard", "머스터드", "B3AC93", "BBB59F" }, new[] { "g:deepteal", "딥 틸", "3E4D4B", "404E4C" },
-        new[] { "g:plumgray", "플럼 그레이", "504C52", "4F4B52" }, new[] { "g:smoke", "스모크", "AAADB0", "B5B8BA" }, new[] { "g:terracotta", "테라코타", "594A43", "594A43" } };
+        new[] { "g:mint", "민트", "2E4C46", "223F39" }, new[] { "g:peach", "복숭아", "594334", "493426" },
+        new[] { "g:rose", "장미", "633C42", "522C32" }, new[] { "g:lagoon", "라군", "2E4C4F", "223E41" },
+        new[] { "g:olive", "올리브", "464A32", "393D26" }, new[] { "g:sand", "샌드", "4C463C", "3F382D" },
+        new[] { "g:night", "밤하늘", "424461", "31344F" }, new[] { "g:cocoa", "코코아", "54423B", "45342C" },
+        new[] { "g:ocean", "바다", "344954", "273B45" } };
+    /// <summary>Older preset names still open. They render as the nearest current color.</summary>
+    static readonly Dictionary<string, string> Alias = new(StringComparer.Ordinal)
+    {
+        ["g:blocks"] = "g:ocean", ["g:aurora"] = "g:ocean", ["g:grape"] = "purple", ["g:forest"] = "green",
+        ["g:lemon"] = "yellow", ["g:sunset"] = "g:peach", ["g:ember"] = "g:peach", ["g:slate"] = "gray",
+        ["g:sage"] = "g:olive", ["g:dustrose"] = "pink", ["g:mauve"] = "purple", ["g:bluegray"] = "gray",
+        ["g:clay"] = "g:sand", ["g:ink"] = "charcoal", ["g:lavendergray"] = "purple", ["g:petrol"] = "g:lagoon",
+        ["g:rosetaupe"] = "pink", ["g:mist"] = "gray", ["g:mustard"] = "yellow", ["g:deepteal"] = "g:lagoon",
+        ["g:plumgray"] = "purple", ["g:smoke"] = "gray", ["g:terracotta"] = "g:cocoa"
+    };
     public static readonly Color Text = C(240, 240, 246);
     public static readonly Color DarkText = C(28, 28, 30);
     /// <summary>Foreground stored by 1.2 notes beside <see cref="Text"/>. It is not a chosen color.</summary>
@@ -207,14 +211,8 @@ public static class NoteColors
     public static bool IsAutomaticInk(Color c)
         => Rgb(c, Text) || Rgb(c, DarkText) || Rgb(c, LegacyText);
     static bool Rgb(Color a, Color b) => a.R == b.R && a.G == b.G && a.B == b.B;
-    /// <summary>Dark ink on a light note, light ink on a dark note. Title and body share it.</summary>
-    public static Color Ink(string? key)
-    {
-        string k = string.IsNullOrEmpty(key) ? "g:blocks" : key!;
-        var a = SurfA(k);
-        var b = SurfB(k);
-        return Cover(DarkText, a, b) >= Cover(Text, a, b) ? DarkText : Text;
-    }
+    /// <summary>Notes always use the light ink. Presets are dark enough for it.</summary>
+    public static Color Ink(string? key) => Text;
     /// <summary>iOS blue, darkened on light notes and lightened on dark notes.</summary>
     public static Color LinkInk(string? key)
     {
@@ -243,12 +241,13 @@ public static class NoteColors
     public static bool Valid(string? k)
     {
         if (string.IsNullOrEmpty(k)) return false;
-        if (I(k) >= 0 || Gradients.Any(g => g[0] == k)) return true;
+        if (I(k) >= 0 || Gradients.Any(g => g[0] == k) || Alias.ContainsKey(k)) return true;
         if (k.StartsWith("c:")) { var p = k.Split(':'); try { return p.Length == 3 && p[1].Length == 6 && p[2].Length == 6 && Hex(p[1]).A == 255 && Hex(p[2]).A == 255; } catch { } }
         return false;
     }
     public static void Raw(string k, out Color a, out Color b)
     {
+        if (Alias.TryGetValue(k, out var mapped)) k = mapped;
         int i = I(k); if (i >= 0) { a = swatch[i]; b = partner[i]; return; }
         var g = Gradients.FirstOrDefault(x => x[0] == k); if (g != null) { a = Hex(g[2]); b = Hex(g[3]); return; }
         if (k.StartsWith("c:")) { var p = k.Split(':'); try { a = Hex(p[1]); b = Hex(p[2]); return; } catch { } }
@@ -261,30 +260,25 @@ public static class NoteColors
     public static Color SurfB(string k) { Raw(k, out var a, out var b); return Face(a, b).b; }
     public static Color Swatch(string k) { Raw(k, out var a, out var b); return Face(a, b).a; }
     public static Color SwatchB(string k) { Raw(k, out var a, out var b); return Face(a, b).b; }
-    /// <summary>Solid ratio the pixel sampler still clears. Rendered text reads a little under this.</summary>
-    const double InkNeed = 7.35;
+    /// <summary>White text has to clear this on a custom color. Presets already do.</summary>
+    const double InkNeed = 4.5;
     static readonly Dictionary<(int, int), (Color a, Color b)> faces = new();
     static double Cover(Color ink, Color a, Color b)
         => Math.Min(Contrast(ink, a), Math.Min(Contrast(ink, b), Contrast(ink, Mix(a, b, 0.5))));
     /// <summary>
-    /// A mid stop where neither black nor the light ink reaches 7:1 is mixed toward white
-    /// until dark text does. A dark note mixes the light end toward black so light text does.
-    /// The mix stays on the line to white or black, so the hue holds.
+    /// A custom color that is too light for white text is walked toward black.
+    /// The mix stays on that line, so the hue holds. Presets are already dark enough and are not changed.
     /// </summary>
     static (Color a, Color b) Face(Color a, Color b)
     {
         var key = ((a.R << 16) | (a.G << 8) | a.B, (b.R << 16) | (b.G << 8) | b.B);
         if (faces.TryGetValue(key, out var hit)) return hit;
-        double dark = Cover(DarkText, a, b), light = Cover(Text, a, b);
-        if (dark < InkNeed && light < InkNeed)
+        if (Cover(Text, a, b) < InkNeed)
         {
-            bool useDark = dark >= light;
-            Color ink = useDark ? DarkText : Text;
-            Color toward = useDark ? Colors.White : Colors.Black;
-            for (int n = 0; n < 48 && Cover(ink, a, b) < InkNeed; n++)
+            for (int n = 0; n < 64 && Cover(Text, a, b) < InkNeed; n++)
             {
-                if (Contrast(ink, a) <= Contrast(ink, b)) a = Nudge(a, toward);
-                else b = Nudge(b, toward);
+                if (Contrast(Text, a) <= Contrast(Text, b)) a = Nudge(a, Colors.Black);
+                else b = Nudge(b, Colors.Black);
             }
         }
         var made = (a, b);
@@ -297,7 +291,7 @@ public static class NoteColors
         return n != x ? n : C(Step(x.R, toward.R), Step(x.G, toward.G), Step(x.B, toward.B));
     }
     static byte Step(byte v, byte dest) => v == dest ? v : (byte)(v + (dest > v ? 1 : -1));
-    public static string Name(string k) { int i = I(k); if (i >= 0) return Names[i]; var g = Gradients.FirstOrDefault(x => x[0] == k); return g != null ? g[1] : k.StartsWith("c:") ? "맞춤" : "블록"; }
+    public static string Name(string k) { if (Alias.TryGetValue(k, out var mapped)) k = mapped; int i = I(k); if (i >= 0) return Names[i]; var g = Gradients.FirstOrDefault(x => x[0] == k); return g != null ? g[1] : k.StartsWith("c:") ? "맞춤" : "블록"; }
     public static string Custom(Color a, Color b) => "c:" + a.R.ToString("X2") + a.G.ToString("X2") + a.B.ToString("X2") + ":" + b.R.ToString("X2") + b.G.ToString("X2") + b.B.ToString("X2");
     public static bool TryCustom(string textA, string textB, out string key)
     {

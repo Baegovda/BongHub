@@ -352,9 +352,16 @@ public sealed class ExplorerIconSurface : IIconSurface
 
     public bool AutoArrange => lv != IntPtr.Zero && (GetWindowLongW(lv, -16) & 0x0100) != 0;
 
+    public int OriginX { get; private set; }
+    public int OriginY { get; private set; }
+
     public IReadOnlyList<DeskIcon> Read()
     {
         var res = new List<DeskIcon>();
+        Send(lv, 0x1029, 0, mem.ToInt64());
+        var origin = ReadMem(0, 8);
+        OriginX = BitConverter.ToInt32(origin, 0);
+        OriginY = BitConverter.ToInt32(origin, 4);
         int n = (int)Send(lv, 0x1004, 0, 0);
         bool x64 = IntPtr.Size == 8;
         const int itemOff = 64, textOff = 512;

@@ -1,0 +1,1212 @@
+﻿{
+    "capturedAt":  "2026-11-04T04:39:17.7038823+09:00",
+    "is64":  true,
+    "dpiSetup":  {
+                     "setProcessPMv2":  true,
+                     "lastError":  203,
+                     "threadAwareness":  2
+                 },
+    "monitors":  [
+                     {
+                         "hmon":  624820819,
+                         "enumRect":  {
+                                          "left":  -1921,
+                                          "top":  -1080,
+                                          "right":  -1,
+                                          "bottom":  0,
+                                          "w":  1920,
+                                          "h":  1080
+                                      },
+                         "device":  "\\\\.\\DISPLAY4",
+                         "rcMonitor":  {
+                                           "left":  -1921,
+                                           "top":  -1080,
+                                           "right":  -1,
+                                           "bottom":  0,
+                                           "w":  1920,
+                                           "h":  1080
+                                       },
+                         "rcWork":  {
+                                        "left":  -1921,
+                                        "top":  -1080,
+                                        "right":  -1,
+                                        "bottom":  -48,
+                                        "w":  1920,
+                                        "h":  1032
+                                    },
+                         "primary":  false,
+                         "dpiEffective":  96,
+                         "dpiEffectiveHr":  0,
+                         "dpiAngular":  68,
+                         "dpiRaw":  "69x69",
+                         "dmPosition":  "-1921,-1080",
+                         "dmPelsWidth":  1920,
+                         "dmPelsHeight":  1080,
+                         "dmFreq":  60,
+                         "dmOrientation":  0,
+                         "dmBpp":  32,
+                         "adapterString":  "NVIDIA GeForce RTX 4090",
+                         "adapterId":  "PCI\\VEN_10DE\u0026DEV_2684\u0026SUBSYS_40C01458\u0026REV_A1",
+                         "adapterState":  1,
+                         "adapterKey":  "\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Video\\{CBACB680-5D23-11F1-BC41-9518E1234DB8}\\0003",
+                         "monitorDevices":  [
+                                                {
+                                                    "name":  "\\\\.\\DISPLAY4\\Monitor0",
+                                                    "string":  "Generic PnP Monitor",
+                                                    "id":  "\\\\?\\DISPLAY#GSM76F5#5\u0026e9eab7c\u00263\u0026UID4356#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}",
+                                                    "state":  3
+                                                }
+                                            ]
+                     },
+                     {
+                         "hmon":  620444075,
+                         "enumRect":  {
+                                          "left":  1919,
+                                          "top":  -1096,
+                                          "right":  2879,
+                                          "bottom":  -456,
+                                          "w":  960,
+                                          "h":  640
+                                      },
+                         "device":  "\\\\.\\DISPLAY5",
+                         "rcMonitor":  {
+                                           "left":  1919,
+                                           "top":  -1096,
+                                           "right":  2879,
+                                           "bottom":  -456,
+                                           "w":  960,
+                                           "h":  640
+                                       },
+                         "rcWork":  {
+                                        "left":  1919,
+                                        "top":  -1096,
+                                        "right":  2879,
+                                        "bottom":  -504,
+                                        "w":  960,
+                                        "h":  592
+                                    },
+                         "primary":  false,
+                         "dpiEffective":  96,
+                         "dpiEffectiveHr":  0,
+                         "dpiAngular":  72,
+                         "dpiRaw":  "83x98",
+                         "dmPosition":  "1919,-1096",
+                         "dmPelsWidth":  960,
+                         "dmPelsHeight":  640,
+                         "dmFreq":  60,
+                         "dmOrientation":  0,
+                         "dmBpp":  32,
+                         "adapterString":  "Intel(R) UHD Graphics 770",
+                         "adapterId":  "PCI\\VEN_8086\u0026DEV_A780\u0026SUBSYS_D0001458\u0026REV_04",
+                         "adapterState":  1,
+                         "adapterKey":  "\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Video\\{C0A5DC44-CF7A-11EF-BADC-14AC60B081A2}\\0000",
+                         "monitorDevices":  [
+                                                {
+                                                    "name":  "\\\\.\\DISPLAY5\\Monitor0",
+                                                    "string":  "Generic PnP Monitor",
+                                                    "id":  "\\\\?\\DISPLAY#DRS2555#4\u00261ff378d5\u00260\u0026UID8258#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}",
+                                                    "state":  3
+                                                }
+                                            ]
+                     },
+                     {
+                         "hmon":  1064113975,
+                         "enumRect":  {
+                                          "left":  -3840,
+                                          "top":  0,
+                                          "right":  0,
+                                          "bottom":  2160,
+                                          "w":  3840,
+                                          "h":  2160
+                                      },
+                         "device":  "\\\\.\\DISPLAY1",
+                         "rcMonitor":  {
+                                           "left":  -3840,
+                                           "top":  0,
+                                           "right":  0,
+                                           "bottom":  2160,
+                                           "w":  3840,
+                                           "h":  2160
+                                       },
+                         "rcWork":  {
+                                        "left":  -3840,
+                                        "top":  0,
+                                        "right":  0,
+                                        "bottom":  2100,
+                                        "w":  3840,
+                                        "h":  2100
+                                    },
+                         "primary":  false,
+                         "dpiEffective":  120,
+                         "dpiEffectiveHr":  0,
+                         "dpiAngular":  265,
+                         "dpiRaw":  "69x137",
+                         "dmPosition":  "-3840,0",
+                         "dmPelsWidth":  3840,
+                         "dmPelsHeight":  2160,
+                         "dmFreq":  120,
+                         "dmOrientation":  0,
+                         "dmBpp":  32,
+                         "adapterString":  "NVIDIA GeForce RTX 4090",
+                         "adapterId":  "PCI\\VEN_10DE\u0026DEV_2684\u0026SUBSYS_40C01458\u0026REV_A1",
+                         "adapterState":  1,
+                         "adapterKey":  "\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Video\\{CBACB680-5D23-11F1-BC41-9518E1234DB8}\\0000",
+                         "monitorDevices":  [
+                                                {
+                                                    "name":  "\\\\.\\DISPLAY1\\Monitor0",
+                                                    "string":  "Generic PnP Monitor",
+                                                    "id":  "\\\\?\\DISPLAY#SAM747A#5\u0026e9eab7c\u00263\u0026UID4353#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}",
+                                                    "state":  3
+                                                }
+                                            ]
+                     },
+                     {
+                         "hmon":  1409431015,
+                         "enumRect":  {
+                                          "left":  0,
+                                          "top":  0,
+                                          "right":  3840,
+                                          "bottom":  2160,
+                                          "w":  3840,
+                                          "h":  2160
+                                      },
+                         "device":  "\\\\.\\DISPLAY2",
+                         "rcMonitor":  {
+                                           "left":  0,
+                                           "top":  0,
+                                           "right":  3840,
+                                           "bottom":  2160,
+                                           "w":  3840,
+                                           "h":  2160
+                                       },
+                         "rcWork":  {
+                                        "left":  0,
+                                        "top":  0,
+                                        "right":  3840,
+                                        "bottom":  2100,
+                                        "w":  3840,
+                                        "h":  2100
+                                    },
+                         "primary":  true,
+                         "dpiEffective":  120,
+                         "dpiEffectiveHr":  0,
+                         "dpiAngular":  265,
+                         "dpiRaw":  "69x137",
+                         "dmPosition":  "0,0",
+                         "dmPelsWidth":  3840,
+                         "dmPelsHeight":  2160,
+                         "dmFreq":  120,
+                         "dmOrientation":  0,
+                         "dmBpp":  32,
+                         "adapterString":  "NVIDIA GeForce RTX 4090",
+                         "adapterId":  "PCI\\VEN_10DE\u0026DEV_2684\u0026SUBSYS_40C01458\u0026REV_A1",
+                         "adapterState":  5,
+                         "adapterKey":  "\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Video\\{CBACB680-5D23-11F1-BC41-9518E1234DB8}\\0001",
+                         "monitorDevices":  [
+                                                {
+                                                    "name":  "\\\\.\\DISPLAY2\\Monitor0",
+                                                    "string":  "Generic PnP Monitor",
+                                                    "id":  "\\\\?\\DISPLAY#SAM73D3#5\u0026e9eab7c\u00263\u0026UID4352#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}",
+                                                    "state":  3
+                                                }
+                                            ]
+                     },
+                     {
+                         "hmon":  720710351,
+                         "enumRect":  {
+                                          "left":  -1,
+                                          "top":  -1080,
+                                          "right":  1919,
+                                          "bottom":  0,
+                                          "w":  1920,
+                                          "h":  1080
+                                      },
+                         "device":  "\\\\.\\DISPLAY3",
+                         "rcMonitor":  {
+                                           "left":  -1,
+                                           "top":  -1080,
+                                           "right":  1919,
+                                           "bottom":  0,
+                                           "w":  1920,
+                                           "h":  1080
+                                       },
+                         "rcWork":  {
+                                        "left":  -1,
+                                        "top":  -1080,
+                                        "right":  1919,
+                                        "bottom":  -48,
+                                        "w":  1920,
+                                        "h":  1032
+                                    },
+                         "primary":  false,
+                         "dpiEffective":  96,
+                         "dpiEffectiveHr":  0,
+                         "dpiAngular":  68,
+                         "dpiRaw":  "69x69",
+                         "dmPosition":  "-1,-1080",
+                         "dmPelsWidth":  1920,
+                         "dmPelsHeight":  1080,
+                         "dmFreq":  60,
+                         "dmOrientation":  2,
+                         "dmBpp":  32,
+                         "adapterString":  "NVIDIA GeForce RTX 4090",
+                         "adapterId":  "PCI\\VEN_10DE\u0026DEV_2684\u0026SUBSYS_40C01458\u0026REV_A1",
+                         "adapterState":  1,
+                         "adapterKey":  "\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Video\\{CBACB680-5D23-11F1-BC41-9518E1234DB8}\\0002",
+                         "monitorDevices":  [
+                                                {
+                                                    "name":  "\\\\.\\DISPLAY3\\Monitor0",
+                                                    "string":  "Generic PnP Monitor",
+                                                    "id":  "\\\\?\\DISPLAY#SAM100B#5\u0026e9eab7c\u00263\u0026UID4358#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}",
+                                                    "state":  3
+                                                }
+                                            ]
+                     }
+                 ],
+    "metrics":  {
+                    "SM_XVIRTUALSCREEN":  -3840,
+                    "SM_YVIRTUALSCREEN":  -1096,
+                    "SM_CXVIRTUALSCREEN":  7680,
+                    "SM_CYVIRTUALSCREEN":  3256,
+                    "SM_CXSCREEN":  3840,
+                    "SM_CYSCREEN":  2160,
+                    "SM_CMONITORS":  5,
+                    "SM_CXICON":  40,
+                    "SM_CXICONSPACING":  94,
+                    "SM_CYICONSPACING":  94,
+                    "systemDpi":  120
+                },
+    "desktop":  {
+                    "hostHwnd":  113913378,
+                    "hostClass":  "WorkerW",
+                    "defViewHwnd":  25763630,
+                    "defViewParentClass":  "WorkerW",
+                    "listViewHwnd":  294202552,
+                    "host":  {
+                                 "windowRect":  {
+                                                    "left":  -3840,
+                                                    "top":  -1096,
+                                                    "right":  3840,
+                                                    "bottom":  2160,
+                                                    "w":  7680,
+                                                    "h":  3256
+                                                },
+                                 "clientRect":  {
+                                                    "left":  0,
+                                                    "top":  0,
+                                                    "right":  7680,
+                                                    "bottom":  3256,
+                                                    "w":  7680,
+                                                    "h":  3256
+                                                },
+                                 "clientOriginScreen":  "-3840,-1096"
+                             },
+                    "defView":  {
+                                    "windowRect":  {
+                                                       "left":  -3840,
+                                                       "top":  -1096,
+                                                       "right":  3840,
+                                                       "bottom":  2160,
+                                                       "w":  7680,
+                                                       "h":  3256
+                                                   },
+                                    "clientRect":  {
+                                                       "left":  0,
+                                                       "top":  0,
+                                                       "right":  7680,
+                                                       "bottom":  3256,
+                                                       "w":  7680,
+                                                       "h":  3256
+                                                   },
+                                    "clientOriginScreen":  "-3840,-1096"
+                                },
+                    "listView":  {
+                                     "windowRect":  {
+                                                        "left":  -3840,
+                                                        "top":  -1096,
+                                                        "right":  3840,
+                                                        "bottom":  2160,
+                                                        "w":  7680,
+                                                        "h":  3256
+                                                    },
+                                     "clientRect":  {
+                                                        "left":  0,
+                                                        "top":  0,
+                                                        "right":  7680,
+                                                        "bottom":  3256,
+                                                        "w":  7680,
+                                                        "h":  3256
+                                                    },
+                                     "clientOriginScreen":  "-3840,-1096"
+                                 },
+                    "lvDpiForWindow":  120,
+                    "lvDpiAwareness":  2,
+                    "style":  "0x56003A40",
+                    "exStyle":  "0x0",
+                    "LVS_TYPEMASK":  0,
+                    "LVS_AUTOARRANGE":  false,
+                    "LVS_ALIGNLEFT":  true,
+                    "LVS_NOSCROLL":  true,
+                    "lvExStyle":  "0x14896C30",
+                    "LVS_EX_SNAPTOGRID":  true,
+                    "LVS_EX_AUTOAUTOARRANGE":  false,
+                    "LVM_GETVIEW":  0,
+                    "itemSpacingLarge":  "95x122",
+                    "itemSpacingSmall":  "112x21",
+                    "itemCount":  78,
+                    "explorerPid":  97904,
+                    "LVM_GETORIGIN":  "0,-5",
+                    "LVM_GETVIEWRECT":  "0,0,7680,3256",
+                    "items":  [
+                                  {
+                                      "index":  0,
+                                      "name":  "chrome_ext_backup",
+                                      "pos":  "3857,1098",
+                                      "bounds":  "3840,1101,3934,1188",
+                                      "icon":  "3840,1101,3934,1165",
+                                      "label":  "3843,1166,3930,1188"
+                                  },
+                                  {
+                                      "index":  1,
+                                      "name":  "Revaptor_FX",
+                                      "pos":  "3247,1220",
+                                      "bounds":  "3230,1223,3324,1310",
+                                      "icon":  "3230,1223,3324,1287",
+                                      "label":  "3234,1288,3320,1310"
+                                  },
+                                  {
+                                      "index":  2,
+                                      "name":  "내 PC",
+                                      "pos":  "3247,1342",
+                                      "bounds":  "3230,1345,3324,1432",
+                                      "icon":  "3230,1345,3324,1409",
+                                      "label":  "3255,1410,3298,1432"
+                                  },
+                                  {
+                                      "index":  3,
+                                      "name":  "네트워크",
+                                      "pos":  "3247,1464",
+                                      "bounds":  "3230,1467,3324,1554",
+                                      "icon":  "3230,1467,3324,1531",
+                                      "label":  "3245,1532,3309,1554"
+                                  },
+                                  {
+                                      "index":  4,
+                                      "name":  "HANDOFF_NEW_BOT.md",
+                                      "pos":  "3247,1708",
+                                      "bounds":  "3230,1711,3324,1798",
+                                      "icon":  "3230,1711,3324,1775",
+                                      "label":  "3232,1776,3322,1798"
+                                  },
+                                  {
+                                      "index":  5,
+                                      "name":  "제어판",
+                                      "pos":  "3342,1342",
+                                      "bounds":  "3325,1345,3419,1432",
+                                      "icon":  "3325,1345,3419,1409",
+                                      "label":  "3347,1410,3396,1432"
+                                  },
+                                  {
+                                      "index":  6,
+                                      "name":  "휴지통",
+                                      "pos":  "3342,1464",
+                                      "bounds":  "3325,1467,3419,1554",
+                                      "icon":  "3325,1467,3419,1531",
+                                      "label":  "3347,1532,3396,1554"
+                                  },
+                                  {
+                                      "index":  7,
+                                      "name":  "Dune - Part Two (2024) (2160p BluRay x265 HEVC 10bit HDR AAC 7.1 Tigole)",
+                                      "pos":  "3722,1952",
+                                      "bounds":  "3705,1955,3799,2062",
+                                      "icon":  "3705,1955,3799,2019",
+                                      "label":  "3705,2020,3799,2062"
+                                  },
+                                  {
+                                      "index":  8,
+                                      "name":  "도란소속사",
+                                      "pos":  "3722,2074",
+                                      "bounds":  "3705,2077,3799,2164",
+                                      "icon":  "3705,2077,3799,2141",
+                                      "label":  "3712,2142,3791,2164"
+                                  },
+                                  {
+                                      "index":  9,
+                                      "name":  "Assets",
+                                      "pos":  "3722,2196",
+                                      "bounds":  "3705,2199,3799,2286",
+                                      "icon":  "3705,2199,3799,2263",
+                                      "label":  "3729,2264,3774,2286"
+                                  },
+                                  {
+                                      "index":  10,
+                                      "name":  "BongGIF-v1.7.0",
+                                      "pos":  "3857,1220",
+                                      "bounds":  "3840,1223,3934,1310",
+                                      "icon":  "3840,1223,3934,1287",
+                                      "label":  "3840,1288,3934,1310"
+                                  },
+                                  {
+                                      "index":  11,
+                                      "name":  "honeycam-re",
+                                      "pos":  "3857,1342",
+                                      "bounds":  "3840,1345,3934,1432",
+                                      "icon":  "3840,1345,3934,1409",
+                                      "label":  "3840,1410,3933,1432"
+                                  },
+                                  {
+                                      "index":  12,
+                                      "name":  "콜 오브 듀티®",
+                                      "pos":  "3857,1464",
+                                      "bounds":  "3840,1467,3934,1574",
+                                      "icon":  "3840,1467,3934,1531",
+                                      "label":  "3860,1532,3914,1574"
+                                  },
+                                  {
+                                      "index":  13,
+                                      "name":  "Warhammer 40,000 Chaos Gate - Daemonhunters",
+                                      "pos":  "3857,1586",
+                                      "bounds":  "3840,1589,3934,1696",
+                                      "icon":  "3840,1589,3934,1653",
+                                      "label":  "3840,1654,3934,1696"
+                                  },
+                                  {
+                                      "index":  14,
+                                      "name":  "SM2_Work",
+                                      "pos":  "4332,1464",
+                                      "bounds":  "4315,1467,4409,1554",
+                                      "icon":  "4315,1467,4409,1531",
+                                      "label":  "4324,1532,4400,1554"
+                                  },
+                                  {
+                                      "index":  15,
+                                      "name":  "Blender 5.0",
+                                      "pos":  "4712,2562",
+                                      "bounds":  "4695,2565,4789,2652",
+                                      "icon":  "4695,2565,4789,2629",
+                                      "label":  "4702,2630,4782,2652"
+                                  },
+                                  {
+                                      "index":  16,
+                                      "name":  "EmberGen",
+                                      "pos":  "4712,2684",
+                                      "bounds":  "4695,2687,4789,2774",
+                                      "icon":  "4695,2687,4789,2751",
+                                      "label":  "4704,2752,4779,2774"
+                                  },
+                                  {
+                                      "index":  17,
+                                      "name":  "DJV",
+                                      "pos":  "4807,2562",
+                                      "bounds":  "4790,2565,4884,2652",
+                                      "icon":  "4790,2565,4884,2629",
+                                      "label":  "4822,2630,4852,2652"
+                                  },
+                                  {
+                                      "index":  18,
+                                      "name":  "LiquiGen",
+                                      "pos":  "4807,2684",
+                                      "bounds":  "4790,2687,4884,2774",
+                                      "icon":  "4790,2687,4884,2751",
+                                      "label":  "4804,2752,4869,2774"
+                                  },
+                                  {
+                                      "index":  19,
+                                      "name":  "MECCHA CHAMELEON",
+                                      "pos":  "4902,1342",
+                                      "bounds":  "4885,1345,4980,1452",
+                                      "icon":  "4885,1345,4979,1409",
+                                      "label":  "4885,1410,4980,1452"
+                                  },
+                                  {
+                                      "index":  20,
+                                      "name":  "The Ascent",
+                                      "pos":  "4902,1464",
+                                      "bounds":  "4885,1467,4979,1554",
+                                      "icon":  "4885,1467,4979,1531",
+                                      "label":  "4892,1532,4971,1554"
+                                  },
+                                  {
+                                      "index":  21,
+                                      "name":  "Warhammer 40,000 Space Marine 2",
+                                      "pos":  "4902,1586",
+                                      "bounds":  "4885,1589,4979,1696",
+                                      "icon":  "4885,1589,4979,1653",
+                                      "label":  "4886,1654,4978,1696"
+                                  },
+                                  {
+                                      "index":  22,
+                                      "name":  "Warhammer 40,000 Rogue Trader",
+                                      "pos":  "4902,1708",
+                                      "bounds":  "4885,1711,4979,1818",
+                                      "icon":  "4885,1711,4979,1775",
+                                      "label":  "4888,1776,4975,1818"
+                                  },
+                                  {
+                                      "index":  23,
+                                      "name":  "PureRef",
+                                      "pos":  "4902,2562",
+                                      "bounds":  "4885,2565,4979,2652",
+                                      "icon":  "4885,2565,4979,2629",
+                                      "label":  "4903,2630,4960,2652"
+                                  },
+                                  {
+                                      "index":  24,
+                                      "name":  "IlluGen",
+                                      "pos":  "4902,2684",
+                                      "bounds":  "4885,2687,4979,2774",
+                                      "icon":  "4885,2687,4979,2751",
+                                      "label":  "4905,2752,4958,2774"
+                                  },
+                                  {
+                                      "index":  25,
+                                      "name":  "POE2 Unofficial Launcher",
+                                      "pos":  "4997,1342",
+                                      "bounds":  "4980,1345,5074,1452",
+                                      "icon":  "4980,1345,5074,1409",
+                                      "label":  "4992,1410,5062,1452"
+                                  },
+                                  {
+                                      "index":  26,
+                                      "name":  "Cyberpunk 2077",
+                                      "pos":  "4997,1464",
+                                      "bounds":  "4980,1467,5074,1574",
+                                      "icon":  "4980,1467,5074,1531",
+                                      "label":  "4988,1532,5066,1574"
+                                  },
+                                  {
+                                      "index":  27,
+                                      "name":  "Against the Storm 어게인스트 더 스톰",
+                                      "pos":  "4997,1586",
+                                      "bounds":  "4980,1589,5074,1696",
+                                      "icon":  "4980,1589,5074,1653",
+                                      "label":  "4986,1654,5068,1696"
+                                  },
+                                  {
+                                      "index":  28,
+                                      "name":  "명조 워더링 웨이브",
+                                      "pos":  "4997,1708",
+                                      "bounds":  "4980,1711,5074,1818",
+                                      "icon":  "4980,1711,5074,1775",
+                                      "label":  "4985,1776,5069,1818"
+                                  },
+                                  {
+                                      "index":  29,
+                                      "name":  "BG3ModManager.exe - 바로 가기",
+                                      "pos":  "4997,2562",
+                                      "bounds":  "4980,2565,5075,2672",
+                                      "icon":  "4980,2565,5074,2629",
+                                      "label":  "4980,2630,5075,2672"
+                                  },
+                                  {
+                                      "index":  30,
+                                      "name":  "GeoGen",
+                                      "pos":  "4997,2684",
+                                      "bounds":  "4980,2687,5074,2774",
+                                      "icon":  "4980,2687,5074,2751",
+                                      "label":  "4997,2752,5057,2774"
+                                  },
+                                  {
+                                      "index":  31,
+                                      "name":  "이환",
+                                      "pos":  "5092,1464",
+                                      "bounds":  "5075,1467,5169,1554",
+                                      "icon":  "5075,1467,5169,1531",
+                                      "label":  "5105,1532,5139,1554"
+                                  },
+                                  {
+                                      "index":  32,
+                                      "name":  "Darkest Dungeon®",
+                                      "pos":  "5092,1586",
+                                      "bounds":  "5075,1589,5169,1696",
+                                      "icon":  "5075,1589,5169,1653",
+                                      "label":  "5081,1654,5163,1696"
+                                  },
+                                  {
+                                      "index":  33,
+                                      "name":  "검은 신화 오공",
+                                      "pos":  "5092,1708",
+                                      "bounds":  "5075,1711,5169,1818",
+                                      "icon":  "5075,1711,5169,1775",
+                                      "label":  "5087,1776,5156,1818"
+                                  },
+                                  {
+                                      "index":  34,
+                                      "name":  "Discord",
+                                      "pos":  "5472,2318",
+                                      "bounds":  "5455,2321,5549,2408",
+                                      "icon":  "5455,2321,5549,2385",
+                                      "label":  "5474,2386,5529,2408"
+                                  },
+                                  {
+                                      "index":  35,
+                                      "name":  "MouseTracer",
+                                      "pos":  "5472,2440",
+                                      "bounds":  "5455,2443,5549,2530",
+                                      "icon":  "5455,2443,5549,2507",
+                                      "label":  "5456,2508,5547,2530"
+                                  },
+                                  {
+                                      "index":  36,
+                                      "name":  "Grok Bot",
+                                      "pos":  "5472,2562",
+                                      "bounds":  "5455,2565,5549,2652",
+                                      "icon":  "5455,2565,5549,2629",
+                                      "label":  "5469,2630,5534,2652"
+                                  },
+                                  {
+                                      "index":  37,
+                                      "name":  "UE_VFX_57",
+                                      "pos":  "5472,2684",
+                                      "bounds":  "5455,2687,5549,2774",
+                                      "icon":  "5455,2687,5549,2751",
+                                      "label":  "5463,2752,5540,2774"
+                                  },
+                                  {
+                                      "index":  38,
+                                      "name":  "TunnelBear",
+                                      "pos":  "5567,2318",
+                                      "bounds":  "5550,2321,5644,2408",
+                                      "icon":  "5550,2321,5644,2385",
+                                      "label":  "5556,2386,5637,2408"
+                                  },
+                                  {
+                                      "index":  39,
+                                      "name":  "Wallpaper Engine",
+                                      "pos":  "5567,2440",
+                                      "bounds":  "5550,2443,5644,2550",
+                                      "icon":  "5550,2443,5644,2507",
+                                      "label":  "5560,2508,5633,2550"
+                                  },
+                                  {
+                                      "index":  40,
+                                      "name":  "3ds Max 2021",
+                                      "pos":  "5567,2562",
+                                      "bounds":  "5550,2565,5644,2672",
+                                      "icon":  "5550,2565,5644,2629",
+                                      "label":  "5566,2630,5627,2672"
+                                  },
+                                  {
+                                      "index":  41,
+                                      "name":  "Mod Organizer",
+                                      "pos":  "5662,2318",
+                                      "bounds":  "5645,2321,5739,2428",
+                                      "icon":  "5645,2321,5739,2385",
+                                      "label":  "5656,2386,5727,2428"
+                                  },
+                                  {
+                                      "index":  42,
+                                      "name":  "Everything 1.5a",
+                                      "pos":  "5662,2440",
+                                      "bounds":  "5645,2443,5739,2550",
+                                      "icon":  "5645,2443,5739,2507",
+                                      "label":  "5654,2508,5729,2550"
+                                  },
+                                  {
+                                      "index":  43,
+                                      "name":  "Dolphin Anty",
+                                      "pos":  "5757,2318",
+                                      "bounds":  "5740,2321,5835,2408",
+                                      "icon":  "5740,2321,5834,2385",
+                                      "label":  "5740,2386,5835,2408"
+                                  },
+                                  {
+                                      "index":  44,
+                                      "name":  "BongGIF",
+                                      "pos":  "5757,2440",
+                                      "bounds":  "5740,2443,5834,2530",
+                                      "icon":  "5740,2443,5834,2507",
+                                      "label":  "5756,2508,5818,2530"
+                                  },
+                                  {
+                                      "index":  45,
+                                      "name":  "보면힘나는영상.mp4",
+                                      "pos":  "5852,1464",
+                                      "bounds":  "5835,1467,5929,1554",
+                                      "icon":  "5835,1467,5929,1531",
+                                      "label":  "5835,1532,5929,1554"
+                                  },
+                                  {
+                                      "index":  46,
+                                      "name":  "ArtCraft Launcher",
+                                      "pos":  "5852,2562",
+                                      "bounds":  "5835,2565,5929,2672",
+                                      "icon":  "5835,2565,5929,2629",
+                                      "label":  "5849,2630,5915,2672"
+                                  },
+                                  {
+                                      "index":  47,
+                                      "name":  "Adobe Premiere Pro 2024",
+                                      "pos":  "5852,2684",
+                                      "bounds":  "5835,2687,5929,2794",
+                                      "icon":  "5835,2687,5929,2751",
+                                      "label":  "5836,2752,5928,2794"
+                                  },
+                                  {
+                                      "index":  48,
+                                      "name":  "할아버지.png",
+                                      "pos":  "5947,1464",
+                                      "bounds":  "5930,1467,6024,1554",
+                                      "icon":  "5930,1467,6024,1531",
+                                      "label":  "5930,1532,6024,1554"
+                                  },
+                                  {
+                                      "index":  49,
+                                      "name":  "KakaoTalk_20250214_120923455_01.jpg",
+                                      "pos":  "5947,1586",
+                                      "bounds":  "5930,1589,6024,1676",
+                                      "icon":  "5930,1589,6024,1653",
+                                      "label":  "5932,1654,6022,1676"
+                                  },
+                                  {
+                                      "index":  50,
+                                      "name":  "Adobe Lightroom Classic",
+                                      "pos":  "5947,2562",
+                                      "bounds":  "5930,2565,6024,2672",
+                                      "icon":  "5930,2565,6024,2629",
+                                      "label":  "5940,2630,6014,2672"
+                                  },
+                                  {
+                                      "index":  51,
+                                      "name":  "Adobe Media Encoder 2024",
+                                      "pos":  "5947,2684",
+                                      "bounds":  "5930,2687,6024,2794",
+                                      "icon":  "5930,2687,6024,2751",
+                                      "label":  "5947,2752,6006,2794"
+                                  },
+                                  {
+                                      "index":  52,
+                                      "name":  "할머니.png",
+                                      "pos":  "6042,1464",
+                                      "bounds":  "6025,1467,6119,1554",
+                                      "icon":  "6025,1467,6119,1531",
+                                      "label":  "6032,1532,6111,1554"
+                                  },
+                                  {
+                                      "index":  53,
+                                      "name":  "KakaoTalk_20261027_165603265.png",
+                                      "pos":  "6042,1586",
+                                      "bounds":  "6025,1589,6119,1676",
+                                      "icon":  "6025,1589,6119,1653",
+                                      "label":  "6027,1654,6117,1676"
+                                  },
+                                  {
+                                      "index":  54,
+                                      "name":  "도란이랑 나.jpg",
+                                      "pos":  "6042,1708",
+                                      "bounds":  "6025,1711,6119,1818",
+                                      "icon":  "6025,1711,6119,1775",
+                                      "label":  "6040,1776,6104,1818"
+                                  },
+                                  {
+                                      "index":  55,
+                                      "name":  "PdfCraft",
+                                      "pos":  "6042,2562",
+                                      "bounds":  "6025,2565,6119,2652",
+                                      "icon":  "6025,2565,6119,2629",
+                                      "label":  "6042,2630,6102,2652"
+                                  },
+                                  {
+                                      "index":  56,
+                                      "name":  "Adobe After Effects 2024",
+                                      "pos":  "6042,2684",
+                                      "bounds":  "6025,2687,6119,2794",
+                                      "icon":  "6025,2687,6119,2751",
+                                      "label":  "6028,2752,6115,2794"
+                                  },
+                                  {
+                                      "index":  57,
+                                      "name":  "Eagle",
+                                      "pos":  "6042,2806",
+                                      "bounds":  "6025,2809,6119,2896",
+                                      "icon":  "6025,2809,6119,2873",
+                                      "label":  "6051,2874,6092,2896"
+                                  },
+                                  {
+                                      "index":  58,
+                                      "name":  "23453456",
+                                      "pos":  "6137,1464",
+                                      "bounds":  "6120,1467,6214,1554",
+                                      "icon":  "6120,1467,6214,1531",
+                                      "label":  "6133,1532,6201,1554"
+                                  },
+                                  {
+                                      "index":  59,
+                                      "name":  "KakaoTalk_20250214_120923455_02.png",
+                                      "pos":  "6137,1586",
+                                      "bounds":  "6120,1589,6215,1676",
+                                      "icon":  "6120,1589,6214,1653",
+                                      "label":  "6120,1654,6215,1676"
+                                  },
+                                  {
+                                      "index":  60,
+                                      "name":  "도란이.jpg",
+                                      "pos":  "6137,1708",
+                                      "bounds":  "6120,1711,6214,1798",
+                                      "icon":  "6120,1711,6214,1775",
+                                      "label":  "6130,1776,6204,1798"
+                                  },
+                                  {
+                                      "index":  61,
+                                      "name":  "Ragnok ErgoStrike7",
+                                      "pos":  "6137,2562",
+                                      "bounds":  "6120,2565,6214,2672",
+                                      "icon":  "6120,2565,6214,2629",
+                                      "label":  "6126,2630,6207,2672"
+                                  },
+                                  {
+                                      "index":  62,
+                                      "name":  "Adobe Illustrator 2024",
+                                      "pos":  "6137,2684",
+                                      "bounds":  "6120,2687,6214,2794",
+                                      "icon":  "6120,2687,6214,2751",
+                                      "label":  "6133,2752,6201,2794"
+                                  },
+                                  {
+                                      "index":  63,
+                                      "name":  "Adobe Photoshop 2023",
+                                      "pos":  "6137,2806",
+                                      "bounds":  "6120,2809,6214,2916",
+                                      "icon":  "6120,2809,6214,2873",
+                                      "label":  "6128,2874,6206,2916"
+                                  },
+                                  {
+                                      "index":  64,
+                                      "name":  "조의금.hwpx",
+                                      "pos":  "6232,1464",
+                                      "bounds":  "6215,1467,6309,1554",
+                                      "icon":  "6215,1467,6309,1531",
+                                      "label":  "6218,1532,6306,1554"
+                                  },
+                                  {
+                                      "index":  65,
+                                      "name":  "빈 문서 1.hwpx",
+                                      "pos":  "6232,1586",
+                                      "bounds":  "6215,1589,6309,1696",
+                                      "icon":  "6215,1589,6309,1653",
+                                      "label":  "6235,1654,6289,1696"
+                                  },
+                                  {
+                                      "index":  66,
+                                      "name":  "빈 문서 1001.jpg",
+                                      "pos":  "6232,1708",
+                                      "bounds":  "6215,1711,6309,1818",
+                                      "icon":  "6215,1711,6309,1775",
+                                      "label":  "6231,1776,6292,1818"
+                                  },
+                                  {
+                                      "index":  67,
+                                      "name":  "꿀캠",
+                                      "pos":  "6232,2562",
+                                      "bounds":  "6215,2565,6309,2652",
+                                      "icon":  "6215,2565,6309,2629",
+                                      "label":  "6245,2630,6279,2652"
+                                  },
+                                  {
+                                      "index":  68,
+                                      "name":  "PlayStation® Accessories",
+                                      "pos":  "6232,2684",
+                                      "bounds":  "6215,2687,6309,2794",
+                                      "icon":  "6215,2687,6309,2751",
+                                      "label":  "6215,2752,6309,2794"
+                                  },
+                                  {
+                                      "index":  69,
+                                      "name":  "Adobe Substance 3D Designer",
+                                      "pos":  "6232,2806",
+                                      "bounds":  "6215,2809,6309,2916",
+                                      "icon":  "6215,2809,6309,2873",
+                                      "label":  "6218,2874,6306,2916"
+                                  },
+                                  {
+                                      "index":  70,
+                                      "name":  "TeamViewer",
+                                      "pos":  "6327,2562",
+                                      "bounds":  "6310,2565,6404,2652",
+                                      "icon":  "6310,2565,6404,2629",
+                                      "label":  "6313,2630,6400,2652"
+                                  },
+                                  {
+                                      "index":  71,
+                                      "name":  "DisplayFusion",
+                                      "pos":  "6327,2684",
+                                      "bounds":  "6310,2687,6404,2774",
+                                      "icon":  "6310,2687,6404,2751",
+                                      "label":  "6313,2752,6401,2774"
+                                  },
+                                  {
+                                      "index":  72,
+                                      "name":  "Elgato Stream Deck",
+                                      "pos":  "6422,2562",
+                                      "bounds":  "6405,2565,6499,2672",
+                                      "icon":  "6405,2565,6499,2629",
+                                      "label":  "6407,2630,6497,2672"
+                                  },
+                                  {
+                                      "index":  73,
+                                      "name":  "MSI Afterburner",
+                                      "pos":  "6422,2684",
+                                      "bounds":  "6405,2687,6499,2794",
+                                      "icon":  "6405,2687,6499,2751",
+                                      "label":  "6411,2752,6493,2794"
+                                  },
+                                  {
+                                      "index":  74,
+                                      "name":  "bg3-modders-multitool",
+                                      "pos":  "6517,2562",
+                                      "bounds":  "6500,2565,6595,2652",
+                                      "icon":  "6500,2565,6594,2629",
+                                      "label":  "6500,2630,6595,2652"
+                                  },
+                                  {
+                                      "index":  75,
+                                      "name":  "BG3ModManager_Latest",
+                                      "pos":  "6517,2684",
+                                      "bounds":  "6500,2687,6595,2774",
+                                      "icon":  "6500,2687,6594,2751",
+                                      "label":  "6500,2752,6595,2774"
+                                  },
+                                  {
+                                      "index":  76,
+                                      "name":  "팟플레이어",
+                                      "pos":  "6612,2562",
+                                      "bounds":  "6595,2565,6689,2652",
+                                      "icon":  "6595,2565,6689,2629",
+                                      "label":  "6602,2630,6681,2652"
+                                  },
+                                  {
+                                      "index":  77,
+                                      "name":  "NVIDIA App",
+                                      "pos":  "6612,2684",
+                                      "bounds":  "6595,2687,6689,2774",
+                                      "icon":  "6595,2687,6689,2751",
+                                      "label":  "6598,2752,6685,2774"
+                                  }
+                              ]
+                },
+    "unaware":  {
+                    "threadAwareness":  0,
+                    "monitors":  [
+                                     {
+                                         "hmon":  624820819,
+                                         "enumRect":  {
+                                                          "left":  -1921,
+                                                          "top":  -1080,
+                                                          "right":  -1,
+                                                          "bottom":  0,
+                                                          "w":  1920,
+                                                          "h":  1080
+                                                      },
+                                         "device":  "\\\\.\\DISPLAY4",
+                                         "rcMonitor":  {
+                                                           "left":  -1921,
+                                                           "top":  -1080,
+                                                           "right":  -1,
+                                                           "bottom":  0,
+                                                           "w":  1920,
+                                                           "h":  1080
+                                                       },
+                                         "rcWork":  {
+                                                        "left":  -1921,
+                                                        "top":  -1080,
+                                                        "right":  -1,
+                                                        "bottom":  -48,
+                                                        "w":  1920,
+                                                        "h":  1032
+                                                    },
+                                         "primary":  false,
+                                         "dpiEffective":  96,
+                                         "dpiEffectiveHr":  0
+                                     },
+                                     {
+                                         "hmon":  620444075,
+                                         "enumRect":  {
+                                                          "left":  1919,
+                                                          "top":  -1096,
+                                                          "right":  2879,
+                                                          "bottom":  -456,
+                                                          "w":  960,
+                                                          "h":  640
+                                                      },
+                                         "device":  "\\\\.\\DISPLAY5",
+                                         "rcMonitor":  {
+                                                           "left":  1919,
+                                                           "top":  -1096,
+                                                           "right":  2879,
+                                                           "bottom":  -456,
+                                                           "w":  960,
+                                                           "h":  640
+                                                       },
+                                         "rcWork":  {
+                                                        "left":  1919,
+                                                        "top":  -1096,
+                                                        "right":  2879,
+                                                        "bottom":  -504,
+                                                        "w":  960,
+                                                        "h":  592
+                                                    },
+                                         "primary":  false,
+                                         "dpiEffective":  96,
+                                         "dpiEffectiveHr":  0
+                                     },
+                                     {
+                                         "hmon":  1064113975,
+                                         "enumRect":  {
+                                                          "left":  -3840,
+                                                          "top":  0,
+                                                          "right":  -768,
+                                                          "bottom":  1728,
+                                                          "w":  3072,
+                                                          "h":  1728
+                                                      },
+                                         "device":  "\\\\.\\DISPLAY1",
+                                         "rcMonitor":  {
+                                                           "left":  -3840,
+                                                           "top":  0,
+                                                           "right":  -768,
+                                                           "bottom":  1728,
+                                                           "w":  3072,
+                                                           "h":  1728
+                                                       },
+                                         "rcWork":  {
+                                                        "left":  -3840,
+                                                        "top":  0,
+                                                        "right":  -768,
+                                                        "bottom":  1680,
+                                                        "w":  3072,
+                                                        "h":  1680
+                                                    },
+                                         "primary":  false,
+                                         "dpiEffective":  96,
+                                         "dpiEffectiveHr":  0
+                                     },
+                                     {
+                                         "hmon":  1409431015,
+                                         "enumRect":  {
+                                                          "left":  0,
+                                                          "top":  0,
+                                                          "right":  3072,
+                                                          "bottom":  1728,
+                                                          "w":  3072,
+                                                          "h":  1728
+                                                      },
+                                         "device":  "\\\\.\\DISPLAY2",
+                                         "rcMonitor":  {
+                                                           "left":  0,
+                                                           "top":  0,
+                                                           "right":  3072,
+                                                           "bottom":  1728,
+                                                           "w":  3072,
+                                                           "h":  1728
+                                                       },
+                                         "rcWork":  {
+                                                        "left":  0,
+                                                        "top":  0,
+                                                        "right":  3072,
+                                                        "bottom":  1680,
+                                                        "w":  3072,
+                                                        "h":  1680
+                                                    },
+                                         "primary":  true,
+                                         "dpiEffective":  96,
+                                         "dpiEffectiveHr":  0
+                                     },
+                                     {
+                                         "hmon":  720710351,
+                                         "enumRect":  {
+                                                          "left":  -1,
+                                                          "top":  -1080,
+                                                          "right":  1919,
+                                                          "bottom":  0,
+                                                          "w":  1920,
+                                                          "h":  1080
+                                                      },
+                                         "device":  "\\\\.\\DISPLAY3",
+                                         "rcMonitor":  {
+                                                           "left":  -1,
+                                                           "top":  -1080,
+                                                           "right":  1919,
+                                                           "bottom":  0,
+                                                           "w":  1920,
+                                                           "h":  1080
+                                                       },
+                                         "rcWork":  {
+                                                        "left":  -1,
+                                                        "top":  -1080,
+                                                        "right":  1919,
+                                                        "bottom":  -48,
+                                                        "w":  1920,
+                                                        "h":  1032
+                                                    },
+                                         "primary":  false,
+                                         "dpiEffective":  96,
+                                         "dpiEffectiveHr":  0
+                                     }
+                                 ],
+                    "metrics":  {
+                                    "SM_XVIRTUALSCREEN":  -3840,
+                                    "SM_YVIRTUALSCREEN":  -1096,
+                                    "SM_CXVIRTUALSCREEN":  6912,
+                                    "SM_CYVIRTUALSCREEN":  2824,
+                                    "SM_CXSCREEN":  3072,
+                                    "SM_CYSCREEN":  1728,
+                                    "SM_CMONITORS":  5,
+                                    "SM_CXICON":  32,
+                                    "SM_CXICONSPACING":  75,
+                                    "SM_CYICONSPACING":  75,
+                                    "systemDpi":  96
+                                },
+                    "listView":  {
+                                     "windowRect":  {
+                                                        "left":  -3840,
+                                                        "top":  -877,
+                                                        "right":  2304,
+                                                        "bottom":  1728,
+                                                        "w":  6144,
+                                                        "h":  2605
+                                                    },
+                                     "clientRect":  {
+                                                        "left":  0,
+                                                        "top":  0,
+                                                        "right":  6144,
+                                                        "bottom":  2604,
+                                                        "w":  6144,
+                                                        "h":  2604
+                                                    },
+                                     "clientOriginScreen":  "-3072,-877"
+                                 }
+                },
+    "registry":  {
+                     "FFlags":  1075839524,
+                     "IconSize":  48,
+                     "Mode":  1,
+                     "LogicalViewMode":  3,
+                     "Sort":  [
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0
+                              ],
+                     "GroupView":  0,
+                     "IconSpacing":  "-1128",
+                     "IconVerticalSpacing":  "-1128",
+                     "AppliedDPI":  120,
+                     "LogPixels":  106
+                 }
+}

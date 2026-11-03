@@ -948,9 +948,37 @@ var iconMon = new List<ProfileMonitor>
     new() { Number = 2, X = 0, Y = 0, W = 3840, H = 2160, Scale = 125, Primary = true }
 };
 var iconFrame = IconMap.Frame(iconMon);
-var shifted = IconMap.ToScreen(3237, 1188, iconFrame.Left, iconFrame.Top, iconFrame.Scale);
-var topLeft = IconMap.ToScreen(32, 24, iconFrame.Left, iconFrame.Top, iconFrame.Scale);
-Check("icon list maps from the virtual desktop through primary DPI", iconFrame.Left == -3840 && iconFrame.Top == -1440 && iconFrame.Scale == 125 && shifted.X > 0 && shifted.X < 400 && shifted.Y > 0 && shifted.Y < 200 && topLeft.X < -3700 && topLeft.Y < -1400, $"frame {iconFrame.Left},{iconFrame.Top} @{iconFrame.Scale} shifted {shifted.X},{shifted.Y} top {topLeft.X},{topLeft.Y}");
+var shifted = IconMap.ToScreen(3857, 1098, -3840, -1096, 0, -5, IconMap.ImagePx(125));
+var fromRect = IconMap.Center(3840, 1101, 3934, 1165, -3840, -1096);
+Check("icon list positions are physical pixels", iconFrame.Left == -3840 && iconFrame.Top == -1440 && iconFrame.Scale == 125 && IconMap.ImagePx(125) == 60 && shifted.X == 47 && shifted.Y == 37 && fromRect.X == 47 && fromRect.Y == 37, $"shifted {shifted.X},{shifted.Y} rect {fromRect.X},{fromRect.Y}");
+string probePath = repo == null ? "" : Path.Combine(repo, "BongHub.PatchTests", "fixtures", "bh_iconprobe.json");
+int onPrimary = 0, onLeft = 0, onTop = 0, probeN = 0;
+if (probePath.Length > 0 && File.Exists(probePath))
+{
+    var probe = JsonNode.Parse(File.ReadAllText(probePath))!;
+    var probeScreens = probe["monitors"]!.AsArray().Select(m =>
+    {
+        var r = m!["rcMonitor"]!;
+        return (Device: m["device"]!.GetValue<string>(), X: r["left"]!.GetValue<int>(), Y: r["top"]!.GetValue<int>(), W: r["w"]!.GetValue<int>(), H: r["h"]!.GetValue<int>());
+    }).ToList();
+    var origin = probe["desktop"]!["LVM_GETORIGIN"]!.GetValue<string>().Split(',');
+    int ox = int.Parse(origin[0]), oy = int.Parse(origin[1]);
+    int vx = probe["metrics"]!["SM_XVIRTUALSCREEN"]!.GetValue<int>();
+    int vy = probe["metrics"]!["SM_YVIRTUALSCREEN"]!.GetValue<int>();
+    foreach (var item in probe["desktop"]!["items"]!.AsArray())
+    {
+        var pos = item!["pos"]!.GetValue<string>().Split(',');
+        var screen = IconMap.ToScreen(int.Parse(pos[0]), int.Parse(pos[1]), vx, vy, ox, oy, 60);
+        probeN++;
+        string? host = null;
+        foreach (var s in probeScreens)
+            if (screen.X >= s.X && screen.Y >= s.Y && screen.X < s.X + s.W && screen.Y < s.Y + s.H) { host = s.Device; break; }
+        if (host != null && host.EndsWith("DISPLAY2", StringComparison.OrdinalIgnoreCase)) onPrimary++;
+        else if (host != null && host.EndsWith("DISPLAY1", StringComparison.OrdinalIgnoreCase)) onLeft++;
+        else onTop++;
+    }
+}
+Check("owner icon probe lands on the lower monitors", probeN == 78 && onPrimary == 69 && onLeft == 9 && onTop == 0, $"n={probeN} primary={onPrimary} left={onLeft} other={onTop}");
 var savedDiscord = new ProfileApp { Process = "Discord.exe", Class = "Chrome_WidgetWin_1", Title = "옛서버 - Discord" };
 var renamed = new TrackedWindow { Id = 1, Process = "Discord", Class = "Chrome_WidgetWin_1", Title = "새서버 - Discord" };
 var other = new TrackedWindow { Id = 2, Process = "Discord", Class = "Chrome_WidgetWin_1", Title = "다른 - Discord" };

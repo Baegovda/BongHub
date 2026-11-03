@@ -118,9 +118,10 @@ public partial class MainWindow
                 var primary = live.FirstOrDefault(x => x.Primary) ?? live[0];
                 int originX = live.Min(s => s.X), originY = live.Min(s => s.Y);
                 int scale = primary.Scale <= 0 ? 100 : primary.Scale;
-                var bin = IconMap.ToClient(left.X + 40, left.Y + 36, originX, originY, scale);
-                var hub = IconMap.ToClient(left.X + 40, left.Y + 120, originX, originY, scale);
-                var doc = IconMap.ToClient(primary.X + 48, primary.Y + 36, originX, originY, scale);
+                int iconPx = IconMap.ImagePx(scale);
+                var bin = IconMap.ToClient(left.X + 40, left.Y + 36, originX, originY, 0, 0, iconPx);
+                var hub = IconMap.ToClient(left.X + 40, left.Y + 120, originX, originY, 0, 0, iconPx);
+                var doc = IconMap.ToClient(primary.X + 48, primary.Y + 36, originX, originY, 0, 0, iconPx);
                 profile0.Icons.Add(new ProfileIcon { Name = "휴지통", X = bin.X, Y = bin.Y, Show = true });
                 profile0.Icons.Add(new ProfileIcon { Name = "BongHub", X = hub.X, Y = hub.Y, Show = true });
                 profile0.Icons.Add(new ProfileIcon { Name = "문서", X = doc.X, Y = doc.Y, Show = false });
@@ -1202,7 +1203,7 @@ public partial class MainWindow
             var iconFrame = IconMap.Frame(profile.Monitors);
             foreach (var icon in profile.Icons)
             {
-                var screen = IconMap.ToScreen(icon.X, icon.Y, iconFrame.Left, iconFrame.Top, iconFrame.Scale);
+                var screen = IconMap.ToScreen(icon.X, icon.Y, iconFrame.Left, iconFrame.Top, profile.IconOriginX, profile.IconOriginY, IconMap.ImagePx(iconFrame.Scale));
                 var home = profile.Monitors.FirstOrDefault(m => screen.X >= m.X && screen.Y >= m.Y && screen.X < m.X + m.W && screen.Y < m.Y + m.H);
                 if (home == null) continue;
                 var homeView = ProfileSnap.ToCanvas(home.Box, scene, 8, 8);
@@ -1468,7 +1469,10 @@ public partial class MainWindow
             try
             {
                 using var icons = new ExplorerIconSurface();
-                StoreIcons(profile, icons.Read(), auto: true);
+                var read = icons.Read();
+                profile.IconOriginX = icons.OriginX;
+                profile.IconOriginY = icons.OriginY;
+                StoreIcons(profile, read, auto: true);
             }
             catch (Exception ex) { DesktopAction = ex.Message; IconSaveNote = ex.Message; Render("presets", false); }
             return;

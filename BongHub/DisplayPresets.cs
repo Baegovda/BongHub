@@ -313,6 +313,8 @@ public sealed class MonitorProfile
     public bool RememberWindows = true;
     public string SessionSaved = "";
     public List<SessionWindow> Session = new();
+    /// <summary><c>LVM_GETORIGIN</c> captured with the icons. Missing JSON means zero.</summary>
+    public int IconOriginX, IconOriginY;
 }
 
 public readonly record struct SnapPreview(string Kind, ProfileBox Box);
@@ -1425,6 +1427,7 @@ public static class ProfileDoc
         {
             ["id"] = p.Id, ["name"] = p.Name, ["hotkey"] = p.Hotkey, ["primary"] = p.Primary, ["layout"] = p.Layout, ["windowSpace"] = "pixels",             ["iconsSaved"] = p.IconsSaved, ["restoreIcons"] = p.RestoreIcons,
             ["rememberWindows"] = p.RememberWindows, ["sessionSaved"] = p.SessionSaved ?? "",
+            ["iconOriginX"] = p.IconOriginX, ["iconOriginY"] = p.IconOriginY,
             ["deskLayout"] = p.DeskLayout, ["icons"] = p.DeskLayout, ["workspace"] = p.Workspace,
             ["enable"] = new JsonArray(p.Enable.Select(s => JsonValue.Create(s)).ToArray()),
             ["disable"] = new JsonArray(p.Disable.Select(s => JsonValue.Create(s)).ToArray()),
@@ -1473,7 +1476,9 @@ public static class ProfileDoc
             IconsSaved = Str(node["iconsSaved"]),
             RestoreIcons = node["restoreIcons"] == null || Bool(node["restoreIcons"]),
             RememberWindows = node["rememberWindows"] == null || Bool(node["rememberWindows"]),
-            SessionSaved = Str(node["sessionSaved"])
+            SessionSaved = Str(node["sessionSaved"]),
+            IconOriginX = Num(node["iconOriginX"]),
+            IconOriginY = Num(node["iconOriginY"])
         };
         if (profile.Id.Length == 0) profile.Id = NewId();
         Strings(node["enable"], profile.Enable);
@@ -2327,21 +2332,33 @@ public static class ProfileGlyph
 }
 
 /// <summary>
-/// Desktop list-view points are logical pixels whose origin is the top-left of the virtual desktop,
-/// not physical screen pixels and not "whatever monitor.X happens to be". Monitor rectangles are physical.
+/// Explorer's list view is per-monitor DPI aware, so item positions are already physical pixels.
+/// <c>LVM_GETITEMPOSITION</c> is a view point. Client = view − <c>LVM_GETORIGIN</c>.
+/// The list's client origin on the screen is the virtual-screen origin. The point stored is the icon image's top-left;
+/// the image is 48px at 96 DPI. The dot uses the image center.
 /// </summary>
 public static class IconMap
 {
-    public static (int X, int Y) ToScreen(int clientX, int clientY, int virtualLeft, int virtualTop, int scalePercent)
+    public static int ImagePx(int scalePercent)
     {
-        double s = scalePercent < 50 ? 1 : scalePercent / 100.0;
-        return (virtualLeft + (int)Math.Round(clientX * s), virtualTop + (int)Math.Round(clientY * s));
+        int s = scalePercent < 50 ? 100 : scalePercent;
+        return Math.Max(8, (int)Math.Round(48.0 * s / 100.0));
     }
 
-    public static (int X, int Y) ToClient(int screenX, int screenY, int virtualLeft, int virtualTop, int scalePercent)
+    public static (int X, int Y) ToScreen(int viewX, int viewY, int virtualLeft, int virtualTop, int originX, int originY, int iconPx)
     {
-        double s = scalePercent < 50 ? 1 : scalePercent / 100.0;
-        return ((int)Math.Round((screenX - virtualLeft) / s), (int)Math.Round((screenY - virtualTop) / s));
+        int half = Math.Max(0, iconPx) / 2;
+        return (viewX - originX + virtualLeft + half, viewY - originY + virtualTop + half);
+    }
+
+    /// <summary><c>LVM_GETITEMRECT(LVIR_ICON)</c> is already in client coordinates. Its center plus the virtual origin is the screen point.</summary>
+    public static (int X, int Y) Center(int left, int top, int right, int bottom, int virtualLeft, int virtualTop)
+        => (virtualLeft + (left + right) / 2, virtualTop + (top + bottom) / 2);
+
+    public static (int X, int Y) ToClient(int screenX, int screenY, int virtualLeft, int virtualTop, int originX, int originY, int iconPx)
+    {
+        int half = Math.Max(0, iconPx) / 2;
+        return (screenX - half - virtualLeft + originX, screenY - half - virtualTop + originY);
     }
 
     public static (int Left, int Top, int Scale) Frame(IReadOnlyList<ProfileMonitor>? monitors)
