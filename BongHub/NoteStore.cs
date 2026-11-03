@@ -185,8 +185,8 @@ public static class NoteColors
 {
     public static readonly string[] Keys = { "yellow", "green", "pink", "purple", "blue", "gray", "charcoal" };
     public static readonly string[] Names = { "노랑", "초록", "분홍", "보라", "파랑", "회색", "차콜" };
-    static readonly Color[] swatch = { C(214, 197, 143), C(132, 184, 144), C(217, 155, 186), C(197, 182, 226), C(144, 174, 218), C(173, 173, 179), C(77, 77, 83) };
-    static readonly Color[] partner = { C(224, 169, 148), C(144, 193, 189), C(193, 162, 230), C(211, 152, 220), C(155, 180, 228), C(181, 183, 191), C(51, 52, 67) };
+    static readonly Color[] swatch = { C(214, 197, 143), C(132, 184, 144), C(217, 155, 186), C(197, 182, 226), C(144, 174, 218), C(173, 173, 179), C(52, 52, 58) };
+    static readonly Color[] partner = { C(224, 169, 148), C(144, 193, 189), C(193, 162, 230), C(211, 152, 220), C(155, 180, 228), C(181, 183, 191), C(40, 41, 54) };
     public static readonly string[][] Gradients = {
         new[] { "g:blocks", "블록", "93AEE2", "D9A8E1" }, new[] { "g:aurora", "오로라", "86BCDF", "ADA6E7" }, new[] { "g:grape", "포도", "C2AEEA", "D398DC" },
         new[] { "g:lagoon", "라군", "83C8C4", "93AEE2" }, new[] { "g:mint", "민트", "6AC39F", "7FB2D7" }, new[] { "g:forest", "숲", "90C59C", "73B9B1" },
