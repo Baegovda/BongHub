@@ -13,7 +13,7 @@ nfv=$(grep -oE '<FileVersion>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+</FileVersion>' "$csp
 env=$(grab 'const string Version = "[0-9]+\.[0-9]+\.[0-9]+"' "$root/BongHub/AppEnv.cs")
 info=$(grab 'const string Version = "[0-9]+\.[0-9]+\.[0-9]+"' "$root/BongHub/AppInfo.cs")
 [[ -n "$nver" ]] || fail "BongHub <Version> not found"
-[[ "$nver" == "1.4.0" ]] || fail "BongHub <Version> is '$nver', expected 1.4.0"
+[[ "$nver" == "1.4.1" ]] || fail "BongHub <Version> is '$nver', expected 1.4.1"
 [[ "$nfv" == "$nver.0" ]] || fail "FileVersion is '$nfv', expected '$nver.0'"
 [[ "$env" == "$nver" ]] || fail "AppEnv.Version is '$env', expected '$nver'"
 [[ "$info" == "$nver" ]] || fail "AppInfo.Version is '$info', expected '$nver'"

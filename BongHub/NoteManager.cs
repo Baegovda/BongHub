@@ -152,6 +152,13 @@ public static class NoteManager
         return string.Join("\r\n\r\n──────────\r\n\r\n", NoteStore.All.Where(m => !string.IsNullOrWhiteSpace(m.Text)).Select(m => m.Text.Trim()));
     }
 
+    public static void HoldTopology() { foreach (var w in open.Values.ToList()) w.SetTopologyHold(true); }
+    public static void SettleTopology()
+    {
+        var areas = AppEnv.Off ? Array.Empty<NoteLayout.Box>() : Win32.WorkAreas();
+        bool transient = AppEnv.Off || NoteLayout.IsTransient(areas);
+        foreach (var w in open.Values.ToList()) w.FinishTopology(areas, transient);
+    }
     public static void FlushAll() { foreach (var w in open.Values.ToList()) { try { w.FlushAll(); } catch (Exception e) { AppEnv.Log("flush failed: " + e.Message); } } }
     public static void CloseAllWindows() { foreach (var w in open.Values.ToList()) w.Close(); open.Clear(); }
 }

@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 
 namespace BongHub;
 
@@ -199,6 +200,9 @@ public partial class MainWindow : Window
 
     void Render(string key, bool animate)
     {
+        bool stay = CurrentPage == key && !animate;
+        double keepY = stay ? Scroller.VerticalOffset : 0;
+        var kept = stay ? CapturePageFocus() : null;
         CurrentPage = key;
         PageHost.Children.Clear(); FirstRowTitle = null; FirstSecondary = null;
         var label = Pages.First(p => p.Key == key).Label;
@@ -216,7 +220,64 @@ public partial class MainWindow : Window
             default: PageAbout(); break;
         }
         if (animate) Fx.SlideIn(PageHost);
-        if (!animate) Scroller.ScrollToTop();
+        if (stay) RestorePageFocus(keepY, kept);
+        else if (!animate) Scroller.ScrollToTop();
+    }
+
+    public double ReadScroll() => Scroller.VerticalOffset;
+    public void WriteScroll(double y) => Scroller.ScrollToVerticalOffset(y);
+    public string KeptFocus { get; private set; } = "";
+
+    (string Token, int Caret)? CapturePageFocus()
+    {
+        DependencyObject? el = Keyboard.FocusedElement as DependencyObject;
+        while (el != null)
+        {
+            if (el is FrameworkElement fe && fe.Tag is string token && token.StartsWith("keep:", StringComparison.Ordinal))
+                return (token, el is TextBox box ? box.CaretIndex : 0);
+            el = VisualTreeHelper.GetParent(el) ?? LogicalTreeHelper.GetParent(el);
+        }
+        return null;
+    }
+
+    void RestorePageFocus(double y, (string Token, int Caret)? kept)
+    {
+        void Apply()
+        {
+            UpdateLayout();
+            double max = Math.Max(0, Scroller.ScrollableHeight);
+            Scroller.ScrollToVerticalOffset(Math.Min(Math.Max(0, y), max));
+        }
+        Apply();
+        if (kept != null)
+        {
+            var match = FindKeep(PageHost, kept.Value.Token);
+            if (match == null && kept.Value.Token.StartsWith("keep:trash:", StringComparison.Ordinal))
+                match = FindKeep(PageHost, "keep:window-list");
+            if (match is TextBox box)
+            {
+                box.Focus();
+                box.CaretIndex = Math.Min(kept.Value.Caret, box.Text.Length);
+            }
+            else if (match is IInputElement input) input.Focus();
+            KeptFocus = match is FrameworkElement fe && fe.Tag is string tag ? tag : "";
+        }
+        Apply();
+        Dispatcher.BeginInvoke(Apply, DispatcherPriority.Loaded);
+    }
+
+    static FrameworkElement? FindKeep(DependencyObject root, string token)
+    {
+        int count = 0;
+        try { count = VisualTreeHelper.GetChildrenCount(root); } catch { return null; }
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is FrameworkElement fe && fe.Tag as string == token) return fe;
+            var nested = FindKeep(child, token);
+            if (nested != null) return nested;
+        }
+        return null;
     }
 
     // ---------- building blocks (iOS inset grouped list) ----------
@@ -318,18 +379,9 @@ public partial class MainWindow : Window
         }
         var snap = ConfigStore.Presets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
         if (snap == null) { DisplayAction = "missing"; return; }
-        if (Interlocked.CompareExchange(ref displayBusy, 1, 0) != 0) { DisplayAction = "busy"; return; }
         var plan = PresetCodec.Clone(snap);
         var profile = Profiles.FirstOrDefault(p => string.Equals(p.Name, plan.Name, StringComparison.Ordinal));
-        if (profile != null && !holdUndo) ProfileUndo.Remember(profile);
-        holdUndo = false;
-        DisplayAction = "applying";
-        ThreadPool.QueueUserWorkItem(_ =>
-        {
-            try { ApplyPresetNow(plan); PlaceProfile(profile); ActivePreset = plan.Name; DisplayAction = "applied " + plan.Name; }
-            catch (Exception ex) { DisplayAction = ex.Message; }
-            finally { Interlocked.Exchange(ref displayBusy, 0); }
-        });
+        StartLockedApply(profile, plan);
     }
 
     /// <summary>Apply a profile that is not one of the 3.4.x presets. Tests return before any display call.</summary>
@@ -354,17 +406,71 @@ public partial class MainWindow : Window
             DisplayAction = "blocked";
             return;
         }
+        StartLockedApply(profile, ProfileDoc.ToPreset(profile));
+    }
+
+    string lastAppliedId = "";
+    public string ProfileApplyNote { get; private set; } = "";
+
+    void StartLockedApply(MonitorProfile? profile, MonitorPreset plan)
+    {
+        if (profile != null && profile.Monitors.Count > 0)
+        {
+            string invalid = DeskArrange.Validate(DeskArrange.FromProfile(profile));
+            if (invalid.Length > 0)
+            {
+                ProfileApplyNote = invalid;
+                DisplayAction = invalid;
+                if (CurrentPage == "presets") Render("presets", false);
+                return;
+            }
+        }
+        var leaving = profile == null ? null : Profiles.FirstOrDefault(p => p.Id == lastAppliedId && p.Id != profile.Id);
+        if (leaving != null && leaving.RememberWindows && WindowGate.RealAllowed)
+        {
+            try
+            {
+                leaving.Session = SessionLayout.Capture(LiveWindowSurface.ReadProbes(), leaving.Monitors);
+                leaving.SessionSaved = DateTime.Now.ToString("M월 d일 HH:mm");
+                SaveProfiles();
+            }
+            catch (Exception ex) { AppEnv.Log("session: " + ex.Message); }
+        }
         if (Interlocked.CompareExchange(ref displayBusy, 1, 0) != 0) { DisplayAction = "busy"; return; }
-        var plan = ProfileDoc.ToPreset(profile);
-        if (!holdUndo) ProfileUndo.Remember(profile);
+        if (profile != null && !holdUndo) ProfileUndo.Remember(profile);
         holdUndo = false;
+        ProfileApplyNote = "";
         DisplayAction = "applying";
+        NoteManager.HoldTopology();
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            try { ApplyPresetNow(plan); PlaceProfile(profile); ActivePreset = plan.Name; DisplayAction = "applied " + plan.Name; }
-            catch (Exception ex) { DisplayAction = ex.Message; }
-            finally { Interlocked.Exchange(ref displayBusy, 0); }
+            try
+            {
+                ApplyPresetNow(plan, profile);
+                bool session = profile != null && profile.RememberWindows && profile.Session.Count > 0;
+                if (session) RestoreProfileWindows(profile!);
+                PlaceProfile(profile, windows: !session);
+                ActivePreset = plan.Name;
+                if (profile != null) lastAppliedId = profile.Id;
+                DisplayAction = "applied " + plan.Name;
+            }
+            catch (Exception ex) { DisplayAction = ex.Message; ProfileApplyNote = ex.Message; }
+            finally
+            {
+                Interlocked.Exchange(ref displayBusy, 0);
+                try { Dispatcher.BeginInvoke(() => { NoteManager.SettleTopology(); if (CurrentPage == "presets") Render("presets", false); }); } catch { }
+            }
         });
+    }
+
+    void RestoreProfileWindows(MonitorProfile profile)
+    {
+        if (!WindowGate.RealAllowed) return;
+        Thread.Sleep(400);
+        using var live = new LiveWindowSurface();
+        SessionLayout.Restore(profile.Session, LiveWindowSurface.ReadProbes(), live, profile.Monitors);
+        Thread.Sleep(250);
+        SessionLayout.Restore(profile.Session, LiveWindowSurface.ReadProbes(), live, profile.Monitors);
     }
 
     bool holdUndo;
@@ -390,10 +496,10 @@ public partial class MainWindow : Window
         RequestApplyProfile(shot.Id);
     }
 
-    void PlaceProfile(MonitorProfile? profile)
+    void PlaceProfile(MonitorProfile? profile, bool windows = true)
     {
         if (profile == null) return;
-        if (WindowGate.RealAllowed)
+        if (windows && WindowGate.RealAllowed)
         {
             using var live = new LiveWindowSurface();
             var open = live.List();
@@ -454,9 +560,12 @@ public partial class MainWindow : Window
         Render("presets", false);
     }
 
-    void ApplyPresetNow(MonitorPreset plan)
+    void ApplyPresetNow(MonitorPreset plan, MonitorProfile? profile = null)
     {
-        new RealDisplay().Apply(PresetPlan.Commands(plan));
+        if (profile != null && profile.Monitors.Count > 0)
+            DisplayNative.ApplyArrangement(DeskArrange.FromProfile(profile));
+        else
+            new RealDisplay().Apply(PresetPlan.Commands(plan));
         var sleep = PresetExtras.Sleep;
         var signature = PresetExtras.Signature;
         var stamp = PresetExtras.StampFile;

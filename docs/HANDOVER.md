@@ -1,6 +1,6 @@
 # BongHub 인수인계
 
-지금 제품은 **BongHub 1.4.0** 하나예요. WPF 앱이고 실행 파일은 `BongHub.exe`예요. WinForms 3.4.x 소스(`app/`, `build.ps1`)는 저장소에 없어요. 메모·설정 파일과 `%LOCALAPPDATA%\BongHub`, `Local\BongHub_NotesWriter`는 3.4.x와 같이 읽혀요.
+지금 제품은 **BongHub 1.4.1** 하나예요. WPF 앱이고 실행 파일은 `BongHub.exe`예요. WinForms 3.4.x 소스(`app/`, `build.ps1`)는 저장소에 없어요. 메모·설정 파일과 `%LOCALAPPDATA%\BongHub`, `Local\BongHub_NotesWriter`는 3.4.x와 같이 읽혀요.
 
 이 문서가 절차의 기준이에요. 예전에 있던 `docs/HANDOFF.md`와 `docs/PORTING_PLAN.md`는 0.x 계획과 3.4.9 배포 기록이 섞여 있어서 뺐어요. 그 글은 git 기록에 있어요. 버전별 사용자 변화는 `CHANGELOG.md`예요.
 
@@ -37,7 +37,7 @@
 
 ### 모니터 프로필 캔버스
 
-`ProfilePage.cs`의 `DrawProfileCanvas`가 설정 창 안에 모니터와 창, 바탕화면 아이콘을 그려요. 그림은 지금 Windows 화면 구성을 따라요. 위치, 해상도, 배율, 방향, 식별 번호(`\\.\DISPLAYn`)가 같고, 화면 구성이 바뀌면(`WM_DISPLAYCHANGE`) 다시 맞춰요. 프로필은 그 그림에서 고치는 목표 배치예요. "저장된 구성과 달라요" 안내는 없어요. 끊긴 화면은 흐리게 두고 지우는 단추는 없어요. 모니터를 끌면 맞닿은 변이 선분으로 겹치고 안내선이 나와요. 창은 실제 비율이고, 이웃과는 4px, 절반·최대는 변의 18%예요. 변과 모서리, 숫자로 크기를 고쳐요. 단축키는 키를 누르는 칸이고 `RegisterHotKey`(id 910부터)예요. 전역 후크는 없어요. 저장은 `%LOCALAPPDATA%\BongHub\profiles.json`이에요. 없는 필드는 기본값이라 예전 파일도 읽혀요. `config.json`의 3.4.x 필드는 지우지 않아요.
+`ProfilePage.cs`의 `DrawProfileCanvas`가 설정 창 안에 모니터와 창, 바탕화면 아이콘을 그려요. 그림은 지금 Windows 화면 구성을 따라요. 위치, 해상도, 배율, 방향, 식별 번호(`\\.\DISPLAYn`)가 같고, 화면 구성이 바뀌면(`WM_DISPLAYCHANGE`) 다시 맞춰요. 프로필은 그 그림에서 고치는 목표 배치예요. "저장된 구성과 달라요" 안내는 없어요. 끊긴 화면은 흐리게 두고 지우는 단추는 없어요. 모니터를 끌면 맞닿은 변이 선분으로 겹치고 안내선이 나와요. 창 칩은 모니터 칸과 같은 비율이고, 번호 글은 칩 아래에 있어요. 이웃 창과는 4px, 모니터 가장자리 자석은 2px, 절반·최대는 변의 18%에 떨어뜨릴 때만이에요. 모니터는 가로·세로를 한 번에 맞출 수 있고, 위치 잠금이 기본이에요. 프로필을 떠나면 열린 창 배치를 남겼다가 돌아올 때 돌려요. 화면 배치는 한 번에 커밋해요. 변과 모서리, 숫자로 크기를 고쳐요. 단축키는 키를 누르는 칸이고 `RegisterHotKey`(id 910부터)예요. 전역 후크는 없어요. 저장은 `%LOCALAPPDATA%\BongHub\profiles.json`이에요. 없는 필드는 기본값이라 예전 파일도 읽혀요. `config.json`의 3.4.x 필드는 지우지 않아요.
 
 ### 서비스와 가짜
 
@@ -70,8 +70,8 @@ dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Relea
 
 | 명령 | 결과 |
 |---|---|
-| `--smoketest` | **139 PASS**. 임시 폴더만 써요. `--data`와 `BONGHUB_DATA`는 무시해요. |
-| `--notetest --data <복사본>` | **144 PASS**. `data/` 원본이 아니라 복사본만 넘겨요. |
+| `--smoketest` | **150 PASS**. 임시 폴더만 써요. `--data`와 `BONGHUB_DATA`는 무시해요. |
+| `--notetest --data <복사본>` | **146 PASS**. `data/` 원본이 아니라 복사본만 넘겨요. |
 | PatchTests | `RESULT PASS` |
 | RichEditTests | 1×1 `\pngblip` 왕복 `RESULT PASS` |
 
@@ -94,7 +94,7 @@ dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Relea
 
 `.github/workflows/repo-check.yml`
 
-- `ubuntu-latest`: `check-versions.sh` (csproj `Version` / `FileVersion`, `AppEnv.Version`, `AppInfo.Version`이 **1.4.0** / **1.4.0.0**으로 같은지), PR에서 `sync:`가 아닌 `data/` 변경이 있으면 실패, PatchTests.
+- `ubuntu-latest`: `check-versions.sh` (csproj `Version` / `FileVersion`, `AppEnv.Version`, `AppInfo.Version`이 **1.4.1** / **1.4.1.0**으로 같은지), PR에서 `sync:`가 아닌 `data/` 변경이 있으면 실패, PatchTests.
 - `windows-latest`: 게시 후 스모크, 그다음 노트 시험. 노트 시험 단계는 `if: always()`라서 스모크가 실패해도 돌아요. 프로세스는 `Start-Process -Wait -PassThru`로 기다리고 종료 코드로 판단해요. 로그는 `--out`과 exe 옆을 둘 다 봐요. 산출물은 `wpf-tests`로 올라가요.
 
 Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI가 담당이에요.
@@ -124,7 +124,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 | `notes\<id>.rtf.pending-<시각>` | 이미지 가드가 기존 파일을 덮지 못할 때 새 RTF. 메모마다 하나예요. 정상 저장이 되거나, pending이 rtf보다 오래되면 지워요. 다음에 열 때 pending이 더 새로우면 그 쪽을 읽어요. |
 | `desktop\layouts.json` | 3.4.x 아이콘 배치. |
 | `profiles.json` | 1.1.0 이후 모니터 프로필. 옛 config를 대체하지 않아요. |
-| `settings.json` | `ReduceMotion`만. 3.4.x와 공유하지 않아요. |
+| `settings.json` | `ReduceMotion`, `MonitorLocked`. 3.4.x와 공유하지 않아요. |
 
 저장권은 `Local\BongHub_NotesWriter`예요. 기본 데이터 폴더를 쓰는 일반 실행만 잡아요. 시험과 `--data` 임시 폴더는 잡지 않아요. 못 잡거나 3.4 트레이가 떠 있으면 읽기 전용이에요.
 
@@ -136,7 +136,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 
 `data/`는 클라우드가 `sync: <기기> yyyy-MM-dd HH:mm:ss`로 커밋해요. PR에서 그 접두사가 아닌 커밋이 `data/`를 바꾸면 CI가 실패해요.
 
-## 6. 버전 1.0.0–1.4.0
+## 6. 버전 1.0.0–1.4.1
 
 번호는 사용자에게 나간 WPF 앱이에요. 0.x는 `CHANGELOG.md`의 이식 단계예요.
 
@@ -152,6 +152,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 | 1.3.1 | Run·Paragraph 클릭이 예외를 던지지 않아요. | 123 / 128 |
 | 1.3.2 | 접힌·최소·최대 크기가 복원 크기를 덮지 않아요. 그림 가드는 화면에 남은 그림만 봐요. 게시는 자기 포함 `win-x64`예요. | 123 / 144 |
 | 1.4.0 | 모니터 프로필을 화면 설정처럼 깊게 고쳤어요. 라이브 배치, 가장자리 스냅, 창 크기, 조준, 단축키, 아이콘 미리보기. | 139 / 144 |
+| 1.4.1 | 프로필을 바꿀 때 화면·창·메모가 그대로 남아요. 캔버스 조작은 잠금, 실제 비율, 약한 가장자리 자석, 모서리 스냅이에요. | 150 / 146 |
 
 ## 7. 시험할 때 지키면 안 되는 것
 

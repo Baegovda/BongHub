@@ -62,6 +62,12 @@ public readonly record struct MonitorSpec(int W, int H, int X, int Y, bool Prima
 /// The only door to the real desktop list view. Tests, <c>--off</c>, and CI never arm it.
 /// Arming still does nothing until a save or restore click constructs <see cref="ExplorerIconSurface"/>.
 /// </summary>
+/// <summary>Tests point this at a fake icon list. The real list view is used only when <see cref="DesktopGate.RealAllowed"/>.</summary>
+public static class IconPreview
+{
+    public static Func<IReadOnlyList<DeskIcon>>? Source;
+}
+
 public static class DesktopGate
 {
     public static bool Armed { get; private set; }

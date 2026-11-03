@@ -102,7 +102,7 @@ public partial class StickyNoteWindow : Window
         // XAML min/max are DIPs. Notes store physical pixels, so the limits have to be divided by DPI
         // before the HWND is created. Otherwise 90 DIP becomes 113 px at 125% and the file's 90 px floor is lost.
         ApplyPhysicalLimits(Win32.SystemScale);
-        DpiChanged += (_, e) => ApplyPhysicalLimits(e.NewDpi.DpiScaleX);
+        DpiChanged += (_, e) => { ApplyPhysicalLimits(e.NewDpi.DpiScaleX); BeginTopology(); };
         ApplyColor();
         ApplyOpacity();
         ApplyZoom();
@@ -225,8 +225,8 @@ public partial class StickyNoteWindow : Window
         if (msg == Win32.WM_ENTERSIZEMOVE) { sizing = true; textTimer.Stop(); metaTimer.Stop(); }
         else if (msg == Win32.WM_EXITSIZEMOVE) { sizing = false; CaptureRect(); FlushMeta(); if (TextDirty) textTimer.Start(); }
         else if (msg == Win32.WM_MOUSEACTIVATE) Win32.AllowActivate(h);
-        else if (msg == Win32.WM_DISPLAYCHANGE && !AppEnv.Off) Dispatcher.BeginInvoke(ClampToScreens);
-        else if ((msg == Win32.WM_MOVE || msg == Win32.WM_SIZE) && Ready && !sizing)
+        else if (msg == Win32.WM_DISPLAYCHANGE && !AppEnv.Off) BeginTopology();
+        else if ((msg == Win32.WM_MOVE || msg == Win32.WM_SIZE) && Ready && !sizing && !TopologyHold)
         {
             // SIZE_MINIMIZED / SIZE_MAXIMIZED carry the iconic or zoomed rect, not the restore size.
             if (msg == Win32.WM_SIZE && (wp == (IntPtr)Win32.SIZE_MINIMIZED || wp == (IntPtr)Win32.SIZE_MAXIMIZED))
@@ -235,6 +235,67 @@ public partial class StickyNoteWindow : Window
         }
         return IntPtr.Zero;
     }
+    public bool TopologyHold { get; private set; }
+    public string AnchorId { get; private set; } = "";
+    DispatcherTimer? topologyTimer;
+    int topologyWaits;
+    List<ProfileMonitor> anchorBefore = new();
+
+    public void SetTopologyHold(bool hold) => TopologyHold = hold;
+
+    void BeginTopology()
+    {
+        if (AppEnv.Off) return;
+        TopologyHold = true;
+        topologyWaits = 0;
+        if (anchorBefore.Count == 0) anchorBefore = RememberAnchors();
+        topologyTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(450), DispatcherPriority.Background, (_, _) => FinishTopology(Win32.WorkAreas(), false), Dispatcher);
+        topologyTimer.Stop();
+        topologyTimer.Start();
+    }
+
+    static List<ProfileMonitor> RememberAnchors()
+    {
+        var list = new List<ProfileMonitor>();
+        try
+        {
+            foreach (var box in Win32.WorkAreas())
+                list.Add(new ProfileMonitor { X = box.X, Y = box.Y, W = box.W, H = box.H, Connected = true, Enabled = true });
+        }
+        catch { }
+        return list;
+    }
+
+    /// <summary>Re-reads the desk after it settles. A thin or empty work area does not change the saved size.</summary>
+    public void FinishTopology(NoteLayout.Box[] areas, bool forceTransient)
+    {
+        topologyTimer?.Stop();
+        bool transient = forceTransient || NoteLayout.IsTransient(areas);
+        if (transient && !forceTransient && topologyWaits < 8 && !AppEnv.Off)
+        {
+            topologyWaits++;
+            TopologyHold = true;
+            topologyTimer?.Start();
+            return;
+        }
+        if (transient)
+        {
+            TopologyHold = false;
+            return;
+        }
+        var saved = new NoteLayout.Box(Meta.X, Meta.Y, Meta.W, Meta.H);
+        var next = NoteLayout.Rehome(saved, AnchorId, anchorBefore, anchorBefore, false);
+        TopologyHold = false;
+        anchorBefore = RememberAnchors();
+        if (next.W != saved.W || next.H != saved.H) next = saved;
+        if (!AppEnv.Off) Win32.Place(this, next.X + AppEnv.OffsetX, next.Y + AppEnv.OffsetY, next.W, next.H);
+        if (next.X == Meta.X && next.Y == Meta.Y) return;
+        Meta.X = next.X;
+        Meta.Y = next.Y;
+        metaDirty = true;
+        FlushMeta();
+    }
+
     public void ClampToScreens()
     {
         if (AppEnv.Off) return;
@@ -276,6 +337,7 @@ public partial class StickyNoteWindow : Window
     /// <summary>Same decision as <see cref="CaptureRect"/>, with the rectangle supplied by the caller. Tests use this so they never minimize a real window.</summary>
     public bool CaptureSizeForTest(int x, int y, int w, int h, bool iconic, bool zoomed)
     {
+        if (TopologyHold) return false;
         if (!TryNoteSize(new NoteSpan(Meta.X, Meta.Y, Meta.W, Meta.H), x, y, w, h, iconic, zoomed, out var next))
             return false;
         Meta.X = next.X; Meta.Y = next.Y; Meta.W = next.W; Meta.H = next.H;

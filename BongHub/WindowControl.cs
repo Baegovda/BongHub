@@ -112,6 +112,8 @@ public sealed class PickProbe
     public bool Cloaked;
     public bool Own;
     public bool Shadow;
+    /// <summary>WS_EX_TOOLWINDOW and tooltip classes. Session capture skips these.</summary>
+    public bool Tool;
     public long OwnerId;
     public int Z;
 }
@@ -172,6 +174,8 @@ public sealed class TrackedWindow
     public string Path = "";
     public int X, Y, W, H;
     public bool Max, Min, TopMost;
+    /// <summary>Restored rect from GetWindowPlacement. Used when <see cref="Max"/> or <see cref="Min"/> is set.</summary>
+    public int NormalX, NormalY, NormalW, NormalH;
 }
 
 public readonly record struct WorkRect(int X, int Y, int W, int H);
@@ -215,12 +219,14 @@ public sealed class FakeWindowSurface : IWindowSurface
     {
         var win = Find(id);
         win.X = x; win.Y = y; win.W = w; win.H = h; win.Min = false; win.Max = false;
+        win.NormalX = x; win.NormalY = y; win.NormalW = w; win.NormalH = h;
         Ops.Add("place " + id);
     }
     public void Minimize(long id) { var win = Find(id); win.Min = true; win.Max = false; Ops.Add("min " + id); }
     public void Maximize(long id, WorkRect area)
     {
         var win = Find(id);
+        if (win.NormalW <= 0) { win.NormalX = win.X; win.NormalY = win.Y; win.NormalW = win.W; win.NormalH = win.H; }
         win.Min = false; win.Max = true; win.X = area.X; win.Y = area.Y; win.W = area.W; win.H = area.H;
         Ops.Add("max " + id);
     }
@@ -228,7 +234,7 @@ public sealed class FakeWindowSurface : IWindowSurface
     public void Pin(long id) { Find(id).TopMost = true; Ops.Add("pin " + id); }
     public void Dispose() { }
     TrackedWindow Find(long id) => Windows.First(w => w.Id == id);
-    static TrackedWindow Clone(TrackedWindow w) => new() { Id = w.Id, Process = w.Process, Title = w.Title, Class = w.Class, Path = w.Path, X = w.X, Y = w.Y, W = w.W, H = w.H, Max = w.Max, Min = w.Min, TopMost = w.TopMost };
+    static TrackedWindow Clone(TrackedWindow w) => new() { Id = w.Id, Process = w.Process, Title = w.Title, Class = w.Class, Path = w.Path, X = w.X, Y = w.Y, W = w.W, H = w.H, Max = w.Max, Min = w.Min, TopMost = w.TopMost, NormalX = w.NormalX, NormalY = w.NormalY, NormalW = w.NormalW, NormalH = w.NormalH };
 }
 
 public static class RuleMatch
@@ -467,6 +473,13 @@ public sealed class LiveWindowSurface : IWindowSurface
     {
         if (!hwnds.TryGetValue(id, out var hwnd)) return;
         if (IsIconic(hwnd) || IsZoomed(hwnd)) ShowWindow(hwnd, 4);
+        var placed = new WINDOWPLACEMENT
+        {
+            length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>(),
+            showCmd = 1,
+            normal = new RECT { Left = x, Top = y, Right = x + w, Bottom = y + h }
+        };
+        SetWindowPlacement(hwnd, ref placed);
         SetWindowPos(hwnd, IntPtr.Zero, x, y, w, h, 0x4 | 0x10 | 0x200);
         Update(id, hwnd);
     }
@@ -480,9 +493,12 @@ public sealed class LiveWindowSurface : IWindowSurface
     public void Maximize(long id, WorkRect area)
     {
         if (!hwnds.TryGetValue(id, out var hwnd)) return;
-        if (IsIconic(hwnd) || IsZoomed(hwnd)) ShowWindow(hwnd, 4);
-        SetWindowPos(hwnd, IntPtr.Zero, area.X + 40, area.Y + 40, Math.Max(200, area.W - 80), Math.Max(150, area.H - 80), 0x4 | 0x10 | 0x200);
-        ShowWindow(hwnd, 3);
+        var placed = new WINDOWPLACEMENT { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
+        if (!GetWindowPlacement(hwnd, ref placed) || placed.normal.Right <= placed.normal.Left)
+            placed.normal = new RECT { Left = area.X + 40, Top = area.Y + 40, Right = area.X + Math.Max(200, area.W - 80), Bottom = area.Y + Math.Max(150, area.H - 80) };
+        placed.length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>();
+        placed.showCmd = 3;
+        SetWindowPlacement(hwnd, ref placed);
         if (windows.FirstOrDefault(w => w.Id == id) is { } win) { win.Min = false; win.Max = true; }
     }
 
@@ -612,6 +628,7 @@ public sealed class LiveWindowSurface : IWindowSurface
                     Cloaked = cloaked,
                     Own = pid == self,
                     Shadow = shadow,
+                    Tool = (GetWindowLongPtr(h, -20).ToInt64() & 0x80) != 0 || cls.Contains("tooltips", StringComparison.OrdinalIgnoreCase),
                     OwnerId = ownerId,
                     Z = z,
                     Window = new TrackedWindow
@@ -621,9 +638,23 @@ public sealed class LiveWindowSurface : IWindowSurface
                         Path = path,
                         Title = TextOf(h),
                         Class = cls,
-                        X = rc.Left, Y = rc.Top, W = Math.Max(0, rc.Right - rc.Left), H = Math.Max(0, rc.Bottom - rc.Top)
+                        X = rc.Left, Y = rc.Top, W = Math.Max(0, rc.Right - rc.Left), H = Math.Max(0, rc.Bottom - rc.Top),
+                        Max = IsZoomed(h),
+                        Min = IsIconic(h),
+                        NormalX = rc.Left, NormalY = rc.Top, NormalW = Math.Max(0, rc.Right - rc.Left), NormalH = Math.Max(0, rc.Bottom - rc.Top)
                     }
                 });
+                if (list[^1].Window.Max || list[^1].Window.Min)
+                {
+                    var place = new WINDOWPLACEMENT { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
+                    if (GetWindowPlacement(h, ref place) && place.normal.Right > place.normal.Left && place.normal.Bottom > place.normal.Top)
+                    {
+                        list[^1].Window.NormalX = place.normal.Left;
+                        list[^1].Window.NormalY = place.normal.Top;
+                        list[^1].Window.NormalW = place.normal.Right - place.normal.Left;
+                        list[^1].Window.NormalH = place.normal.Bottom - place.normal.Top;
+                    }
+                }
             }
             catch { }
             z--;
@@ -715,6 +746,10 @@ public sealed class LiveWindowSurface : IWindowSurface
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] static extern bool GetWindowPlacement(IntPtr h, ref WINDOWPLACEMENT place);
+    [DllImport("user32.dll")] static extern bool SetWindowPlacement(IntPtr h, ref WINDOWPLACEMENT place);
+    [StructLayout(LayoutKind.Sequential)] struct POINTL { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] struct WINDOWPLACEMENT { public uint length, flags, showCmd; public POINTL min, max; public RECT normal; }
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
     [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFO mi);

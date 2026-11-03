@@ -753,6 +753,13 @@ public static class NoteTest
             bool ownPaste = host.PasteMixed();
             t.Check("paste uses BongHub.Note only when the clipboard sequence matches", ownPaste && host.PlainText().Contains("같은순번") && !host.PlainText().Contains("무시될글"));
             NoteClipSession.Fake = null;
+            int keepW = host.Meta.W, keepH = host.Meta.H, heldWrites = host.MetaWrites;
+            host.SetTopologyHold(true);
+            bool ignored = !host.CaptureSizeForTest(host.Meta.X, host.Meta.Y, host.Meta.W, 30, false, false);
+            host.FinishTopology(new[] { new NoteLayout.Box(-4800, 5, 3840, 36) }, true);
+            t.Check("topology hold does not persist a thin note", ignored && !host.TopologyHold && host.Meta.W == keepW && host.Meta.H == keepH && host.MetaWrites == heldWrites);
+            string noteStory = NoteLayout.TopologyStory();
+            t.Check("note rehome keeps the saved size across a monitor move", noteStory.Length == 0, noteStory);
         }
     }
 }
