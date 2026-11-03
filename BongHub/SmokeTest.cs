@@ -783,6 +783,40 @@ public static class SmokeTest
         foreach (Window osd in Application.Current.Windows)
             if ((osd.Tag as string) == "profile-osd" && osd.Left <= -20000 && !osd.ShowActivated) osdOff = true;
         t.Check("profile osd stays off-screen", osdOff);
+        int osdNatives = DisplaySystem.NativeCalls;
+        ProfileOsd.Advance(1.2);
+        bool running = ProfileOsd.Phase == "run" && ProfileOsd.Status == "1.2초";
+        ProfileOsd.Succeed(2.4);
+        bool done = ProfileOsd.Phase == "done" && ProfileOsd.Status == "완료 · 2.4초";
+        ProfileOsd.Show("자리비움");
+        ProfileOsd.Fail("화면을 바꾸지 못했어요", 0.4);
+        bool failed = ProfileOsd.Phase == "fail" && ProfileOsd.Status == "화면을 바꾸지 못했어요";
+        bool osdTextClear = true;
+        foreach (Window osd in Application.Current.Windows)
+        {
+            if ((osd.Tag as string) != "profile-osd") continue;
+            osd.UpdateLayout();
+            FrameworkElement? nameEl = null, statusEl = null, spinEl = null;
+            void Walk(DependencyObject node)
+            {
+                if (node is FrameworkElement fe && fe.Tag is string tag)
+                {
+                    if (tag == "osd-name") nameEl = fe;
+                    else if (tag == "osd-status") statusEl = fe;
+                    else if (tag == "osd-spin" || tag == "osd-mark") spinEl = fe;
+                }
+                int count = VisualTreeHelper.GetChildrenCount(node);
+                for (int i = 0; i < count; i++) Walk(VisualTreeHelper.GetChild(node, i));
+            }
+            Walk(osd);
+            if (nameEl == null || statusEl == null || spinEl == null) { osdTextClear = false; break; }
+            var nameBox = nameEl.TransformToAncestor(osd).TransformBounds(new Rect(0, 0, nameEl.ActualWidth, nameEl.ActualHeight));
+            var statusBox = statusEl.TransformToAncestor(osd).TransformBounds(new Rect(0, 0, statusEl.ActualWidth, statusEl.ActualHeight));
+            var markBox = spinEl.TransformToAncestor(osd).TransformBounds(new Rect(0, 0, spinEl.ActualWidth, spinEl.ActualHeight));
+            bool hit(Rect a, Rect b) => a.Width > 1 && b.Width > 1 && a.Left < b.Right - 0.5 && a.Right > b.Left + 0.5 && a.Top < b.Bottom - 0.5 && a.Bottom > b.Top + 0.5;
+            if (hit(nameBox, statusBox) || hit(nameBox, markBox) || hit(statusBox, markBox)) osdTextClear = false;
+        }
+        t.Check("profile switch card runs, completes, and fails without a real preset", running && done && failed && osdTextClear && osdOff && DisplaySystem.NativeCalls == osdNatives, $"run={running} done={done} fail={failed} clear={osdTextClear} status={ProfileOsd.Status}");
         int iconNatives = ExplorerIconSurface.NativeCalls;
         IconPreview.Source = () => new[] { new DeskIcon { Name = "휴지통", X = 12, Y = 24 }, new DeskIcon { Name = "문서", X = 40, Y = 80 } };
         w.RequestCaptureProfileIcons();
@@ -792,6 +826,12 @@ public static class SmokeTest
         string sessionStory = ProfileSwitch.SessionStory();
         t.Check("display round trip keeps the five monitor positions", deskStory.Length == 0, deskStory);
         t.Check("session round trip restores windows", sessionStory.Length == 0, sessionStory);
+        int ccdNatives = DisplaySystem.NativeCalls;
+        string ccdStory = CcdLayout.DisconnectStory();
+        t.Check("turning a monitor off deactivates it and a round trip turns it on", ccdStory.Length == 0 && DisplaySystem.NativeCalls == ccdNatives && DisplaySystem.SetDisplayConfigCalls == 0 && DisplaySystem.MmtStarts == 0 && DisplaySystem.ChangeDisplaySettingsExCalls == 0, ccdStory);
+        int holdNatives = LiveWindowSurface.NativeCalls;
+        string holdStory = SwitchHold.Story();
+        t.Check("windows stay on their snapshot when a monitor turns off", holdStory.Length == 0 && LiveWindowSurface.NativeCalls == holdNatives, holdStory);
         var edge = ProfileSnap.SnapWindow(new ProfileBox(6, 40, 100, 80), new ProfileBox(0, 0, 1920, 1080), Array.Empty<ProfileBox>(), 1);
         var corner = ProfileSnap.SnapMonitorWithGuide(new ProfileBox(1890, 1050, 400, 300), new[] { new ProfileBox(0, 0, 1920, 1080), new ProfileBox(1920, 0, 1920, 1080), new ProfileBox(0, 1080, 1920, 800) }, 40);
         t.Check("snap threshold is small and corners align both axes", edge.X == 6 && corner.Box.X == 1920 && corner.Box.Y == 1080 && corner.Guide.Corner);

@@ -451,6 +451,7 @@ public partial class MainWindow : Window
             {
                 ProfileApplyNote = invalid;
                 DisplayAction = invalid;
+                ProfileOsd.Fail(invalid);
                 if (CurrentPage == "presets") Render("presets", false);
                 return;
             }
@@ -472,9 +473,12 @@ public partial class MainWindow : Window
         holdUndo = false;
         ProfileApplyNote = "";
         DisplayAction = "applying";
+        RememberSwitchHold(profile);
         NoteManager.HoldTopology();
         ThreadPool.QueueUserWorkItem(_ =>
         {
+            bool ok = false;
+            string err = "";
             try
             {
                 ApplyPresetNow(plan, profile);
@@ -484,12 +488,15 @@ public partial class MainWindow : Window
                 ActivePreset = plan.Name;
                 if (profile != null) lastAppliedId = profile.Id;
                 DisplayAction = "applied " + plan.Name;
+                ok = true;
             }
-            catch (Exception ex) { DisplayAction = ex.Message; ProfileApplyNote = ex.Message; }
+            catch (Exception ex) { err = ex.Message; DisplayAction = err; ProfileApplyNote = err; }
             finally
             {
                 Interlocked.Exchange(ref displayBusy, 0);
-                try { Dispatcher.BeginInvoke(() => { NoteManager.SettleTopology(); if (CurrentPage == "presets") Render("presets", false); }); } catch { }
+                bool done = ok;
+                string fail = err;
+                try { Dispatcher.BeginInvoke(() => { if (done) ProfileOsd.Succeed(); else ProfileOsd.Fail(fail); if (switchHoldPending) ScheduleWindowSettle(); else NoteManager.SettleTopology(); if (CurrentPage == "presets") Render("presets", false); }); } catch { }
             }
         });
     }
@@ -681,6 +688,55 @@ public partial class MainWindow : Window
     }
 
     List<PlacementSpace.Monitor> settledMonitors = new();
+    List<HeldWindow>? switchShot;
+    List<ProfileMonitor>? switchBefore;
+    List<ProfileApp>? switchRules;
+    bool switchHoldPending;
+
+    void RememberSwitchHold(MonitorProfile? profile)
+    {
+        switchShot = null;
+        switchBefore = null;
+        switchRules = null;
+        switchHoldPending = false;
+        if (!WindowGate.RealAllowed) return;
+        try
+        {
+            var before = LiveMonitors();
+            var primary = before.FirstOrDefault(m => m.Primary) ?? before.FirstOrDefault();
+            int ox = primary?.WorkX ?? 0, oy = primary?.WorkY ?? 0;
+            switchBefore = before;
+            switchRules = profile?.Apps;
+            switchShot = SwitchHold.Capture(LiveWindowSurface.ReadProbes(), before, ox, oy);
+            switchHoldPending = switchShot.Count > 0;
+        }
+        catch (Exception ex) { AppEnv.Log("hold: " + ex.Message); }
+    }
+
+    static List<ProfileMonitor> LiveMonitors()
+    {
+        var list = new List<ProfileMonitor>();
+        foreach (var s in Win32.DisplayIdentities())
+        {
+            string path = s.Path ?? "";
+            string edid = s.Edid ?? "";
+            list.Add(new ProfileMonitor
+            {
+                Path = path,
+                Edid = edid,
+                Id = path.Length > 0 ? path : edid,
+                Number = s.Number,
+                Device = s.Device ?? "",
+                X = s.X, Y = s.Y, W = s.W, H = s.H,
+                WorkX = s.WorkX, WorkY = s.WorkY, WorkW = s.WorkW, WorkH = s.WorkH,
+                Primary = s.Primary,
+                Enabled = true,
+                Connected = true,
+                Scale = s.Scale <= 0 ? 100 : s.Scale
+            });
+        }
+        return list;
+    }
     DispatcherTimer? windowSettleTimer;
     DispatcherTimer? profileResizeTimer;
     bool profileSizing;
@@ -729,13 +785,32 @@ public partial class MainWindow : Window
     void OnWindowSettle(object? sender, EventArgs e)
     {
         windowSettleTimer?.Stop();
-        if (!WindowGate.RealAllowed) return;
+        if (!WindowGate.RealAllowed)
+        {
+            NoteManager.SettleTopology();
+            return;
+        }
         try
         {
-            using var live = new LiveWindowSurface();
-            var after = live.CurrentMonitors();
-            live.SettleRestores(settledMonitors, after);
-            settledMonitors = after;
+            if (switchHoldPending && switchShot != null)
+            {
+                var after = LiveMonitors();
+                var moves = SwitchHold.Plan(switchShot, switchBefore, after, switchRules);
+                using var live = new LiveWindowSurface();
+                int n = live.DeferMoves(moves);
+                if (n < 0) AppEnv.Log("display: DeferWindowPos failed");
+                live.SettleRestores(SessionLayout.MonitorsOf(switchBefore), SessionLayout.MonitorsOf(after));
+                settledMonitors = SessionLayout.MonitorsOf(after);
+                switchHoldPending = false;
+            }
+            else
+            {
+                using var live = new LiveWindowSurface();
+                var after = live.CurrentMonitors();
+                live.SettleRestores(settledMonitors, after);
+                settledMonitors = after;
+            }
+            NoteManager.SettleTopology();
         }
         catch (Exception ex) { AppEnv.Log("settle: " + ex.Message); }
     }
@@ -745,9 +820,9 @@ public partial class MainWindow : Window
     {
         if (msg == Win32.WM_ENTERSIZEMOVE) profileSizing = true;
         else if (msg == Win32.WM_EXITSIZEMOVE) { profileSizing = false; ScheduleProfileRebuild(); }
-        if (msg == Win32.WM_DISPLAYCHANGE)
+        if (msg == Win32.WM_DISPLAYCHANGE || (msg == Win32.WM_DPICHANGED && switchHoldPending))
         {
-            if (DisplayGate.RealAllowed)
+            if (msg == Win32.WM_DISPLAYCHANGE && DisplayGate.RealAllowed)
             {
                 shownLive = "";
                 if (CurrentPage == "presets") Dispatcher.BeginInvoke(() => { if (CurrentPage == "presets") Render("presets", false); });
@@ -1212,21 +1287,8 @@ public partial class MainWindow : Window
         catch (Exception ex) { DesktopAction = ex.Message; }
     }
 
-    void PagePowerToys()
-    {
-        Footer("켠 값을 저장해도 후킹, 전역 단축키, 밝기, 모니터는 바꾸지 않아요. 테스트에서는 그 호출이 거부돼요. 코드 기본은 위험한 항목이 꺼져 있어요.");
-        var g = Group();
-        if (ConfigStore.PowerToys.Count == 0)
-            Row(g, "\uE945", "AF52DE", "PowerToys 설정 없음", "코드 기본은 위험한 항목이 꺼져 있어요.", null);
-        else
-            foreach (var toy in ConfigStore.PowerToys)
-            {
-                string key = toy.Name;
-                bool owned = key is "Zones" or "Grab" or "Palette" or "Paste" or "Peek";
-                string sub = (toy.Enabled ? "켜짐" : "꺼짐") + (toy.Hotkey.Length > 0 ? " · " + toy.Hotkey : "") + (owned ? " · 값만 저장" : "");
-                Row(g, "\uE945", "AF52DE", toy.Name, sub, owned ? Switch(toy.Enabled, v => ConfigStore.SetPtEnabled(key, v), !AppEnv.ReadOnly) : null);
-            }
-    }
+    string openPowerToy = "";
+    void PagePowerToys() => DrawPowerToys();
 
     void DrawProfileSwitchSettings()
     {

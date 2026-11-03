@@ -1,7 +1,10 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 
 namespace BongHub;
@@ -117,23 +120,100 @@ public static class IdentifyFlash
     }
 }
 
+/// <summary>Words on the profile-switch card. The window only paints them.</summary>
+public static class OsdCopy
+{
+    public static string Clock(double seconds)
+    {
+        if (double.IsNaN(seconds) || seconds < 0) seconds = 0;
+        return seconds.ToString("0.0", CultureInfo.InvariantCulture) + "초";
+    }
+
+    public static string Line(string? phase, double seconds, string? error)
+    {
+        if (phase == "fail") return string.IsNullOrWhiteSpace(error) ? "실패" : error!.Trim();
+        if (phase == "done") return "완료 · " + Clock(seconds);
+        return Clock(seconds);
+    }
+}
+
 /// <summary>Profile-switch card. Off-screen under <c>--off</c>. Otherwise pinned on the primary monitor in physical pixels.</summary>
 public static class ProfileOsd
 {
+    static Window? host;
+    static TextBlock? nameText;
+    static TextBlock? statusText;
+    static Ellipse? ring;
+    static TextBlock? mark;
+    static DispatcherTimer? clock;
+    static readonly System.Diagnostics.Stopwatch Watch = new();
+    public static string Phase { get; private set; } = "";
+    public static string Status { get; private set; } = "";
+
     public static void Show(string name, IReadOnlyList<ProfileMonitor>? monitors = null)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(22, 0, 22, 0) };
-        var mark = new Border
+        CloseNow();
+        Phase = "run";
+        Status = OsdCopy.Line("run", 0, null);
+        var row = new Grid { Margin = new Thickness(18, 0, 18, 0), VerticalAlignment = VerticalAlignment.Center };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var badge = new Grid { Width = 44, Height = 44, Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center };
+        ring = new Ellipse
         {
-            Width = 48, Height = 48, CornerRadius = new CornerRadius(14),
-            Background = new LinearGradientBrush(Color.FromRgb(0x5A, 0xC8, 0xFA), Color.FromRgb(0x4C, 0x8A, 0xFE), 40),
-            Margin = new Thickness(0, 0, 14, 0)
+            Width = 28, Height = 28,
+            Stroke = new SolidColorBrush(Color.FromRgb(0x5A, 0xC8, 0xFA)),
+            StrokeThickness = 3,
+            StrokeDashArray = new DoubleCollection { 2.2, 1.5 },
+            StrokeDashCap = PenLineCap.Round,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new RotateTransform(),
+            IsHitTestVisible = false,
+            Tag = "osd-spin"
         };
-        mark.Child = new TextBlock { Text = "▣", FontSize = 22, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        row.Children.Add(mark);
+        mark = new TextBlock
+        {
+            Text = "",
+            FontSize = 22,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false,
+            Tag = "osd-mark"
+        };
+        badge.Children.Add(ring);
+        badge.Children.Add(mark);
+        row.Children.Add(badge);
         var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        words.Children.Add(new TextBlock { Text = "프로필", FontSize = 12, Foreground = new SolidColorBrush(Color.FromArgb(0xB0, 0xF5, 0xF7, 0xFA)) });
-        words.Children.Add(new TextBlock { Text = name.Length > 0 ? name : "프로필", FontSize = 26, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White, TextTrimming = TextTrimming.CharacterEllipsis });
+        nameText = new TextBlock
+        {
+            Text = name.Length > 0 ? name : "프로필",
+            FontSize = 22,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Brushes.White,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextWrapping = TextWrapping.NoWrap,
+            MaxWidth = 250,
+            Tag = "osd-name"
+        };
+        statusText = new TextBlock
+        {
+            Text = Status,
+            FontSize = 13,
+            Margin = new Thickness(0, 2, 0, 0),
+            Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0xF5, 0xF7, 0xFA)),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextWrapping = TextWrapping.NoWrap,
+            MaxWidth = 250,
+            Tag = "osd-status"
+        };
+        words.Children.Add(nameText);
+        words.Children.Add(statusText);
+        Grid.SetColumn(words, 1);
         row.Children.Add(words);
         var shell = new Border
         {
@@ -145,7 +225,7 @@ public static class ProfileOsd
         };
         if (AppEnv.Off)
         {
-            var host = new Window
+            host = new Window
             {
                 WindowStyle = WindowStyle.None,
                 AllowsTransparency = true,
@@ -163,22 +243,92 @@ public static class ProfileOsd
                 Tag = "profile-osd"
             };
             host.Show();
-            return;
         }
-        var home = IdentifyLayout.HostOf(monitors);
-        ScreenCard place = home != null
-            ? IdentifyLayout.Center(home, 360, 108)
-            : new ScreenCard(0, false, -30000, -30000, 360, 108);
-        var live = IdentifyFlash.NewCard(shell, place, home?.Scale ?? 100, "profile-osd");
-        var life = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(Fx.Enabled ? 1600 : 400) };
+        else
+        {
+            var home = IdentifyLayout.HostOf(monitors);
+            ScreenCard place = home != null
+                ? IdentifyLayout.Center(home, 360, 108)
+                : new ScreenCard(0, false, -30000, -30000, 360, 108);
+            host = IdentifyFlash.NewCard(shell, place, home?.Scale ?? 100, "profile-osd");
+        }
+        Spin(true);
+        Watch.Restart();
+        clock = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        clock.Tick += (_, _) => Paint(OsdCopy.Line("run", Watch.Elapsed.TotalSeconds, null));
+        clock.Start();
+    }
+
+    /// <summary>Test hook. Sets the running clock without waiting.</summary>
+    public static void Advance(double seconds)
+    {
+        if (Phase != "run") return;
+        Paint(OsdCopy.Line("run", seconds, null));
+    }
+
+    public static void Succeed(double? seconds = null) => Finish("done", seconds ?? Watch.Elapsed.TotalSeconds, null);
+    public static void Fail(string? error, double? seconds = null) => Finish("fail", seconds ?? Watch.Elapsed.TotalSeconds, error);
+
+    static void Finish(string phase, double seconds, string? error)
+    {
+        Phase = phase;
+        clock?.Stop();
+        Watch.Stop();
+        Spin(false);
+        if (mark != null)
+        {
+            mark.Text = phase == "done" ? "✓" : "!";
+            mark.Foreground = new SolidColorBrush(phase == "done" ? Color.FromRgb(0x34, 0xC7, 0x59) : Color.FromRgb(0xFF, 0x9F, 0x0A));
+            mark.Visibility = Visibility.Visible;
+        }
+        Paint(OsdCopy.Line(phase, seconds, error));
+        var life = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(Fx.Enabled ? 900 : 40) };
         life.Tick += (_, _) =>
         {
             life.Stop();
-            if (live.Content is UIElement body && Fx.Enabled)
-                Fx.Disappear(body, () => { try { live.Close(); } catch { } });
-            else
-                try { live.Close(); } catch { }
+            Fade();
         };
         life.Start();
+    }
+
+    static void Paint(string line)
+    {
+        Status = line;
+        if (statusText != null) statusText.Text = line;
+    }
+
+    static void Spin(bool on)
+    {
+        if (ring?.RenderTransform is not RotateTransform spin) return;
+        spin.BeginAnimation(RotateTransform.AngleProperty, null);
+        if (!on) { ring.Visibility = Visibility.Collapsed; return; }
+        ring.Visibility = Visibility.Visible;
+        if (mark != null) mark.Visibility = Visibility.Collapsed;
+        if (!Fx.Enabled) return;
+        var anim = new DoubleAnimation(0, 360, TimeSpan.FromMilliseconds(900)) { RepeatBehavior = RepeatBehavior.Forever };
+        spin.BeginAnimation(RotateTransform.AngleProperty, anim);
+    }
+
+    static void Fade()
+    {
+        var window = host;
+        if (window == null) return;
+        if (window.Content is UIElement body && Fx.Enabled)
+            Fx.Disappear(body, () => { try { window.Close(); } catch { } if (ReferenceEquals(host, window)) host = null; });
+        else
+        {
+            try { window.Close(); } catch { }
+            if (ReferenceEquals(host, window)) host = null;
+        }
+    }
+
+    static void CloseNow()
+    {
+        clock?.Stop();
+        clock = null;
+        var window = host;
+        host = null;
+        if (window == null) return;
+        try { window.Close(); } catch { }
     }
 }

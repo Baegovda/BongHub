@@ -8,7 +8,8 @@ namespace BongHub;
 
 /// <summary>
 /// Real monitor switch and DDC/CI. Installed only after <see cref="DisplayGate.Arm"/> in normal mode.
-/// ChangeDisplaySettingsEx and SetDisplayConfig are not imported. Explorer and DisplayFusion are not stopped.
+/// A profile apply goes through CCD <c>SetDisplayConfig</c>. MultiMonitorTool is only the fallback.
+/// Explorer and DisplayFusion are not stopped.
 /// </summary>
 public static class DisplayNative
 {
@@ -23,10 +24,53 @@ public static class DisplayNative
     public static void Commit(IReadOnlyList<string> commands)
     {
         DisplayGate.Demand();
-        if (commands == null || commands.Count == 0) return;
+        CommitChecked(commands);
+    }
+
+    /// <summary>
+    /// One CCD commit. Disabled monitors lose <c>DISPLAYCONFIG_PATH_ACTIVE</c>.
+    /// The primary source position is (0,0). A path that was off is restored with <c>SDC_TOPOLOGY_SUPPLIED</c>
+    /// and the saved topology. MultiMonitorTool runs only when CCD returns an error.
+    /// </summary>
+    public static void ApplyArrangement(IReadOnlyList<DeskScreen> desired)
+    {
+        DisplayGate.Demand();
+        string error = DeskArrange.Validate(desired);
+        if (error.Length > 0) throw new InvalidOperationException(error);
+        var live = QueryPaths();
+        if (live == null)
+        {
+            AppEnv.Log("display: QueryDisplayConfig failed");
+            if (!Fallback(desired)) throw new InvalidOperationException("화면 배치를 적용하지 못했어요.");
+            return;
+        }
+        CcdBank.RememberIfFuller(live.Logical);
+        var commit = CcdLayout.Build(live.Logical, desired, CcdBank.Saved);
+        if (!Covers(live, commit))
+        {
+            AppEnv.Log("display: a monitor has no CCD path");
+            if (!Fallback(desired)) throw new InvalidOperationException("화면 배치를 적용하지 못했어요.");
+            return;
+        }
+        int rc = ApplyNative(live, commit);
+        if (rc != 0)
+        {
+            AppEnv.Log("display: SetDisplayConfig returned " + rc);
+            if (!Fallback(desired)) throw new InvalidOperationException("화면 배치를 적용하지 못했어요. (" + rc + ")");
+        }
+    }
+
+    static bool CommitChecked(IReadOnlyList<string>? commands)
+    {
+        if (commands == null || commands.Count == 0) return false;
         string tool = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BongHub", "MultiMonitorTool.exe");
-        if (!File.Exists(tool)) return;
+        if (!File.Exists(tool))
+        {
+            AppEnv.Log("display: MultiMonitorTool.exe missing");
+            return false;
+        }
         string dir = Path.GetDirectoryName(tool) ?? "";
+        bool ok = true;
         foreach (var cmd in commands)
         {
             string arg = ToArg(cmd);
@@ -38,85 +82,312 @@ public static class DisplayNative
                 CreateNoWindow = true,
                 WorkingDirectory = dir
             };
-            var started = Process.Start(psi);
-            try { if (started != null) started.WaitForExit(20000); }
-            finally { started?.Dispose(); }
-        }
-    }
-
-    /// <summary>
-    /// One topology commit. Positions are matched by target path, staged, then applied together.
-    /// There is no per-monitor enable and no <c>CDS_SET_PRIMARY</c>, which would slide the origin.
-    /// </summary>
-    public static void ApplyArrangement(IReadOnlyList<DeskScreen> desired)
-    {
-        DisplayGate.Demand();
-        var known = new List<DeskScreen>();
-        foreach (var s in Win32.DisplayIdentities())
-            known.Add(new DeskScreen
+            try
             {
-                StableId = s.Path.Length > 0 ? s.Path : (s.Edid.Length > 0 ? s.Edid : "display:" + s.Number),
-                Number = s.Number,
-                Device = s.Device ?? "",
-                X = s.X, Y = s.Y, W = s.W, H = s.H,
-                Primary = s.Primary,
-                Enabled = true,
-                Scale = s.Scale <= 0 ? 100 : s.Scale
-            });
-        string error = DeskArrange.Validate(desired);
-        if (error.Length > 0) throw new InvalidOperationException(error);
-        var steps = DeskArrange.Steps(desired, known);
-        if (!StageAll(steps))
-            throw new InvalidOperationException("화면 배치를 적용하지 못했어요.");
+                using var started = Process.Start(psi);
+                if (started == null)
+                {
+                    AppEnv.Log("display: MultiMonitorTool did not start: " + arg);
+                    ok = false;
+                    continue;
+                }
+                if (!started.WaitForExit(20000))
+                {
+                    AppEnv.Log("display: MultiMonitorTool timed out: " + arg);
+                    try { started.Kill(true); } catch { }
+                    ok = false;
+                    continue;
+                }
+                if (started.ExitCode != 0)
+                {
+                    AppEnv.Log("display: MultiMonitorTool exit " + started.ExitCode + " for " + arg);
+                    ok = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppEnv.Log("display: MultiMonitorTool " + ex.Message);
+                ok = false;
+            }
+        }
+        return ok;
     }
 
-    static bool StageAll(IReadOnlyList<DeskStep> steps)
+    static bool Fallback(IReadOnlyList<DeskScreen> desired)
     {
-        int staged = 0;
-        foreach (var step in steps)
+        var cmds = new List<string>();
+        foreach (var s in desired)
         {
-            if (!step.Enabled || step.Device.Length == 0) continue;
-            if (!Stage(step.Device, step.X, step.Y, step.W, step.H)) return false;
-            staged++;
+            if (s.StableId.Length == 0 || !s.Enabled) continue;
+            cmds.Add("enable " + s.StableId);
         }
-        if (staged == 0) return true;
-        CommitStaged();
+        foreach (var s in desired)
+        {
+            if (s.Enabled && s.Primary && s.StableId.Length > 0)
+            {
+                cmds.Add("primary " + s.StableId);
+                break;
+            }
+        }
+        var off = new List<string>();
+        foreach (var s in desired)
+            if (!s.Enabled && s.StableId.Length > 0) off.Add(s.StableId);
+        if (off.Count > 0) cmds.Add("disable " + string.Join(" ", off));
+        if (cmds.Count == 0) return false;
+        AppEnv.Log("display: falling back to MultiMonitorTool");
+        return CommitChecked(cmds);
+    }
+
+    sealed class NativeSet
+    {
+        public CcdPath[] Logical = Array.Empty<CcdPath>();
+        public PATH[] Paths = Array.Empty<PATH>();
+        public MODE[] Modes = Array.Empty<MODE>();
+        public string[] Ids = Array.Empty<string>();
+    }
+
+    static NativeSet? QueryPaths()
+    {
+        if (Marshal.SizeOf<MODE>() != 64 || Marshal.SizeOf<PATH>() != 72)
+        {
+            AppEnv.Log("display: CCD struct size mode " + Marshal.SizeOf<MODE>() + " path " + Marshal.SizeOf<PATH>());
+            return null;
+        }
+        int rc = GetDisplayConfigBufferSizes(QdcAllPaths, out uint pathCount, out uint modeCount);
+        if (rc != 0)
+        {
+            AppEnv.Log("display: GetDisplayConfigBufferSizes returned " + rc);
+            return null;
+        }
+        if (pathCount == 0)
+        {
+            AppEnv.Log("display: no display paths");
+            return null;
+        }
+        var paths = new PATH[pathCount];
+        var modes = new MODE[Math.Max(1, modeCount)];
+        rc = QueryDisplayConfig(QdcAllPaths, ref pathCount, paths, ref modeCount, modes, IntPtr.Zero);
+        if (rc != 0)
+        {
+            AppEnv.Log("display: QueryDisplayConfig returned " + rc);
+            return null;
+        }
+        var logical = new List<CcdPath>((int)pathCount);
+        var ids = new string[pathCount];
+        for (int i = 0; i < pathCount; i++)
+        {
+            string id = TargetId(paths[i]);
+            ids[i] = id;
+            int x = 0, y = 0, w = 0, h = 0;
+            uint idx = paths[i].sourceInfo.modeInfoIdx;
+            if (idx != ModeInvalid && idx < modeCount && modes[idx].infoType == SourceMode)
+            {
+                w = (int)modes[idx].sourceWidth;
+                h = (int)modes[idx].sourceHeight;
+                x = modes[idx].positionX;
+                y = modes[idx].positionY;
+            }
+            bool active = (paths[i].flags & PathActive) != 0;
+            logical.Add(new CcdPath
+            {
+                StableId = id,
+                Gdi = SourceName(paths[i]),
+                X = x, Y = y, W = w, H = h,
+                Active = active,
+                Primary = active && x == 0 && y == 0,
+                Available = paths[i].targetInfo.targetAvailable != 0
+            });
+        }
+        return new NativeSet { Logical = logical.ToArray(), Paths = paths, Modes = modes, Ids = ids };
+    }
+
+    static bool Covers(NativeSet live, CcdCommit commit)
+    {
+        foreach (var want in commit.Paths)
+        {
+            if (!want.Active || want.StableId.Length == 0) continue;
+            bool found = false;
+            foreach (var id in live.Ids)
+                if (string.Equals(id, want.StableId, StringComparison.OrdinalIgnoreCase)) { found = true; break; }
+            if (!found) return false;
+        }
         return true;
     }
 
-    static bool Stage(string device, int x, int y, int w, int h)
+    static int ApplyNative(NativeSet live, CcdCommit commit)
     {
-        IntPtr buf = Marshal.AllocHGlobal(256);
-        try
+        bool revive = commit.Kind == "topology";
+        var paths = live.Paths;
+        var modes = live.Modes;
+        uint modeCount = (uint)modes.Length;
+        for (int i = 0; i < paths.Length; i++)
         {
-            for (int i = 0; i < 256; i++) Marshal.WriteByte(buf, i, 0);
-            Marshal.WriteInt16(buf, 68, 220);
-            if (!EnumDisplaySettings(device, -1, buf)) return false;
-            int fields = Marshal.ReadInt32(buf, 72);
-            fields |= 0x20 | 0x80000 | 0x100000;
-            Marshal.WriteInt32(buf, 72, fields);
-            Marshal.WriteInt32(buf, 76, x);
-            Marshal.WriteInt32(buf, 80, y);
-            Marshal.WriteInt32(buf, 172, w);
-            Marshal.WriteInt32(buf, 176, h);
-            int rc = ChangeDisplaySettingsEx(device, buf, IntPtr.Zero, CdsUpdate | CdsNoReset, IntPtr.Zero);
-            DisplaySystem.ChangeDisplaySettingsExCalls++;
-            return rc == 0;
+            var want = CcdLayout.Find(live.Ids[i], commit.Paths);
+            if (want == null || live.Ids[i].Length == 0) continue;
+            var path = paths[i];
+            if (!want.Active)
+            {
+                path.flags &= ~PathActive;
+                var src = path.sourceInfo;
+                var dst = path.targetInfo;
+                src.modeInfoIdx = ModeInvalid;
+                dst.modeInfoIdx = ModeInvalid;
+                path.sourceInfo = src;
+                path.targetInfo = dst;
+                paths[i] = path;
+                continue;
+            }
+            path.flags |= PathActive;
+            uint idx = path.sourceInfo.modeInfoIdx;
+            if (!revive && idx != ModeInvalid && idx < modeCount && modes[idx].infoType == SourceMode)
+            {
+                modes[idx].positionX = want.X;
+                modes[idx].positionY = want.Y;
+            }
+            else revive = true;
+            paths[i] = path;
         }
-        finally { Marshal.FreeHGlobal(buf); }
+        if (revive)
+        {
+            int topo = CallSet(paths, 0, null, CcdLayout.ApplyTopology);
+            if (topo != 0)
+            {
+                AppEnv.Log("display: SetDisplayConfig topology returned " + topo);
+                return topo;
+            }
+            var again = QueryPaths();
+            if (again == null) return 0;
+            return ApplyPositions(again, commit);
+        }
+        int applied = CallSet(paths, modeCount, modes, CcdLayout.ApplySupplied);
+        if (applied != 0) AppEnv.Log("display: SetDisplayConfig supplied returned " + applied);
+        return applied;
     }
 
-    static void CommitStaged()
+    static int ApplyPositions(NativeSet live, CcdCommit commit)
     {
-        ChangeDisplaySettingsEx(null, IntPtr.Zero, IntPtr.Zero, 0, IntPtr.Zero);
-        DisplaySystem.SetDisplayConfigCalls++;
+        var paths = live.Paths;
+        var modes = live.Modes;
+        uint modeCount = (uint)modes.Length;
+        for (int i = 0; i < paths.Length; i++)
+        {
+            var want = CcdLayout.Find(live.Ids[i], commit.Paths);
+            if (want == null || !want.Active) continue;
+            uint idx = paths[i].sourceInfo.modeInfoIdx;
+            if (idx == ModeInvalid || idx >= modeCount || modes[idx].infoType != SourceMode) continue;
+            modes[idx].positionX = want.X;
+            modes[idx].positionY = want.Y;
+        }
+        int rc = CallSet(paths, modeCount, modes, CcdLayout.ApplySupplied);
+        if (rc != 0) AppEnv.Log("display: SetDisplayConfig positions returned " + rc);
+        return rc;
     }
 
-    const uint CdsUpdate = 0x1;
-    const uint CdsNoReset = 0x10000000;
+    static int CallSet(PATH[] paths, uint modeCount, MODE[]? modes, uint flags)
+    {
+        int rc = SetDisplayConfig((uint)paths.Length, paths, modeCount, modes, flags);
+        DisplaySystem.SetDisplayConfigCalls++;
+        return rc;
+    }
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettingsEx(string? device, IntPtr mode, IntPtr hwnd, uint flags, IntPtr param);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "EnumDisplaySettingsW")] static extern bool EnumDisplaySettings(string device, int mode, IntPtr devMode);
+    static string TargetId(PATH path)
+    {
+        var target = new TARGET_NAME
+        {
+            header = new DEV_HEADER
+            {
+                type = 2,
+                size = (uint)Marshal.SizeOf<TARGET_NAME>(),
+                adapterId = path.targetInfo.adapterId,
+                id = path.targetInfo.id
+            }
+        };
+        int rc = DisplayConfigGetDeviceInfo(ref target);
+        if (rc != 0)
+        {
+            AppEnv.Log("display: DisplayConfigGetDeviceInfo target returned " + rc);
+            return "";
+        }
+        string devicePath = target.monitorDevicePath ?? "";
+        if (devicePath.Length > 0) return devicePath;
+        if (target.edidManufactureId != 0 || target.edidProductCodeId != 0)
+            return target.edidManufactureId.ToString("X4") + ":" + target.edidProductCodeId.ToString("X4") + ":" + (target.monitorFriendlyDeviceName ?? "");
+        AppEnv.Log("display: target has no device path or EDID");
+        return "";
+    }
+
+    static string SourceName(PATH path)
+    {
+        var src = new SOURCE_NAME
+        {
+            header = new DEV_HEADER
+            {
+                type = 1,
+                size = (uint)Marshal.SizeOf<SOURCE_NAME>(),
+                adapterId = path.sourceInfo.adapterId,
+                id = path.sourceInfo.id
+            }
+        };
+        int rc = DisplayConfigGetDeviceInfo(ref src);
+        if (rc != 0)
+        {
+            AppEnv.Log("display: DisplayConfigGetDeviceInfo source returned " + rc);
+            return "";
+        }
+        return src.viewGdiDeviceName ?? "";
+    }
+
+    const uint QdcAllPaths = 0x1;
+    const uint PathActive = 0x1;
+    const uint ModeInvalid = 0xFFFFFFFF;
+    const uint SourceMode = 1;
+
+    [StructLayout(LayoutKind.Sequential)] struct LUID { public uint Low; public int High; }
+    [StructLayout(LayoutKind.Sequential)] struct RATIONAL { public uint Num, Den; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct SOURCE_INFO { public LUID adapterId; public uint id, modeInfoIdx, statusFlags; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct TARGET_INFO
+    {
+        public LUID adapterId; public uint id, modeInfoIdx, outputTechnology, rotation, scaling;
+        public RATIONAL refreshRate; public uint scanLineOrdering, targetAvailable, statusFlags;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct PATH { public SOURCE_INFO sourceInfo; public TARGET_INFO targetInfo; public uint flags; }
+    [StructLayout(LayoutKind.Explicit, Size = 64)]
+    struct MODE
+    {
+        [FieldOffset(0)] public uint infoType;
+        [FieldOffset(4)] public uint id;
+        [FieldOffset(8)] public LUID adapterId;
+        [FieldOffset(16)] public uint sourceWidth;
+        [FieldOffset(20)] public uint sourceHeight;
+        [FieldOffset(24)] public uint pixelFormat;
+        [FieldOffset(28)] public int positionX;
+        [FieldOffset(32)] public int positionY;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct DEV_HEADER { public uint type, size; public LUID adapterId; public uint id; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct SOURCE_NAME
+    {
+        public DEV_HEADER header;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string viewGdiDeviceName;
+    }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct TARGET_NAME
+    {
+        public DEV_HEADER header;
+        public uint flags;
+        public ushort outputTechnology, edidManufactureId, edidProductCodeId, connectorInstance;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string monitorFriendlyDeviceName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string monitorDevicePath;
+    }
+
+    [DllImport("user32.dll")] static extern int GetDisplayConfigBufferSizes(uint flags, out uint paths, out uint modes);
+    [DllImport("user32.dll")] static extern int QueryDisplayConfig(uint flags, ref uint paths, [Out] PATH[] pathArray, ref uint modes, [Out] MODE[] modeArray, IntPtr topology);
+    [DllImport("user32.dll")] static extern int SetDisplayConfig(uint pathCount, [In] PATH[] paths, uint modeCount, [In] MODE[]? modes, uint flags);
+    [DllImport("user32.dll")] static extern int DisplayConfigGetDeviceInfo(ref SOURCE_NAME packet);
+    [DllImport("user32.dll")] static extern int DisplayConfigGetDeviceInfo(ref TARGET_NAME packet);
 
     static string ToArg(string cmd)
     {

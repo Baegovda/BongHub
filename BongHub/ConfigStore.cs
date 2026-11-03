@@ -6,7 +6,16 @@ namespace BongHub;
 public sealed class NotesSettings { public string DefaultColor = "g:blocks"; public bool Gradient = true; public float FontSize = 11; public int Opacity = 100; public bool OpenOnStartup = true; public string Hotkey = "Ctrl+Alt+N"; }
 public sealed class RuleSnapshot { public string Name = ""; public string Process = ""; public bool Enabled = true; }
 public sealed class WorkspaceSnapshot { public string Id = ""; public string Name = ""; public List<WorkspaceItem> Apps = new(); }
-public sealed class ToySnapshot { public string Name = ""; public bool Enabled; public string Hotkey = ""; }
+public sealed class ToySnapshot
+{
+    public string Name = "";
+    public bool Enabled;
+    public string Hotkey = "";
+    public Dictionary<string, string> Values = new(StringComparer.Ordinal);
+    public bool Flag(string key, bool fallback) => Values.TryGetValue(key, out var s) ? s == "true" : fallback;
+    public string Text(string key) => Values.TryGetValue(key, out var s) ? s : "";
+    public int Number(string key, int fallback) => Values.TryGetValue(key, out var s) && int.TryParse(s, out int n) ? n : fallback;
+}
 
 /// <summary>
 /// Reads 3.4.x config.json. A Notes change replaces that one JSON value and leaves every other byte alone,
@@ -122,7 +131,7 @@ public static class ConfigStore
             }
             if (root?["Pt"] is JsonObject pt)
             {
-                Toy("Zones", pt["Zones"]); Toy("Grab", pt["Grab"]); Toy("Workspaces", pt["Work"]);
+                Toy("Zones", pt["Zones"]); Toy("Grab", pt["Grab"]); Toy("Work", pt["Work"]);
                 Toy("Palette", pt["Palette"]); Toy("Paste", pt["Paste"]); Toy("Peek", pt["Peek"]); Toy("Resizer", pt["Resizer"]);
                 if (pt["Work"] is JsonObject work && work["Items"] is JsonArray items)
                     foreach (var item in items.OfType<JsonObject>())
@@ -140,8 +149,20 @@ public static class ConfigStore
     }
     static void Toy(string name, JsonNode? node)
     {
-        if (node is not JsonObject o) { PowerToys.Add(new ToySnapshot { Name = name }); return; }
-        PowerToys.Add(new ToySnapshot { Name = name, Enabled = Bool(o["Enabled"], false), Hotkey = Str(o["Hotkey"]) });
+        var toy = new ToySnapshot { Name = name };
+        if (node is JsonObject o)
+        {
+            foreach (var kv in o)
+            {
+                if (kv.Value is not JsonValue v) continue;
+                if (v.TryGetValue<bool>(out bool b)) toy.Values[kv.Key] = b ? "true" : "false";
+                else if (v.TryGetValue<string>(out string? s)) toy.Values[kv.Key] = s ?? "";
+                else if (v.TryGetValue<double>(out double d)) toy.Values[kv.Key] = ((int)Math.Round(d)).ToString();
+            }
+            toy.Enabled = toy.Flag("Enabled", false);
+            toy.Hotkey = toy.Text("Hotkey");
+        }
+        PowerToys.Add(toy);
     }
     static void Defaults() { if (Presets.Count == 0) { Presets.Add(new MonitorPreset { Name = "작업", Hotkey = "Ctrl+Alt+1" }); Presets.Add(new MonitorPreset { Name = "자리비움", Hotkey = "Ctrl+Alt+0" }); } }
     static string Str(JsonNode? n) { try { return n?.GetValue<string>() ?? ""; } catch { return n?.ToString() ?? ""; } }
@@ -201,21 +222,33 @@ public static class ConfigStore
         }
     }
     public static void SetDeskMinutes(int minutes) { DeskAutoSaveMinutes = Math.Clamp(minutes, 1, 240); }
-    public static bool SetPtEnabled(string child, bool enabled)
+    public static bool SetPtEnabled(string child, bool enabled) => SetPt(child, "Enabled", JsonValue.Create(enabled));
+
+    public static bool SetPt(string child, string field, JsonNode value)
     {
         if (AppEnv.DenyWrite()) return false;
-        if (child is not ("Zones" or "Grab" or "Palette" or "Paste" or "Peek")) return false;
+        if (!PtCatalog.Known(child) || !PtField(child, field)) return false;
         try
         {
-            if (!NotesConfigPatch.TryWriteNested(AppEnv.ConfigPath, "Pt", child, "Enabled", JsonValue.Create(enabled), out bool changed))
+            if (!NotesConfigPatch.TryWriteNested(AppEnv.ConfigPath, "Pt", child, field, value, out bool changed))
                 return false;
             var toy = PowerToys.FirstOrDefault(t => t.Name == child);
-            if (toy != null) toy.Enabled = enabled;
+            if (toy != null)
+            {
+                string stored = value is JsonValue v && v.TryGetValue<bool>(out bool b) ? (b ? "true" : "false")
+                    : value is JsonValue s && s.TryGetValue<string>(out string? text) ? text ?? ""
+                    : value?.ToJsonString() ?? "";
+                toy.Values[field] = stored;
+                if (field == "Enabled") toy.Enabled = stored == "true";
+                if (field == "Hotkey") toy.Hotkey = stored;
+            }
             if (changed) Writes++;
             return true;
         }
         catch (Exception e) { AppEnv.Log("config patch failed: " + e.Message); return false; }
     }
+
+    static bool PtField(string child, string field) => field is "Enabled" or "Hotkey" or "ShiftDrag" or "ShowOnDrag" or "Span" or "WinArrows" or "RestoreSize" or "AllMonitors" or "Opacity" or "Numbers" or "Modifier" or "Resize" or "SkipFullscreen" or "LaunchMissing" or "MoveExisting" or "Apps" or "Calc" or "Web" or "Units" or "Time" or "Windows" or "Files" or "Shell" or "Terminal" or "System" or "Settings" or "PlainHotkey" or "JsonHotkey" or "MarkdownHotkey" or "CloseOnFocusLoss" or "RenderHtml" or "ContextMenu" or "Fit" or "ShrinkOnly" or "Replace" or "Quality" or "IgnoreOrientation" or "KeepDate" or "RemoveMeta" or "NameFormat" or "Fallback";
     public static KakaoSettings Kakao() => new() { AdBlock = KakaoAdBlock, Compact = KakaoCompact, AutoApply = KakaoAutoApply };
     public static CloudSettings Cloud() => new() { Enabled = CloudEnabled, Repo = CloudRepo, Branch = CloudBranch, PullMinutes = CloudPullMinutes };
     public static bool SetCloudEnabled(bool enabled)

@@ -292,6 +292,34 @@ public sealed class FakeWindowSurface : IWindowSurface
         return n;
     }
 
+    /// <summary>Applies one settled restore. Minimized windows keep the iconic rect and only update <c>rcNormalPosition</c>.</summary>
+    public int ApplyHold(IReadOnlyList<HoldMove>? moves)
+    {
+        if (moves == null) return 0;
+        int n = 0;
+        foreach (var m in moves)
+        {
+            var win = Windows.FirstOrDefault(w => w.Id == m.Id);
+            if (win == null) continue;
+            var ws = PlacementSpace.ToWorkspace(new PlacementSpace.Box(m.NormalX, m.NormalY, m.NormalW, m.NormalH), WorkOriginX, WorkOriginY);
+            win.NormalX = ws.X; win.NormalY = ws.Y; win.NormalW = ws.W; win.NormalH = ws.H;
+            if (m.State == "min") { win.Min = true; win.Max = false; }
+            else if (m.State == "max")
+            {
+                win.Min = false; win.Max = true;
+                if (m.Move) { win.X = m.X; win.Y = m.Y; win.W = m.W; win.H = m.H; }
+            }
+            else
+            {
+                win.Min = false; win.Max = false;
+                if (m.Move) { win.X = m.X; win.Y = m.Y; win.W = m.W; win.H = m.H; }
+            }
+            Ops.Add("hold " + m.Id);
+            n++;
+        }
+        return n;
+    }
+
     static TrackedWindow Clone(TrackedWindow w) => new() { Id = w.Id, Process = w.Process, Title = w.Title, Class = w.Class, Path = w.Path, X = w.X, Y = w.Y, W = w.W, H = w.H, Max = w.Max, Min = w.Min, TopMost = w.TopMost, NormalX = w.NormalX, NormalY = w.NormalY, NormalW = w.NormalW, NormalH = w.NormalH, MaxX = w.MaxX, MaxY = w.MaxY };
 }
 
@@ -886,6 +914,48 @@ public sealed class LiveWindowSurface : IWindowSurface
         if (windows.FirstOrDefault(w => w.Id == id) is { } win) win.TopMost = true;
     }
 
+    /// <summary>
+    /// One <c>DeferWindowPos</c> pass for the windows a mode switch is allowed to move.
+    /// Minimized windows only get <c>rcNormalPosition</c> rewritten, and <c>showCmd</c> stays minimized.
+    /// Returns -1 when the defer call fails.
+    /// </summary>
+    public int DeferMoves(IReadOnlyList<HoldMove>? moves)
+    {
+        if (moves == null || moves.Count == 0) return 0;
+        int moving = 0;
+        foreach (var m in moves) if (m.Move) moving++;
+        IntPtr hd = IntPtr.Zero;
+        if (moving > 0)
+        {
+            hd = BeginDeferWindowPos(moving);
+            if (hd == IntPtr.Zero) return -1;
+        }
+        var origin = PrimaryWorkOrigin();
+        int n = 0;
+        bool bad = false;
+        foreach (var m in moves)
+        {
+            if (!hwnds.TryGetValue(m.Id, out var hwnd)) continue;
+            var placed = new WINDOWPLACEMENT { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
+            if (GetWindowPlacement(hwnd, ref placed))
+            {
+                placed.length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>();
+                placed.showCmd = m.State == "min" ? 2u : m.State == "max" ? 3u : 1u;
+                var ws = PlacementSpace.ToWorkspace(new PlacementSpace.Box(m.NormalX, m.NormalY, m.NormalW, m.NormalH), origin.X, origin.Y);
+                placed.normal = new RECT { Left = ws.X, Top = ws.Y, Right = ws.X + Math.Max(1, ws.W), Bottom = ws.Y + Math.Max(1, ws.H) };
+                if (m.State == "max") placed.max = new POINTL { X = m.X - origin.X, Y = m.Y - origin.Y };
+                if (!SetWindowPlacement(hwnd, ref placed)) bad = true;
+            }
+            if (!m.Move) { n++; continue; }
+            var next = DeferWindowPos(hd, hwnd, IntPtr.Zero, m.X, m.Y, Math.Max(1, m.W), Math.Max(1, m.H), 0x4 | 0x10 | 0x200);
+            if (next == IntPtr.Zero) return -1;
+            hd = next;
+            n++;
+        }
+        if (moving > 0 && !EndDeferWindowPos(hd)) return -1;
+        return bad ? -1 : n;
+    }
+
     public void Dispose() { }
 
     void Snapshot()
@@ -1120,6 +1190,9 @@ public sealed class LiveWindowSurface : IWindowSurface
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] static extern IntPtr BeginDeferWindowPos(int n);
+    [DllImport("user32.dll")] static extern IntPtr DeferWindowPos(IntPtr hd, IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] static extern bool EndDeferWindowPos(IntPtr hd);
     [DllImport("user32.dll")] static extern bool GetWindowPlacement(IntPtr h, ref WINDOWPLACEMENT place);
     [DllImport("user32.dll")] static extern bool SetWindowPlacement(IntPtr h, ref WINDOWPLACEMENT place);
     [StructLayout(LayoutKind.Sequential)] struct POINTL { public int X, Y; }

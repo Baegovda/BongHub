@@ -67,7 +67,7 @@ internal static class Win32
         pos.flags &= ~(SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
         Marshal.StructureToPtr(pos, lp, false);
     }
-    public const int WM_MOVE = 0x3, WM_SIZE = 0x5, WM_WINDOWPOSCHANGING = 0x0046, WM_GETMINMAXINFO = 0x0024, WM_EXITSIZEMOVE = 0x232, WM_ENTERSIZEMOVE = 0x231, WM_DISPLAYCHANGE = 0x007E, WM_MOUSEACTIVATE = 0x0021, WM_ACTIVATE = 0x0006;
+    public const int WM_MOVE = 0x3, WM_SIZE = 0x5, WM_WINDOWPOSCHANGING = 0x0046, WM_GETMINMAXINFO = 0x0024, WM_EXITSIZEMOVE = 0x232, WM_ENTERSIZEMOVE = 0x231, WM_DISPLAYCHANGE = 0x007E, WM_DPICHANGED = 0x02E0, WM_MOUSEACTIVATE = 0x0021, WM_ACTIVATE = 0x0006;
     public const int MA_NOACTIVATE = 3;
     public const int SIZE_MINIMIZED = 1, SIZE_MAXIMIZED = 2;
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);

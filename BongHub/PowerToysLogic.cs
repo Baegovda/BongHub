@@ -12,6 +12,25 @@ public static class PtDefaults
     public const bool Resizer = true, ResizerContextMenu = false;
 }
 
+/// <summary>The PowerToys-like modules this app stores. Descriptions stay short so a dashboard card does not wrap into its toggle.</summary>
+public static class PtCatalog
+{
+    public readonly record struct Module(string Key, string Title, string Summary, string How, string Glyph, string Hex);
+
+    public static readonly Module[] All =
+    {
+        new("Zones", "구역", "창을 화면 구역에 붙여요.", "Shift를 누른 채 창을 끌어 구역에 놓아요. 번호가 켜져 있으면 놓을 곳이 보여요.", "\uE80A", "4C8AFE"),
+        new("Grab", "붙잡아 이동", "수정키를 누른 채 창을 옮겨요.", "고른 수정키를 누른 채 창을 끌어요. 가장자리에서는 크기도 바뀌어요.", "\uE759", "FF9500"),
+        new("Work", "작업 영역", "저장한 창 묶음을 한 번에 열어요.", "단축키로 저장된 배치를 적용해요. 없는 프로그램은 설정에 따라 실행해요.", "\uE8A9", "34C759"),
+        new("Palette", "팔레트", "단축키로 검색 창을 열어요.", "단축키를 누르면 앱, 계산, 단위, 파일을 찾아요.", "\uE721", "AF52DE"),
+        new("Paste", "붙여넣기 변환", "복사한 글을 다른 형식으로 붙여요.", "글을 복사한 뒤 단축키를 누르면 마크다운이나 JSON으로 바뀌어요.", "\uE77F", "FF2D55"),
+        new("Peek", "미리보기", "파일을 열지 않고 들여다봐요.", "파일을 고르고 단축키를 누르면 내용만 보여요.", "\uE7B3", "5AC8FA"),
+        new("Resizer", "그림 크기", "그림 파일의 크기를 바꿔요.", "탐색기에서 그림을 고르면 저장한 크기로 줄여요.", "\uE91B", "FFCC00")
+    };
+
+    public static bool Known(string? key) => key is "Zones" or "Grab" or "Work" or "Palette" or "Paste" or "Peek" or "Resizer";
+}
+
 /// <summary>Unset <see cref="Allow"/> means blocked. This type never calls a hook, hotkey, registry, or brightness API.</summary>
 public static class PtGate
 {
