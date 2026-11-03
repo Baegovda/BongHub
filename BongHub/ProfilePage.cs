@@ -691,6 +691,8 @@ public partial class MainWindow
             stage.Children.Add(frame);
         }
         int tileZ = 10;
+        StackPanel? fallbackTools = null;
+        bool drewSelected = false;
         foreach (var app in profile.Apps)
         {
             var home = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors[0];
@@ -766,14 +768,16 @@ public partial class MainWindow
                 lines.Children.Add(size);
             }
             body.Children.Add(lines);
-            var chipTools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = selectedTile ? Visibility.Visible : Visibility.Collapsed, Tag = "chip-tools" };
+            var chipTools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = selectedTile ? Visibility.Visible : Visibility.Hidden, IsHitTestVisible = selectedTile, Tag = "chip-tools" };
             chipTools.Children.Add(VectorButton("pencil", "수치로 고치기", () => { selectedAppId = app.Id; selectedMonitorNumber = app.Monitor; Render("presets", false); }, "keep:edit:" + app.Id, 20));
             chipTools.Children.Add(VectorButton("trash", "창 빼기", () => RemoveApp(profile, app), "keep:trash:" + app.Id, 20));
             body.Children.Add(chipTools);
             tile.ClipToBounds = true;
             tile.Child = body;
-            tile.MouseEnter += (_, _) => { chipTools.Visibility = Visibility.Visible; Canvas.SetZIndex(tile, 50); };
-            tile.MouseLeave += (_, _) => { if (app.Id != selectedAppId) chipTools.Visibility = Visibility.Collapsed; };
+            if (selectedTile) drewSelected = true;
+            else fallbackTools ??= chipTools;
+            tile.MouseEnter += (_, _) => { chipTools.Visibility = Visibility.Visible; chipTools.IsHitTestVisible = true; Canvas.SetZIndex(tile, 50); };
+            tile.MouseLeave += (_, _) => { if (app.Id != selectedAppId) { chipTools.Visibility = Visibility.Hidden; chipTools.IsHitTestVisible = false; } };
             double chipX = chip.X, chipY = chip.Y;
             var appStart = new ProfileBox(home.X + app.X, home.Y + app.Y, app.W, app.H);
             string edge = "";
@@ -905,6 +909,11 @@ public partial class MainWindow
                 Render("presets", false);
             };
             stage.Children.Add(tile);
+        }
+        if (!drewSelected && fallbackTools != null)
+        {
+            fallbackTools.Visibility = Visibility.Visible;
+            fallbackTools.IsHitTestVisible = true;
         }
         if (PreviewIcons)
             foreach (var icon in profile.Icons)
