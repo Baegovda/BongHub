@@ -92,5 +92,7 @@ jobs:
           name: wpf-tests
           path: |
             artifacts/smoke/smoketest.txt
+            artifacts/smoke/settings_presets.png
+            artifacts/smoke/settings_profile.png
             artifacts/notes/notetest.txt
           if-no-files-found: error

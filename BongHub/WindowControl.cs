@@ -55,6 +55,112 @@ public static class WindowPicker
         }
         return best;
     }
+
+    /// <summary>DIP cursor to physical pixels. Tests pass the DPI; the live picker uses GetCursorPos and never this conversion.</summary>
+    public static (int X, int Y) Physical(double dipX, double dipY, double dpi)
+    {
+        if (dpi < 0.5 || double.IsNaN(dpi) || double.IsInfinity(dpi)) dpi = 1;
+        return ((int)Math.Round(dipX * dpi), (int)Math.Round(dipY * dpi));
+    }
+
+    public static bool Accept(PickProbe probe)
+    {
+        if (probe == null) return false;
+        var w = probe.Window;
+        return probe.Visible && !probe.Cloaked && !probe.Own && !probe.Shadow && w != null && w.W > 0 && w.H > 0;
+    }
+
+    /// <summary>
+    /// Highest Z window whose rect contains the point, after dropping invisible, cloaked, own, and shadow windows.
+    /// The result is the top-level owner when that owner is also an acceptable probe.
+    /// </summary>
+    public static TrackedWindow? Choose(IReadOnlyList<PickProbe>? probes, int x, int y)
+    {
+        if (probes == null || probes.Count == 0) return null;
+        PickProbe? best = null;
+        foreach (var p in probes)
+        {
+            if (!Accept(p)) continue;
+            var w = p.Window;
+            if (x < w.X || y < w.Y || x >= w.X + w.W || y >= w.Y + w.H) continue;
+            if (best == null || p.Z >= best.Z) best = p;
+        }
+        if (best == null) return null;
+        return ResolveOwner(best, probes).Window;
+    }
+
+    static PickProbe ResolveOwner(PickProbe hit, IReadOnlyList<PickProbe> probes)
+    {
+        var current = hit;
+        for (int guard = 0; guard < 8 && current.OwnerId != 0; guard++)
+        {
+            PickProbe? owner = null;
+            foreach (var p in probes)
+                if (p.Window != null && p.Window.Id == current.OwnerId) { owner = p; break; }
+            if (owner == null || !Accept(owner)) break;
+            current = owner;
+        }
+        return current;
+    }
+}
+
+/// <summary>One window the crosshair might land on. Rects are physical pixels.</summary>
+public sealed class PickProbe
+{
+    public TrackedWindow Window = new();
+    public bool Visible = true;
+    public bool Cloaked;
+    public bool Own;
+    public bool Shadow;
+    public long OwnerId;
+    public int Z;
+}
+
+/// <summary>Which file names to ask the shell for, and how to stop a blank HICON from looking like a missing icon.</summary>
+public static class IconBits
+{
+    public static List<string> FilesToTry(string? process, string? path)
+    {
+        var list = new List<string>();
+        void Add(string? s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return;
+            string t = s.Trim();
+            if (list.Exists(x => string.Equals(x, t, StringComparison.OrdinalIgnoreCase))) return;
+            list.Add(t);
+        }
+        Add(path);
+        if (!string.IsNullOrWhiteSpace(path) && !path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) Add(path + ".exe");
+        Add(process);
+        if (!string.IsNullOrWhiteSpace(process) && !process.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) Add(process + ".exe");
+        return list;
+    }
+
+    /// <summary>
+    /// BGRA pixels. A fully transparent buffer with color becomes opaque (the HICON color plane without a mask).
+    /// A buffer with no color returns null so the tile can draw a glyph instead of a blank image.
+    /// </summary>
+    public static byte[]? RepairAlpha(byte[]? pixels)
+    {
+        if (pixels == null || pixels.Length < 4 || pixels.Length % 4 != 0) return null;
+        bool anyAlpha = false, anyColor = false;
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            if (pixels[i + 3] != 0) anyAlpha = true;
+            if ((pixels[i] | pixels[i + 1] | pixels[i + 2]) != 0) anyColor = true;
+        }
+        if (!anyColor && !anyAlpha) return null;
+        if (anyAlpha) return pixels;
+        var copy = new byte[pixels.Length];
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            copy[i] = pixels[i];
+            copy[i + 1] = pixels[i + 1];
+            copy[i + 2] = pixels[i + 2];
+            copy[i + 3] = (byte)((pixels[i] | pixels[i + 1] | pixels[i + 2]) != 0 ? 255 : 0);
+        }
+        return copy;
+    }
 }
 
 public sealed class TrackedWindow
@@ -408,11 +514,13 @@ public sealed class LiveWindowSurface : IWindowSurface
                 if (pid == self) continue;
                 string cls = ClassOf(h);
                 if (cls is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd") continue;
-                GetWindowRect(h, out var rc);
+                FrameOf(h, out var rc);
+                ImageOf(pid, out string process, out string path);
                 var win = new TrackedWindow
                 {
                     Id = h.ToInt64(),
-                    Process = ProcessName(pid),
+                    Process = process,
+                    Path = path,
                     Title = TextOf(h),
                     Class = cls,
                     X = rc.Left, Y = rc.Top, W = rc.Right - rc.Left, H = rc.Bottom - rc.Top,
@@ -448,17 +556,79 @@ public sealed class LiveWindowSurface : IWindowSurface
         return true;
     }
 
-    static string ProcessName(uint pid)
+    static void ImageOf(uint pid, out string process, out string path)
     {
+        process = "";
+        path = "";
         IntPtr p = OpenProcess(0x1000, false, pid);
-        if (p == IntPtr.Zero) return "";
+        if (p == IntPtr.Zero) return;
         try
         {
             var sb = new StringBuilder(1024);
             int n = sb.Capacity;
-            return QueryFullProcessImageName(p, 0, sb, ref n) ? Path.GetFileNameWithoutExtension(sb.ToString()) : "";
+            if (!QueryFullProcessImageName(p, 0, sb, ref n)) return;
+            path = sb.ToString();
+            process = Path.GetFileNameWithoutExtension(path);
         }
         finally { CloseHandle(p); }
+    }
+
+    /// <summary>Visible frame without the DWM shadow. Falls back to the window rect. Physical pixels.</summary>
+    static void FrameOf(IntPtr h, out RECT rc)
+    {
+        if (DwmGetWindowAttribute(h, 9, out rc, Marshal.SizeOf<RECT>()) == 0 && rc.Right > rc.Left && rc.Bottom > rc.Top) return;
+        GetWindowRect(h, out rc);
+    }
+
+    /// <summary>
+    /// Windows under a crosshair. Includes owned popups so the owner can be resolved, and marks cloaked, shadow, and our own process.
+    /// Demands the window gate. Tests never call this.
+    /// </summary>
+    public static IReadOnlyList<PickProbe> ReadProbes()
+    {
+        Attempts++;
+        WindowGate.Demand();
+        NativeCalls++;
+        uint self = (uint)Environment.ProcessId;
+        var found = new List<IntPtr>();
+        EnumWindows((h, _) => { found.Add(h); return true; }, IntPtr.Zero);
+        var list = new List<PickProbe>(found.Count);
+        int z = found.Count;
+        foreach (var h in found)
+        {
+            try
+            {
+                GetWindowThreadProcessId(h, out uint pid);
+                string cls = ClassOf(h);
+                bool shadow = cls.Contains("Shadow", StringComparison.OrdinalIgnoreCase);
+                bool cloaked = DwmGetWindowAttribute(h, 14, out int cloak, 4) == 0 && cloak != 0;
+                FrameOf(h, out var rc);
+                ImageOf(pid, out string process, out string path);
+                IntPtr owner = GetAncestor(h, 3);
+                long ownerId = owner != IntPtr.Zero && owner != h ? owner.ToInt64() : 0;
+                list.Add(new PickProbe
+                {
+                    Visible = IsWindowVisible(h),
+                    Cloaked = cloaked,
+                    Own = pid == self,
+                    Shadow = shadow,
+                    OwnerId = ownerId,
+                    Z = z,
+                    Window = new TrackedWindow
+                    {
+                        Id = h.ToInt64(),
+                        Process = process,
+                        Path = path,
+                        Title = TextOf(h),
+                        Class = cls,
+                        X = rc.Left, Y = rc.Top, W = Math.Max(0, rc.Right - rc.Left), H = Math.Max(0, rc.Bottom - rc.Top)
+                    }
+                });
+            }
+            catch { }
+            z--;
+        }
+        return list;
     }
 
     static string TextOf(IntPtr h)
@@ -534,6 +704,7 @@ public sealed class LiveWindowSurface : IWindowSurface
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc proc, IntPtr l);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint flags);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT rc, int size);
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] static extern IntPtr GetWindowLongPtr(IntPtr h, int index);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);

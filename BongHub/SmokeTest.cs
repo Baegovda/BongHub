@@ -314,7 +314,7 @@ public static class SmokeTest
         var clamped = ProfileSnap.Resize(new ProfileBox(100, 100, 400, 300), new ProfileBox(0, 0, 1920, 1080), "e", 5000, 0, 120);
         t.Check("profile monitors snap together and windows snap to half, quarter, and max", beside.X == 1920 && beside.Y == 0 && half.Kind == "left" && half.Box.W == 960 && half.Box.H == 1080 && quarter.Kind == "tl" && quarter.Box.W == 960 && quarter.Box.H == 540 && maximized.Kind == "top" && maximized.Box.W == 1920 && resized.W == 450 && clamped.Right == 1920);
         var crossed = ProfileSnap.Transfer(new ProfileBox(1800, 100, 400, 300), new[] { new ProfileBox(0, 0, 1920, 1080), new ProfileBox(1920, 0, 1920, 1080) });
-        var edged = ProfileSnap.SnapWindow(new ProfileBox(200, 40, 100, 80), new ProfileBox(0, 0, 800, 600), new[] { new ProfileBox(0, 0, 208, 200) }, 8);
+        var edged = ProfileSnap.SnapWindow(new ProfileBox(205, 40, 100, 80), new ProfileBox(0, 0, 800, 600), new[] { new ProfileBox(0, 0, 208, 200) }, 1);
         t.Check("profile window crosses monitors and snaps to a neighbor", crossed.Index == 1 && crossed.Local.X == -120 && crossed.Local.Y == 100 && edged.X == 208 && edged.Y == 40);
         var migrated = ProfileDoc.Migrate(
             new[] { new MonitorPreset { Name = "작업", Hotkey = "Ctrl+Alt+1", Primary = "SAM1", DeskLayout = "L1", Workspace = "W1", Enable = new() { "SAM1" }, Brightness = new() { new BrightTarget { Monitor = "SAM1", Value = 40 } } } },
@@ -384,6 +384,101 @@ public static class SmokeTest
         bool screenThrew = false;
         try { ScreenCatalog.ReadReal(); } catch (InvalidOperationException) { screenThrew = true; }
         t.Check("disconnected monitor stays and matching uses identity", pathScore > placeScore && bound.Apps.Count == 1 && bound.Apps[0].Monitor == 4 && wasMismatch && !ScreenBind.Mismatch(bound, now) && bound.Monitors.Any(m => m.Connected && m.Number == 4 && m.Path.Contains("BBB")) && iconThrew && AppIcon.NativeCalls == 0 && screenThrew && ScreenCatalog.NativeCalls == 0);
+        var wideLeft = new ProfileBox(-3840, 0, 3840, 2160);
+        var besideNeg = ProfileSnap.SnapMonitorWithGuide(new ProfileBox(-60, 40, 2400, 1350), new[] { wideLeft }, 80);
+        var belowWide = ProfileSnap.SnapMonitorWithGuide(new ProfileBox(100, 2100, 1200, 800), new[] { new ProfileBox(0, 0, 3840, 2160) }, 80);
+        var gapped = ProfileSnap.SnapMonitorWithGuide(new ProfileBox(0, 4000, 800, 600), new[] { new ProfileBox(0, 0, 1920, 1080) }, 40);
+        bool share = besideNeg.Guide.Active && besideNeg.Guide.X1 == besideNeg.Guide.X2 && besideNeg.Guide.Y2 > besideNeg.Guide.Y1
+            && belowWide.Guide.Active && belowWide.Guide.Y1 == belowWide.Guide.Y2 && belowWide.Guide.X2 > belowWide.Guide.X1;
+        t.Check("monitor edges snap flush, including negative and mixed sizes", besideNeg.Box.X == 0 && besideNeg.Box.Y == 0 && besideNeg.Box.Right == 2400 && belowWide.Box.X == 100 && belowWide.Box.Y == 2160 && gapped.Box.Y == 4000 && !gapped.Guide.Active && share);
+        var nearWin = ProfileSnap.SnapWindow(new ProfileBox(205, 40, 100, 80), new ProfileBox(0, 0, 800, 600), new[] { new ProfileBox(0, 0, 208, 200) }, 1);
+        var farWin = ProfileSnap.SnapWindow(new ProfileBox(190, 40, 100, 80), new ProfileBox(0, 0, 800, 600), new[] { new ProfileBox(0, 0, 208, 200) }, 1);
+        var generous = ProfileSnap.PreviewAt(300, 540, new ProfileBox(0, 0, 1920, 1080));
+        var middle = ProfileSnap.PreviewAt(960, 540, new ProfileBox(0, 0, 1920, 1080));
+        var cornerResize = ProfileSnap.Resize(new ProfileBox(100, 100, 400, 300), new ProfileBox(0, 0, 1920, 1080), "nw", -30, -20, 120);
+        var seResize = ProfileSnap.Resize(new ProfileBox(100, 100, 400, 300), new ProfileBox(0, 0, 1920, 1080), "se", 15, 10, 120);
+        t.Check("window snap is a few pixels and edge zones are generous", nearWin.X == 208 && farWin.X == 190 && generous.Kind == "left" && generous.Box.W == 960 && middle.Kind.Length == 0 && cornerResize.X == 70 && cornerResize.Y == 80 && cornerResize.W == 430 && cornerResize.H == 320 && seResize.W == 415 && seResize.H == 310);
+        bool chord = HotkeyChord.TryParse("Ctrl+Alt+1", out uint chordMods, out uint chordVk) && chordMods == (HotkeyChord.Ctrl | HotkeyChord.Alt) && chordVk == 0x31;
+        var recorded = HotkeyEdit.Apply("", "ctrl+alt+1", null, "Ctrl+Alt+N");
+        var cancelled = HotkeyEdit.Apply("Ctrl+Alt+1", "escape", null, null);
+        var cleared = HotkeyEdit.Apply("Ctrl+Alt+1", "back", null, null);
+        var noteClash = HotkeyEdit.Apply("Ctrl+Alt+2", "Ctrl+Alt+N", null, "alt+ctrl+n");
+        var profileClash = HotkeyEdit.Apply("", "Ctrl+Alt+1", new[] { "ctrl+alt+1" }, "Ctrl+Alt+N");
+        t.Check("profile hotkey capture records, cancels, clears, and reports conflicts", chord && recorded.Value == "Ctrl+Alt+1" && recorded.Error.Length == 0 && cancelled.Value == "Ctrl+Alt+1" && cleared.Value.Length == 0 && noteClash.Value == "Ctrl+Alt+2" && noteClash.Error.Contains("메모") && profileClash.Error.Contains("프로필") && ProfileHotkey.RegisterFailure("작업").Contains("등록하지 못했어요"));
+        var probes = new List<PickProbe>
+        {
+            new() { Z = 1, Window = new TrackedWindow { Id = 1, Process = "Code", Title = "BongHub", X = 0, Y = 0, W = 400, H = 300 } },
+            new() { Z = 8, Cloaked = true, Window = new TrackedWindow { Id = 2, Title = "cloak", X = 10, Y = 10, W = 200, H = 200 } },
+            new() { Z = 9, Own = true, Window = new TrackedWindow { Id = 3, Title = "self", X = 10, Y = 10, W = 200, H = 200 } },
+            new() { Z = 7, Shadow = true, Window = new TrackedWindow { Id = 4, Title = "shadow", X = 10, Y = 10, W = 220, H = 220 } },
+            new() { Z = 4, OwnerId = 1, Window = new TrackedWindow { Id = 5, Process = "popup", Title = "popup", X = 20, Y = 20, W = 80, H = 40 } },
+        };
+        var chosen = WindowPicker.Choose(probes, 30, 30);
+        var at125 = WindowPicker.Physical(100, 80, 1.25);
+        var at96 = WindowPicker.Physical(100, 80, 1);
+        t.Check("crosshair ignores cloaked, own, and shadow windows and keeps DPI", chosen != null && chosen.Id == 1 && chosen.Title == "BongHub" && at125.X == 125 && at125.Y == 100 && at96.X == 100 && at96.Y == 80);
+        var iconFiles = IconBits.FilesToTry("Code", @"C:\Apps\Code.exe");
+        var blankIcon = IconBits.RepairAlpha(new byte[16]);
+        var repaired = IconBits.RepairAlpha(new byte[] { 10, 20, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 0 });
+        var visibleIcon = AppIcon.FromPixels(2, 2, new byte[] { 9, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 });
+        t.Check("icon extraction prefers the exe and drops a blank image", iconFiles.Count >= 2 && iconFiles[0].EndsWith("Code.exe") && iconFiles.Contains("Code") && blankIcon == null && repaired != null && repaired[3] == 255 && repaired[7] == 0 && visibleIcon != null && AppIcon.NativeCalls == 0);
+        var iconMonitors = new[] { new ProfileBox(-3840, 0, 3840, 2160), new ProfileBox(0, 0, 3840, 2160) };
+        var savedIcons = new List<ProfileIcon>
+        {
+            new() { Name = "휴지통", X = -100, Y = 40 },
+            new() { Name = "문서", X = 10, Y = 10 },
+            new() { Name = "숨김", X = 20, Y = 20, Show = false },
+            new() { Name = "없는", X = 30, Y = 30 },
+        };
+        var currentIcons = new List<DeskIcon>
+        {
+            new() { Name = "휴지통", X = -100, Y = 40 },
+            new() { Name = "문서", X = 80, Y = 80 },
+            new() { Name = "새", X = 1, Y = 1 },
+        };
+        var compared = IconLayout.Compare(savedIcons, currentIcons);
+        var iconSurface2 = new MemoryIconSurface();
+        iconSurface2.Icons.Add(new DeskIcon { Name = "휴지통", X = 0, Y = 0 });
+        iconSurface2.Icons.Add(new DeskIcon { Name = "문서", X = 0, Y = 0 });
+        var partialRestore = ProfileDoc.RestoreIcons(savedIcons, iconSurface2, new[] { "문서" });
+        t.Check("icon preview compares a layout and restores the chosen names", IconLayout.Host(-100, 40, iconMonitors) == 0 && IconLayout.Host(50, 50, iconMonitors) == 1 && compared.Same == 1 && compared.Moved == 1 && compared.Missing == 1 && compared.Extra == 1 && compared.Hidden == 1 && partialRestore.Ok && iconSurface2.Icons[0].X == 0 && iconSurface2.Icons[1].X == 10 && iconSurface2.Icons[1].Y == 10);
+        var ownerDesk = new List<ScreenInfo>
+        {
+            new() { Number = 3, Device = @"\\.\DISPLAY3", Path = "P3", W = 3840, H = 2160, X = -3840, Y = 0, Scale = 125 },
+            new() { Number = 1, Device = @"\\.\DISPLAY1", Path = "P1", W = 3840, H = 2160, X = 0, Y = 0, Scale = 125, Primary = true },
+            new() { Number = 5, Device = @"\\.\DISPLAY5", Path = "P5", W = 2400, H = 1350, X = 3840, Y = 0, Scale = 100 },
+            new() { Number = 2, Device = @"\\.\DISPLAY2", Path = "P2", W = 2400, H = 1350, X = 6240, Y = -200, Scale = 100 },
+            new() { Number = 4, Device = @"\\.\DISPLAY4", Path = "P4", W = 1200, H = 800, X = 8640, Y = 0, Scale = 150, Orientation = 90 },
+        };
+        var followed = new MonitorProfile { Name = "작업" };
+        followed.Monitors.Add(new ProfileMonitor { Id = "1", Number = 1, X = 0, Y = 0, W = 1920, H = 1080, Primary = true });
+        followed.Apps.Add(new ProfileApp { Process = "notepad.exe", Title = "메모", Monitor = 1, X = 12, Y = 12, W = 400, H = 300 });
+        ScreenBind.FollowLive(followed, ownerDesk);
+        var kept = new MonitorProfile();
+        kept.Monitors.Add(new ProfileMonitor { Id = "old", Number = 9, Path = "P1", W = 800, H = 600, X = 50, Y = 50 });
+        kept.Monitors.Add(new ProfileMonitor { Id = "gone", Number = 8, Path = "GONE", W = 640, H = 480 });
+        kept.Apps.Add(new ProfileApp { Title = "남음", Monitor = 8, W = 100, H = 100 });
+        ScreenBind.FollowLive(kept, new[] { ownerDesk[1] });
+        var ordered = string.Join(",", followed.Monitors.OrderBy(m => m.X).Select(m => m.Number));
+        t.Check("live layout keeps identify numbers, scale, orientation, and a disconnected screen", ordered == "3,1,5,2,4" && followed.Monitors.First(m => m.Number == 3).X == -3840 && followed.Monitors.First(m => m.Number == 3).Scale == 125 && followed.Monitors.First(m => m.Number == 4).Orientation == 90 && followed.Apps[0].Monitor == 1 && kept.Monitors.Any(m => !m.Connected && m.Path == "GONE") && kept.Monitors.First(m => m.Path == "P1").Number == 1 && kept.Monitors.First(m => m.Path == "P1").X == 0 && kept.Apps[0].Monitor == 8);
+        string oldProfile = "{\"v\":2,\"profiles\":[{\"name\":\"작업\",\"hotkey\":\"Ctrl+Alt+1\",\"workspace\":\"W1\",\"brightness\":[{\"monitor\":\"SAM1\",\"value\":40}],\"monitors\":[{\"id\":\"SAM1\",\"number\":1,\"w\":1920,\"h\":1080,\"primary\":true}],\"windows\":[{\"process\":\"notepad.exe\",\"title\":\"메모\",\"w\":640,\"h\":480}],\"iconItems\":[{\"name\":\"휴지통\",\"x\":1,\"y\":2}]}]}";
+        var aged = ProfileDoc.Parse(oldProfile);
+        aged[0].Apps[0].TopMost = true;
+        aged[0].Apps[0].Launch = true;
+        aged[0].Apps[0].Path = @"C:\Windows\notepad.exe";
+        aged[0].Monitors[0].Scale = 125;
+        aged[0].Monitors[0].Orientation = 90;
+        aged[0].Icons[0].Show = false;
+        var agedBack = ProfileDoc.Parse(ProfileDoc.ToJson(aged));
+        var missingLaunch = ProfileDoc.MissingLaunches(aged[0], Array.Empty<TrackedWindow>());
+        var presentLaunch = ProfileDoc.MissingLaunches(aged[0], new[] { new TrackedWindow { Process = "notepad", Title = "메모" } });
+        var placed = new FakeWindowSurface();
+        placed.Windows.Add(new TrackedWindow { Id = 7, Process = "notepad", Title = "메모", W = 100, H = 100 });
+        ProfileDoc.Place(aged[0], placed);
+        ProfileUndo.Remember(aged[0]);
+        aged[0].Name = "바뀜";
+        var undone = ProfileUndo.Take();
+        t.Check("older profiles keep their fields and gain topmost, launch, and icon visibility", aged[0].Monitors[0].Id == "SAM1" && agedBack[0].Workspace == "W1" && agedBack[0].Hotkey == "Ctrl+Alt+1" && agedBack[0].Brightness[0].Value == 40 && agedBack[0].Monitors[0].Scale == 125 && agedBack[0].Monitors[0].Orientation == 90 && agedBack[0].Apps[0].TopMost && agedBack[0].Apps[0].Launch && !agedBack[0].Icons[0].Show && ProfileDoc.Parse(oldProfile)[0].Monitors[0].Scale == 100 && ProfileDoc.Parse(oldProfile)[0].Icons[0].Show && missingLaunch.Count == 1 && presentLaunch.Count == 0 && placed.Windows[0].TopMost && undone != null && undone.Name == "작업" && ProfileUndo.Last == null);
 
         // ---------- sticky note ----------
         var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);
@@ -537,7 +632,7 @@ public static class SmokeTest
         var bc = TestKit.ContrastElement(tray.LastBalloonVisual!, tray.LastBalloonSample!, DarkUnder);
         t.Check("balloon text contrast ≥ 7", bc.ratio >= 7, $"{bc.ratio:0.0}:1 ({bc.fg} on {bc.bg})");
         t.Check("smoketest does not register a shell tray icon", !tray.ShellIconCreated && tray.NativeBalloonCalls == 0);
-        t.Check("smoketest does not register a hotkey or a hook", NoteHotkey.NativeRegistrations == 0 && NoteHotkey.HookInstalls == 0 && !NoteHotkey.Registered);
+        t.Check("smoketest does not register a hotkey or a hook", NoteHotkey.NativeRegistrations == 0 && NoteHotkey.HookInstalls == 0 && !NoteHotkey.Registered && ProfileHotkey.NativeRegistrations == 0 && ProfileHotkey.HookInstalls == 0);
         NoteHotkey.ReportFailure(tray, "Ctrl+Alt+N");
         t.Check("hotkey conflict balloon", tray.LastBalloonMessage != null && tray.LastBalloonMessage.Contains("단축키 등록 실패") && tray.LastBalloonMessage.Contains("Ctrl+Alt+N") && tray.NativeBalloonCalls == 0);
 
@@ -564,5 +659,31 @@ public static class SmokeTest
         foreach (var item in ThemeAudit.Bare(tray.Menu)) bare.Add(item);
         t.Check("every control uses a themed style", bare.Count == 0, bare.Count == 0 ? "" : string.Join(", ", bare.Take(12)));
         viewer.Close();
+
+        int screensBefore = ScreenCatalog.NativeCalls;
+        int displaysBefore = DisplaySystem.NativeCalls;
+        int windowsBefore = LiveWindowSurface.NativeCalls;
+        int iconsBefore = ExplorerIconSurface.NativeCalls;
+        var desk = new List<ScreenInfo>
+        {
+            new() { Number = 3, Device = @"\\.\DISPLAY3", Path = "P3", W = 3840, H = 2160, X = -3840, Y = 0, Scale = 125 },
+            new() { Number = 1, Device = @"\\.\DISPLAY1", Path = "P1", W = 3840, H = 2160, X = 0, Y = 0, Scale = 125, Primary = true },
+            new() { Number = 5, Device = @"\\.\DISPLAY5", Path = "P5", W = 2400, H = 1350, X = 3840, Y = 0, Scale = 100 },
+            new() { Number = 2, Device = @"\\.\DISPLAY2", Path = "P2", W = 2400, H = 1350, X = 6240, Y = -200, Scale = 100 },
+            new() { Number = 4, Device = @"\\.\DISPLAY4", Path = "P4", W = 1200, H = 800, X = 8640, Y = 0, Scale = 150, Orientation = 90 },
+        };
+        w.ShowLiveLayout(desk);
+        await TestKit.Delay(80);
+        TestKit.SavePng(w, DarkUnder, "settings_profile.png");
+        bool warned = false;
+        void WalkText(DependencyObject node)
+        {
+            if (node is TextBlock block && block.Text != null && block.Text.Contains("달라요")) warned = true;
+            int count = 0;
+            try { count = VisualTreeHelper.GetChildrenCount(node); } catch { count = 0; }
+            for (int i = 0; i < count; i++) WalkText(VisualTreeHelper.GetChild(node, i));
+        }
+        WalkText(w);
+        t.Check("profile tab shows the live desk without a mismatch warning", !w.ProfileMismatchBanner && !warned && w.ProfileLayoutNote == "3,1,5,2,4" && ScreenCatalog.NativeCalls == screensBefore && DisplaySystem.NativeCalls == displaysBefore && LiveWindowSurface.NativeCalls == windowsBefore && ExplorerIconSurface.NativeCalls == iconsBefore && AppIcon.NativeCalls == 0);
     }
 }

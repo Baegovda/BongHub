@@ -251,6 +251,10 @@ public sealed class ProfileMonitor
     public string Device = "";
     public string Path = "";
     public string Edid = "";
+    /// <summary>Windows scaling percent. 100 is 96 DPI. 125 is the owner's mixed desk.</summary>
+    public int Scale = 100;
+    /// <summary>0, 90, 180, or 270. Matches the display's current orientation.</summary>
+    public int Orientation;
     /// <summary>Runtime. False when this saved screen is not in the current display list.</summary>
     public bool Connected = true;
     public ProfileBox Box => new(X, Y, W, H);
@@ -267,12 +271,18 @@ public sealed class ProfileApp
     public int Monitor = 1;
     public int X, Y, W = 800, H = 600;
     public string State = "normal";
+    /// <summary>Pin above other windows when the profile is applied.</summary>
+    public bool TopMost;
+    /// <summary>Start <see cref="Path"/> when the window is not already open. Off unless the user asks.</summary>
+    public bool Launch;
 }
 
 public sealed class ProfileIcon
 {
     public string Name = "";
     public int X, Y;
+    /// <summary>False hides the icon in the preview and skips it on restore. Missing JSON means shown.</summary>
+    public bool Show = true;
 }
 
 /// <summary>One monitor profile. Extra fields sit beside the 3.4.x preset values and never replace config.json.</summary>
@@ -301,32 +311,133 @@ public readonly record struct SnapPreview(string Kind, ProfileBox Box);
 
 public readonly record struct ProfileScene(double Scale, int OriginX, int OriginY, ProfileBox Bounds);
 
+/// <summary>The shared edge the pointer can cross after a monitor snap. Empty when nothing snapped.</summary>
+public readonly record struct SnapGuide(int X1, int Y1, int X2, int Y2)
+{
+    public bool Active => X1 != X2 || Y1 != Y2;
+}
+
+public readonly record struct MonitorSnap(ProfileBox Box, SnapGuide Guide);
+
 /// <summary>Monitor-profile geometry. Nothing here talks to a display, a window, or the desktop.</summary>
 public static class ProfileSnap
 {
     public const int Edge = 28;
     public const int Grid = 8;
+    /// <summary>Window-to-window attraction. A few physical pixels, so tiles do not jump across a gap.</summary>
+    public const int WindowSnap = 4;
+    /// <summary>How deep a half / maximize zone reaches into the monitor, as a percent of that side.</summary>
+    public const int ZonePercent = 18;
 
     public static ProfileBox SnapMonitor(ProfileBox moving, IReadOnlyList<ProfileBox> others, int threshold)
+        => SnapMonitorWithGuide(moving, others, threshold).Box;
+
+    /// <summary>
+    /// Pulls a monitor onto a neighbor so the touching edges are the same line and overlap by more than a point.
+    /// A gap or an overlap is not a snap. The guide is that shared segment.
+    /// </summary>
+    public static MonitorSnap SnapMonitorWithGuide(ProfileBox moving, IReadOnlyList<ProfileBox> others, int threshold)
     {
         int x = moving.X, y = moving.Y;
-        int best = threshold + 1;
-        foreach (var o in others)
+        SnapGuide guide = default;
+        int best = threshold < 0 ? 0 : threshold + 1;
+        int bestShare = -1;
+        if (others != null && threshold >= 0)
         {
-            Consider(o.Right, Align(moving.Y, o.Y, threshold), Math.Abs(moving.X - o.Right));
-            Consider(o.X - moving.W, Align(moving.Y, o.Y, threshold), Math.Abs(moving.Right - o.X));
-            Consider(Align(moving.X, o.X, threshold), o.Bottom, Math.Abs(moving.Y - o.Bottom));
-            Consider(Align(moving.X, o.X, threshold), o.Y - moving.H, Math.Abs(moving.Bottom - o.Y));
+            for (int i = 0; i < others.Count; i++)
+            {
+                var o = others[i];
+                ConsiderX(o.Right, o, i, true);
+                ConsiderX(o.X - moving.W, o, i, false);
+                ConsiderY(o.Bottom, o, i, true);
+                ConsiderY(o.Y - moving.H, o, i, false);
+            }
         }
-        return new ProfileBox(x, y, moving.W, moving.H);
+        return new MonitorSnap(new ProfileBox(x, y, moving.W, moving.H), guide);
 
-        void Consider(int cx, int cy, int dist)
+        void ConsiderX(int targetX, ProfileBox o, int index, bool movingOnRight)
         {
-            if (dist <= threshold && dist < best) { best = dist; x = cx; y = cy; }
+            int dist = Math.Abs(targetX - moving.X);
+            if (dist > threshold || dist > best) return;
+            int ny = AlignEdge(moving.Y, moving.H, o.Y, o.H, threshold);
+            int share = OverlapLen(ny, moving.H, o.Y, o.H);
+            if (share <= 0) return;
+            if (dist == best && share <= bestShare) return;
+            var candidate = new ProfileBox(targetX, ny, moving.W, moving.H);
+            if (InteriorsOverlapAny(candidate, others, index)) return;
+            best = dist;
+            bestShare = share;
+            x = targetX;
+            y = ny;
+            int top = Math.Max(ny, o.Y);
+            int bot = Math.Min(ny + moving.H, o.Bottom);
+            int gx = movingOnRight ? o.Right : o.X;
+            guide = new SnapGuide(gx, top, gx, bot);
+        }
+
+        void ConsiderY(int targetY, ProfileBox o, int index, bool movingBelow)
+        {
+            int dist = Math.Abs(targetY - moving.Y);
+            if (dist > threshold || dist > best) return;
+            int nx = AlignEdge(moving.X, moving.W, o.X, o.W, threshold);
+            int share = OverlapLen(nx, moving.W, o.X, o.W);
+            if (share <= 0) return;
+            if (dist == best && share <= bestShare) return;
+            var candidate = new ProfileBox(nx, targetY, moving.W, moving.H);
+            if (InteriorsOverlapAny(candidate, others, index)) return;
+            best = dist;
+            bestShare = share;
+            x = nx;
+            y = targetY;
+            int left = Math.Max(nx, o.X);
+            int right = Math.Min(nx + moving.W, o.Right);
+            int gy = movingBelow ? o.Bottom : o.Y;
+            guide = new SnapGuide(left, gy, right, gy);
         }
     }
 
-    static int Align(int current, int target, int threshold) => Math.Abs(current - target) <= threshold ? target : current;
+    static int AlignEdge(int pos, int size, int otherPos, int otherSize, int threshold)
+    {
+        int best = threshold + 1;
+        int y = pos;
+        void Take(int candidate)
+        {
+            int d = Math.Abs(candidate - pos);
+            if (d <= threshold && d < best) { best = d; y = candidate; }
+        }
+        Take(otherPos);
+        Take(otherPos + otherSize - size);
+        return y;
+    }
+
+    static int OverlapLen(int a, int aSize, int b, int bSize)
+    {
+        int start = Math.Max(a, b);
+        int end = Math.Min(a + aSize, b + bSize);
+        return end - start;
+    }
+
+    static bool InteriorsOverlap(ProfileBox a, ProfileBox b)
+    {
+        int w = Math.Min(a.Right, b.Right) - Math.Max(a.X, b.X);
+        int h = Math.Min(a.Bottom, b.Bottom) - Math.Max(a.Y, b.Y);
+        return w > 0 && h > 0;
+    }
+
+    static bool InteriorsOverlapAny(ProfileBox box, IReadOnlyList<ProfileBox> others, int ignore)
+    {
+        for (int i = 0; i < others.Count; i++)
+            if (i != ignore && InteriorsOverlap(box, others[i])) return true;
+        return false;
+    }
+
+    /// <summary>Depth of a snap zone on one side. At least <see cref="Edge"/>, otherwise a slice of the monitor.</summary>
+    public static int ZoneDepth(int span)
+    {
+        if (span < 1) span = 1;
+        int slice = span * ZonePercent / 100;
+        return Math.Max(Edge, slice);
+    }
 
     public static ProfileBox ZoneBox(string kind, ProfileBox monitor)
     {
@@ -347,10 +458,13 @@ public static class ProfileSnap
 
     public static SnapPreview PreviewAt(int x, int y, ProfileBox monitor)
     {
-        bool left = x - monitor.X <= Edge;
-        bool right = monitor.Right - x <= Edge;
-        bool top = y - monitor.Y <= Edge;
-        bool bottom = monitor.Bottom - y <= Edge;
+        int zx = ZoneDepth(monitor.W);
+        int zy = ZoneDepth(monitor.H);
+        int dxL = x - monitor.X, dxR = monitor.Right - x, dyT = y - monitor.Y, dyB = monitor.Bottom - y;
+        bool left = dxL >= 0 && dxL <= zx;
+        bool right = dxR >= 0 && dxR <= zx;
+        bool top = dyT >= 0 && dyT <= zy;
+        bool bottom = dyB >= 0 && dyB <= zy;
         string kind = "";
         if (top && left) kind = "tl";
         else if (top && right) kind = "tr";
@@ -395,10 +509,10 @@ public static class ProfileSnap
         if (others != null)
             foreach (var o in others)
             {
-                x = Pull(x, o.Right, slop);
-                x = Pull(x, o.X - w, slop);
-                y = Pull(y, o.Bottom, slop);
-                y = Pull(y, o.Y - h, slop);
+                x = Pull(x, o.Right, WindowSnap);
+                x = Pull(x, o.X - w, WindowSnap);
+                y = Pull(y, o.Bottom, WindowSnap);
+                y = Pull(y, o.Y - h, WindowSnap);
             }
         if (x < monitor.X) x = monitor.X;
         if (y < monitor.Y) y = monitor.Y;
@@ -440,12 +554,15 @@ public static class ProfileSnap
 
     public static ProfileBox ToCanvas(ProfileBox box, ProfileScene scene)
     {
-        int x = scene.OriginX + (int)Math.Round((box.X - scene.Bounds.X) * scene.Scale);
-        int y = scene.OriginY + (int)Math.Round((box.Y - scene.Bounds.Y) * scene.Scale);
+        var p = ToPoint(box.X, box.Y, scene);
         int w = Math.Max(28, (int)Math.Round(box.W * scene.Scale));
         int h = Math.Max(22, (int)Math.Round(box.H * scene.Scale));
-        return new ProfileBox(x, y, w, h);
+        return new ProfileBox(p.X, p.Y, w, h);
     }
+
+    public static (int X, int Y) ToPoint(int x, int y, ProfileScene scene)
+        => (scene.OriginX + (int)Math.Round((x - scene.Bounds.X) * scene.Scale),
+            scene.OriginY + (int)Math.Round((y - scene.Bounds.Y) * scene.Scale));
 
     /// <summary>Height of the scaled arrangement. A wide strip stays short instead of leaving an empty band.</summary>
     public static int ContentHeight(IReadOnlyList<ProfileBox> monitors, int width, int pad)
@@ -489,6 +606,10 @@ public sealed class ScreenInfo
     public string Device = "";
     public string Path = "";
     public string Edid = "";
+    /// <summary>Scaling percent. 100 is 96 DPI. 0 means the caller did not say, and readers treat it as 100.</summary>
+    public int Scale = 100;
+    /// <summary>0, 90, 180, or 270.</summary>
+    public int Orientation;
 }
 
 /// <summary>Binds saved monitors to physical screens. No display API.</summary>
@@ -649,6 +770,109 @@ public static class ScreenBind
             }
             profile.Monitors.Remove(gone);
         }
+    }
+
+    /// <summary>Identity of the live desk. Empty when nothing is connected. Used to refresh only when Windows actually changes.</summary>
+    public static string Signature(IReadOnlyList<ScreenInfo>? live)
+    {
+        if (live == null || live.Count == 0) return "";
+        return string.Join("|", live.OrderBy(s => s.Number).ThenBy(s => s.X).ThenBy(s => s.Y).Select(s =>
+            s.Number + "@" + s.X + "," + s.Y + " " + s.W + "x" + s.H + " " + (s.Scale <= 0 ? 100 : s.Scale) + "% r" + s.Orientation
+            + (s.Primary ? "*" : "") + " " + (s.Device ?? "")));
+    }
+
+    /// <summary>
+    /// Copies the live Windows arrangement onto the profile: same screens, positions, sizes, scaling, orientation, and Identify numbers.
+    /// A saved screen that is not connected stays in the list and is marked disconnected. Nothing is deleted.
+    /// Placeholder rows (the 1920 strip from an old preset) are replaced, because they are not a real desk.
+    /// </summary>
+    public static void FollowLive(MonitorProfile profile, IReadOnlyList<ScreenInfo>? live)
+    {
+        if (profile == null || live == null || live.Count == 0 || profile.Monitors.Count == 0) return;
+        bool blank = profile.Monitors.All(m => (m.Path ?? "").Length == 0 && (m.Device ?? "").Length == 0 && (m.Edid ?? "").Length == 0);
+        if (blank || ProfileDoc.IsPlaceholderRow(profile.Monitors))
+        {
+            profile.Monitors.Clear();
+            foreach (var s in live) profile.Monitors.Add(FromScreen(s));
+            EnsurePrimary(profile);
+            foreach (var app in profile.Apps)
+                if (profile.Monitors.All(m => m.Number != app.Monitor))
+                    app.Monitor = (profile.Monitors.FirstOrDefault(m => m.Primary) ?? profile.Monitors[0]).Number;
+            ProfileDoc.SyncLists(profile);
+            return;
+        }
+        var old = new Dictionary<ProfileMonitor, int>();
+        foreach (var m in profile.Monitors) Remember(old, m);
+        var used = new HashSet<int>();
+        foreach (var m in profile.Monitors)
+        {
+            var hit = Best(m, live, used, 10_000);
+            if (hit == null) { m.Connected = false; continue; }
+            used.Add(hit.Number);
+            CopyLive(m, hit);
+        }
+        foreach (var s in live)
+        {
+            if (used.Contains(s.Number)) continue;
+            var added = FromScreen(s);
+            Remember(old, added);
+            profile.Monitors.Add(added);
+            used.Add(s.Number);
+        }
+        Retarget(profile, old);
+        EnsurePrimary(profile);
+        ProfileDoc.SyncLists(profile);
+    }
+
+    static void CopyLive(ProfileMonitor m, ScreenInfo hit)
+    {
+        m.Connected = true;
+        m.Number = hit.Number;
+        m.X = hit.X;
+        m.Y = hit.Y;
+        m.W = hit.W;
+        m.H = hit.H;
+        m.Scale = hit.Scale <= 0 ? 100 : hit.Scale;
+        m.Orientation = hit.Orientation;
+        m.Primary = hit.Primary;
+        m.Device = hit.Device ?? "";
+        m.Path = hit.Path ?? "";
+        m.Edid = hit.Edid ?? "";
+        if ((m.Id ?? "").Length == 0) m.Id = m.Path.Length > 0 ? m.Path : (m.Device.Length > 0 ? m.Device : hit.Number.ToString());
+    }
+
+    static ProfileMonitor FromScreen(ScreenInfo s)
+    {
+        string path = s.Path ?? "";
+        string device = s.Device ?? "";
+        return new ProfileMonitor
+        {
+            Id = path.Length > 0 ? path : (device.Length > 0 ? device : s.Number.ToString()),
+            Number = s.Number,
+            X = s.X, Y = s.Y, W = s.W, H = s.H,
+            Scale = s.Scale <= 0 ? 100 : s.Scale,
+            Orientation = s.Orientation,
+            Primary = s.Primary,
+            Enabled = true,
+            Connected = true,
+            Device = device,
+            Path = path,
+            Edid = s.Edid ?? ""
+        };
+    }
+
+    static void EnsurePrimary(MonitorProfile profile)
+    {
+        if (profile.Monitors.Count == 0) return;
+        if (profile.Monitors.Any(m => m.Primary && m.Connected))
+        {
+            var keep = profile.Monitors.First(m => m.Primary && m.Connected);
+            foreach (var m in profile.Monitors) m.Primary = ReferenceEquals(m, keep);
+            return;
+        }
+        var pick = profile.Monitors.FirstOrDefault(m => m.Connected) ?? profile.Monitors[0];
+        foreach (var m in profile.Monitors) m.Primary = false;
+        pick.Primary = true;
     }
 }
 
@@ -950,8 +1174,28 @@ public static class ProfileDoc
     public static List<ProfileIcon> CaptureIcons(IReadOnlyList<DeskIcon> icons)
         => (icons ?? Array.Empty<DeskIcon>()).Select(i => new ProfileIcon { Name = i.Name ?? "", X = i.X, Y = i.Y }).ToList();
 
-    public static DeskResult RestoreIcons(IReadOnlyList<ProfileIcon> icons, IIconSurface surface)
-        => IconMatch.Apply(surface, (icons ?? Array.Empty<ProfileIcon>()).Select(i => new DeskIcon { Name = i.Name, X = i.X, Y = i.Y }).ToList());
+    public static DeskResult RestoreIcons(IReadOnlyList<ProfileIcon> icons, IIconSurface surface, IReadOnlyCollection<string>? only = null)
+    {
+        IEnumerable<ProfileIcon> src = icons ?? Array.Empty<ProfileIcon>();
+        src = src.Where(i => i.Show);
+        if (only != null)
+        {
+            var set = new HashSet<string>(only, StringComparer.OrdinalIgnoreCase);
+            src = src.Where(i => set.Contains(i.Name ?? ""));
+        }
+        return IconMatch.Apply(surface, src.Select(i => new DeskIcon { Name = i.Name ?? "", X = i.X, Y = i.Y }).ToList());
+    }
+
+    public static string ExportOne(MonitorProfile profile) => ToJson(new[] { profile });
+
+    public static MonitorProfile? ImportOne(string? json)
+    {
+        var list = Parse(json);
+        var profile = list.FirstOrDefault();
+        if (profile == null) return null;
+        if ((profile.Id ?? "").Length == 0) profile.Id = NewId();
+        return profile;
+    }
 
     public static int Place(MonitorProfile profile, IWindowSurface surface)
     {
@@ -972,9 +1216,26 @@ public static class ProfileDoc
                     : new ProfileBox(mon.X + app.X, mon.Y + app.Y, app.W, app.H);
                 surface.Place(hit.Id, box.X, box.Y, box.W, box.H);
             }
+            if (app.TopMost && app.State != "min") surface.Pin(hit.Id);
             n++;
         }
         return n;
+    }
+
+    /// <summary>Paths to start because the window is missing and the user turned on launch. Does not start anything.</summary>
+    public static List<string> MissingLaunches(MonitorProfile profile, IReadOnlyList<TrackedWindow> open)
+    {
+        var list = new List<string>();
+        if (profile?.Apps == null) return list;
+        open ??= Array.Empty<TrackedWindow>();
+        foreach (var app in profile.Apps)
+        {
+            string path = app.Path ?? "";
+            if (!app.Launch || path.Length == 0) continue;
+            if (open.Any(w => AppMatch(app, w))) continue;
+            list.Add(path);
+        }
+        return list;
     }
 
     static ProfileBox ZoneBoxRelative(string state, ProfileMonitor mon)
@@ -1006,16 +1267,22 @@ public static class ProfileDoc
     {
         var monitors = new JsonArray();
         foreach (var m in p.Monitors)
-            monitors.Add(new JsonObject { ["id"] = m.Id, ["number"] = m.Number, ["x"] = m.X, ["y"] = m.Y, ["w"] = m.W, ["h"] = m.H, ["primary"] = m.Primary, ["enabled"] = m.Enabled, ["device"] = m.Device, ["path"] = m.Path, ["edid"] = m.Edid });
+            monitors.Add(new JsonObject
+            {
+                ["id"] = m.Id, ["number"] = m.Number, ["x"] = m.X, ["y"] = m.Y, ["w"] = m.W, ["h"] = m.H,
+                ["scale"] = m.Scale <= 0 ? 100 : m.Scale, ["orientation"] = m.Orientation,
+                ["primary"] = m.Primary, ["enabled"] = m.Enabled, ["device"] = m.Device, ["path"] = m.Path, ["edid"] = m.Edid
+            });
         var windows = new JsonArray();
         foreach (var a in p.Apps)
             windows.Add(new JsonObject
             {
                 ["id"] = a.Id, ["process"] = a.Process, ["path"] = a.Path, ["title"] = a.Title, ["class"] = a.Class, ["name"] = a.Name,
-                ["monitor"] = a.Monitor, ["x"] = a.X, ["y"] = a.Y, ["w"] = a.W, ["h"] = a.H, ["state"] = a.State
+                ["monitor"] = a.Monitor, ["x"] = a.X, ["y"] = a.Y, ["w"] = a.W, ["h"] = a.H, ["state"] = a.State,
+                ["topmost"] = a.TopMost, ["launch"] = a.Launch
             });
         var icons = new JsonArray();
-        foreach (var i in p.Icons) icons.Add(new JsonObject { ["name"] = i.Name, ["x"] = i.X, ["y"] = i.Y });
+        foreach (var i in p.Icons) icons.Add(new JsonObject { ["name"] = i.Name, ["x"] = i.X, ["y"] = i.Y, ["show"] = i.Show });
         var bright = new JsonArray();
         foreach (var b in p.Brightness) bright.Add(new JsonObject { ["monitor"] = b.Monitor, ["value"] = b.Value });
         return new JsonObject
@@ -1073,6 +1340,8 @@ public static class ProfileDoc
                     H = Num(item["h"], 1080),
                     Primary = Bool(item["primary"]),
                     Enabled = item["enabled"] == null || Bool(item["enabled"]),
+                    Scale = Num(item["scale"], 100),
+                    Orientation = Num(item["orientation"]),
                     Device = Str(item["device"]),
                     Path = Str(item["path"]),
                     Edid = Str(item["edid"])
@@ -1092,11 +1361,13 @@ public static class ProfileDoc
                     Y = Num(item["y"]),
                     W = Num(item["w"], 800),
                     H = Num(item["h"], 600),
-                    State = Str(item["state"]).Length > 0 ? Str(item["state"]) : "normal"
+                    State = Str(item["state"]).Length > 0 ? Str(item["state"]) : "normal",
+                    TopMost = Bool(item["topmost"]),
+                    Launch = Bool(item["launch"])
                 });
         if (node["iconItems"] is JsonArray iconItems)
             foreach (var item in iconItems.OfType<JsonObject>())
-                profile.Icons.Add(new ProfileIcon { Name = Str(item["name"]), X = Num(item["x"]), Y = Num(item["y"]) });
+                profile.Icons.Add(new ProfileIcon { Name = Str(item["name"]), X = Num(item["x"]), Y = Num(item["y"]), Show = item["show"] == null || Bool(item["show"]) });
         string space = Str(node["windowSpace"]);
         profile.LiftCanvas = space != "pixels" && profile.Apps.Count > 0 && profile.Apps.All(ProfileLegacy.InCanvas);
         return profile;
@@ -1468,5 +1739,209 @@ public static class PresetExtras
             try { return StampFile.Length > 0 && File.Exists(StampFile) && (DateTime.Now - File.GetLastWriteTime(StampFile)).TotalSeconds < 20; }
             catch { return false; }
         }
+    }
+}
+
+/// <summary>What Apply will change. Pure. An empty live list means the monitor arrangement is not compared.</summary>
+public static class ProfileDiff
+{
+    public static string Summary(MonitorProfile profile, IReadOnlyList<ScreenInfo>? live)
+    {
+        if (profile == null) return "적용할 변경이 없어요";
+        int moved = 0;
+        if (live != null)
+            foreach (var m in profile.Monitors)
+            {
+                if (!m.Connected) continue;
+                var s = live.FirstOrDefault(x => x.Number == m.Number);
+                if (s != null && (s.X != m.X || s.Y != m.Y || s.W != m.W || s.H != m.H)) moved++;
+            }
+        int wins = profile.Apps?.Count ?? 0;
+        int icons = profile.RestoreIcons ? (profile.Icons?.Count(i => i.Show) ?? 0) : 0;
+        int bright = profile.Brightness?.Count(b => b.Value >= 0) ?? 0;
+        var parts = new List<string>();
+        if (moved > 0) parts.Add("모니터 " + moved + "곳");
+        if (wins > 0) parts.Add("창 " + wins + "개");
+        if (icons > 0) parts.Add("아이콘 " + icons + "개");
+        if (bright > 0) parts.Add("밝기 " + bright + "곳");
+        return parts.Count == 0 ? "적용할 변경이 없어요" : "적용하면 " + string.Join(" · ", parts);
+    }
+}
+
+/// <summary>The profile document from just before the last real apply. Taking it does not touch a display.</summary>
+public static class ProfileUndo
+{
+    public sealed class Shot
+    {
+        public string Id = "";
+        public string Json = "";
+    }
+
+    public static Shot? Last { get; private set; }
+
+    public static void Remember(MonitorProfile profile)
+    {
+        if (profile == null) { Last = null; return; }
+        Last = new Shot { Id = profile.Id ?? "", Json = ProfileDoc.ToJson(new[] { profile }) };
+    }
+
+    public static MonitorProfile? Take()
+    {
+        var shot = Last;
+        Last = null;
+        if (shot == null || shot.Json.Length == 0) return null;
+        var profile = ProfileDoc.Parse(shot.Json).FirstOrDefault();
+        if (profile != null && profile.Id.Length == 0) profile.Id = shot.Id;
+        return profile;
+    }
+}
+
+public readonly record struct IconCompare(int Same, int Moved, int Missing, int Extra, int Hidden);
+
+/// <summary>Desktop-icon preview math. Positions are virtual pixels, including negatives. No explorer calls.</summary>
+public static class IconLayout
+{
+    public static int Host(int x, int y, IReadOnlyList<ProfileBox> monitors)
+    {
+        if (monitors == null) return -1;
+        for (int i = 0; i < monitors.Count; i++)
+        {
+            var m = monitors[i];
+            if (x >= m.X && y >= m.Y && x < m.Right && y < m.Bottom) return i;
+        }
+        return -1;
+    }
+
+    public static IconCompare Compare(IReadOnlyList<ProfileIcon>? saved, IReadOnlyList<DeskIcon>? current)
+    {
+        var want = new Dictionary<string, Queue<(int X, int Y)>>(StringComparer.OrdinalIgnoreCase);
+        int hidden = 0;
+        foreach (var s in saved ?? Array.Empty<ProfileIcon>())
+        {
+            if (!s.Show) { hidden++; continue; }
+            string name = s.Name ?? "";
+            if (!want.TryGetValue(name, out var q)) want[name] = q = new Queue<(int, int)>();
+            q.Enqueue((s.X, s.Y));
+        }
+        int same = 0, moved = 0, extra = 0;
+        foreach (var c in current ?? Array.Empty<DeskIcon>())
+        {
+            string name = c.Name ?? "";
+            if (!want.TryGetValue(name, out var q) || q.Count == 0) { extra++; continue; }
+            var t = q.Dequeue();
+            if (t.X == c.X && t.Y == c.Y) same++;
+            else moved++;
+        }
+        int missing = 0;
+        foreach (var q in want.Values) missing += q.Count;
+        return new IconCompare(same, moved, missing, extra, hidden);
+    }
+}
+
+/// <summary>
+/// Chord text shared by the note hotkey and profile hotkeys.
+/// <c>RegisterHotKey</c> lives elsewhere. This type only parses.
+/// </summary>
+public static class HotkeyChord
+{
+    public const uint Alt = 1, Ctrl = 2, Shift = 4, Win = 8;
+
+    public static bool TryParse(string? s, out uint mods, out uint vk)
+    {
+        mods = 0; vk = 0;
+        if (string.IsNullOrWhiteSpace(s)) return false;
+        foreach (var raw in s.Split('+'))
+        {
+            string t = raw.Trim();
+            if (t.Length == 0) continue;
+            string u = t.ToLowerInvariant();
+            if (u is "ctrl" or "control") mods |= Ctrl;
+            else if (u == "alt") mods |= Alt;
+            else if (u == "shift") mods |= Shift;
+            else if (u is "win" or "windows") mods |= Win;
+            else if (!TryVk(t, out vk)) return false;
+        }
+        return vk != 0;
+    }
+
+    public static string Normalize(string? s)
+    {
+        if (!TryParse(s, out uint mods, out uint vk)) return "";
+        var parts = new List<string>();
+        if ((mods & Win) != 0) parts.Add("Win");
+        if ((mods & Ctrl) != 0) parts.Add("Ctrl");
+        if ((mods & Alt) != 0) parts.Add("Alt");
+        if ((mods & Shift) != 0) parts.Add("Shift");
+        parts.Add(VkName(vk));
+        return string.Join("+", parts);
+    }
+
+    static bool TryVk(string token, out uint vk)
+    {
+        vk = 0;
+        if (token.Length == 1)
+        {
+            char c = token[0];
+            if (c is >= '0' and <= '9') { vk = (uint)('0' + (c - '0')); return true; }
+            if (c is >= 'a' and <= 'z') { vk = (uint)('A' + (c - 'a')); return true; }
+            if (c is >= 'A' and <= 'Z') { vk = c; return true; }
+        }
+        string u = token.ToLowerInvariant();
+        if (u.Length == 4 && u.StartsWith("num", StringComparison.Ordinal) && u[3] is >= '0' and <= '9')
+        { vk = (uint)(0x60 + (u[3] - '0')); return true; }
+        if (u.Length is >= 2 and <= 3 && u[0] == 'f' && int.TryParse(u[1..], out int fn) && fn is >= 1 and <= 24)
+        { vk = (uint)(0x70 + fn - 1); return true; }
+        if (Names.TryGetValue(u, out vk)) return true;
+        return false;
+    }
+
+    static string VkName(uint vk)
+    {
+        if (vk is >= 0x30 and <= 0x39) return ((char)vk).ToString();
+        if (vk is >= 0x41 and <= 0x5A) return ((char)vk).ToString();
+        if (vk is >= 0x60 and <= 0x69) return "Num" + (vk - 0x60);
+        if (vk is >= 0x70 and <= 0x87) return "F" + (vk - 0x6F);
+        foreach (var kv in Names) if (kv.Value == vk) return Pretty(kv.Key);
+        return "Key" + vk.ToString("X");
+    }
+
+    static string Pretty(string lower)
+    {
+        if (lower.StartsWith("oem", StringComparison.Ordinal)) return "Oem" + lower[3..];
+        return char.ToUpperInvariant(lower[0]) + lower[1..];
+    }
+
+    static readonly Dictionary<string, uint> Names = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["space"] = 0x20, ["tab"] = 0x09, ["escape"] = 0x1B, ["esc"] = 0x1B,
+        ["enter"] = 0x0D, ["return"] = 0x0D, ["back"] = 0x08,
+        ["left"] = 0x25, ["up"] = 0x26, ["right"] = 0x27, ["down"] = 0x28,
+        ["home"] = 0x24, ["end"] = 0x23, ["pageup"] = 0x21, ["prior"] = 0x21,
+        ["pagedown"] = 0x22, ["next"] = 0x22, ["insert"] = 0x2D, ["delete"] = 0x2E,
+        ["snapshot"] = 0x2C, ["pause"] = 0x13,
+        ["oemplus"] = 0xBB, ["oemminus"] = 0xBD, ["oemcomma"] = 0xBC, ["oemperiod"] = 0xBE,
+        ["oem1"] = 0xBA, ["oem2"] = 0xBF, ["oem3"] = 0xC0, ["oem4"] = 0xDB,
+        ["oem5"] = 0xDC, ["oem6"] = 0xDD, ["oem7"] = 0xDE,
+    };
+}
+
+/// <summary>Press-to-record result. Escape keeps the previous chord. Backspace clears. Conflicts are not stored.</summary>
+public static class HotkeyEdit
+{
+    public static (string Value, string Error) Apply(string? previous, string? gesture, IEnumerable<string>? taken, string? noteHotkey)
+    {
+        string prev = previous ?? "";
+        string g = (gesture ?? "").Trim();
+        if (g.Equals("escape", StringComparison.OrdinalIgnoreCase) || g.Equals("esc", StringComparison.OrdinalIgnoreCase)) return (prev, "");
+        if (g.Equals("back", StringComparison.OrdinalIgnoreCase) || g.Equals("backspace", StringComparison.OrdinalIgnoreCase)) return ("", "");
+        if (!HotkeyChord.TryParse(g, out _, out _)) return (prev, "단축키로 쓸 수 없어요.");
+        string norm = HotkeyChord.Normalize(g);
+        if (norm.Length == 0) return (prev, "단축키로 쓸 수 없어요.");
+        string note = HotkeyChord.Normalize(noteHotkey);
+        if (note.Length > 0 && note == norm) return (prev, "새 메모 단축키와 같아요.");
+        if (taken != null)
+            foreach (var t in taken)
+                if (HotkeyChord.Normalize(t) == norm) return (prev, "다른 프로필이 이 단축키를 쓰고 있어요.");
+        return (norm, "");
     }
 }
