@@ -13,6 +13,13 @@ namespace BongHub;
 
 public partial class StickyNoteWindow : Window
 {
+    public const double NoteMinWidth = 120;
+    public const double NoteMinHeight = 90;
+    public const double NoteMaxWidth = 30000;
+    public const double NoteMaxHeight = 30000;
+    /// <summary>Physical size WPF will actually show. Stored notes can sit outside <see cref="NoteMinWidth"/>–<see cref="NoteMaxHeight"/>.</summary>
+    public static int ClampNoteSpan(int value, double min, double max) => (int)Math.Clamp(value, min, max);
+
     public NoteMeta Meta { get; }
     public bool Ready { get; private set; }
     public bool TextDirty { get; private set; }
