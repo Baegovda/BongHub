@@ -13,12 +13,11 @@
   <Grid x:Name="Root" TextElement.Foreground="#F0F0F6" TextElement.FontFamily="{StaticResource UiFont}">
     <Grid.RowDefinitions>
       <RowDefinition Height="38"/>
-      <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <!-- soft top sheen, like an iOS widget -->
-    <Border Grid.RowSpan="4" IsHitTestVisible="False">
+    <Border Grid.RowSpan="3" IsHitTestVisible="False">
       <Border.Background>
         <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
           <GradientStop Color="#16FFFFFF" Offset="0"/>
@@ -27,9 +26,19 @@
       </Border.Background>
     </Border>
 
-    <!-- top bar: native caption (drag). The tools stay visible. -->
-    <Grid Grid.Row="0" Margin="8,4,6,0">
-      <StackPanel x:Name="Bar" Orientation="Horizontal" HorizontalAlignment="Right" Opacity="1">
+    <!-- top bar: native caption (drag). The title sits with the tools, like a page name. -->
+    <Grid Grid.Row="0" Margin="14,0,6,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <Grid Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">
+        <TextBlock x:Name="TitleHint" Text="제목" FontWeight="Bold" Opacity="0.38" IsHitTestVisible="False" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+        <TextBox x:Name="TitleBox" FontWeight="Bold" Background="Transparent" BorderThickness="0" Padding="0" BorderBrush="Transparent"
+                 MaxLength="80" VerticalContentAlignment="Center" VerticalAlignment="Center" TextWrapping="NoWrap"
+                 WindowChrome.IsHitTestVisibleInChrome="True"/>
+      </Grid>
+      <StackPanel x:Name="Bar" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Opacity="1">
         <Button x:Name="NewBtn" Style="{StaticResource IconButton}" Content="&#xE710;" ToolTip="새 메모" WindowChrome.IsHitTestVisibleInChrome="True"/>
         <Button x:Name="FontBtn" Style="{StaticResource IconButton}" Content="&#xE8D2;" ToolTip="서식" WindowChrome.IsHitTestVisibleInChrome="True"/>
         <Button x:Name="ColorBtn" Style="{StaticResource IconButton}" Content="&#xE790;" ToolTip="색" WindowChrome.IsHitTestVisibleInChrome="True"/>
@@ -39,13 +48,7 @@
       </StackPanel>
     </Grid>
 
-    <Grid Grid.Row="1" Margin="14,0,12,0">
-      <TextBlock x:Name="TitleHint" Text="제목" FontWeight="Bold" Opacity="0.38" IsHitTestVisible="False" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-      <TextBox x:Name="TitleBox" FontWeight="Bold" Background="Transparent" BorderThickness="0" Padding="0" BorderBrush="Transparent"
-               MaxLength="80" VerticalContentAlignment="Center" TextWrapping="NoWrap"/>
-    </Grid>
-
-    <Grid x:Name="EditorHost" Grid.Row="2" Margin="10,12,8,4">
+    <Grid x:Name="EditorHost" Grid.Row="1" Margin="10,8,8,4">
       <!-- Idle notes stay on this viewer. A RichTextBox is created only while the note is being edited. -->
       <FlowDocumentScrollViewer x:Name="Viewer" Background="Transparent" BorderThickness="0"
                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
@@ -60,7 +63,7 @@
     </Grid>
 
     <!-- format bar (iOS-style floating capsule) -->
-    <Border x:Name="FormatBar" Grid.Row="3" Margin="10,0,10,10" CornerRadius="14" Background="#33000000" BorderBrush="#1FFFFFFF" BorderThickness="1"
+    <Border x:Name="FormatBar" Grid.Row="2" Margin="10,0,10,10" CornerRadius="14" Background="#33000000" BorderBrush="#1FFFFFFF" BorderThickness="1"
             Padding="4,2" HorizontalAlignment="Left" Visibility="Collapsed" Opacity="0">
       <Border.RenderTransform><TranslateTransform x:Name="FormatShift" Y="8"/></Border.RenderTransform>
       <StackPanel Orientation="Horizontal">
@@ -72,6 +75,7 @@
         <Button x:Name="SizeBtn" Style="{StaticResource IconButton}" FontFamily="{StaticResource UiFont}" FontWeight="Bold" FontSize="13" Content="Aa" ToolTip="텍스트 · 제목"/>
         <Button x:Name="SmallerBtn" Style="{StaticResource IconButton}" FontFamily="{StaticResource UiFont}" FontSize="12" Content="A−" ToolTip="글자 작게 (Ctrl+-)" />
         <Button x:Name="LargerBtn" Style="{StaticResource IconButton}" FontFamily="{StaticResource UiFont}" FontSize="12" Content="A+" ToolTip="글자 크게 (Ctrl++)" />
+        <Button x:Name="ResetSizeBtn" Style="{StaticResource IconButton}" Content="&#xE72C;" ToolTip="기본 글자 크기"/>
         <Button x:Name="ImageBtn" Style="{StaticResource IconButton}" Content="&#xE91B;" ToolTip="이미지 넣기"/>
       </StackPanel>
     </Border>

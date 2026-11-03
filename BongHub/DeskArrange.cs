@@ -240,10 +240,10 @@ public static class SessionLayout
         return list;
     }
 
-    public static int Restore(IReadOnlyList<SessionWindow>? shot, IReadOnlyList<PickProbe>? probes, IWindowSurface surface, IReadOnlyList<ProfileMonitor>? monitors)
+    public static List<long> Restore(IReadOnlyList<SessionWindow>? shot, IReadOnlyList<PickProbe>? probes, IWindowSurface surface, IReadOnlyList<ProfileMonitor>? monitors)
     {
-        if (shot == null || probes == null || monitors == null) return 0;
-        int n = 0;
+        var placed = new List<long>();
+        if (shot == null || probes == null || monitors == null) return placed;
         foreach (var item in shot.OrderBy(s => s.Z))
         {
             var hit = Match(item, probes);
@@ -263,9 +263,18 @@ public static class SessionLayout
                 surface.Maximize(hit.Window.Id, new WorkRect(mon.X, mon.Y, mon.W, mon.H));
             }
             else surface.Place(hit.Window.Id, x, y, item.W, item.H);
-            n++;
+            placed.Add(hit.Window.Id);
         }
-        return n;
+        return placed;
+    }
+
+    public static List<PlacementSpace.Monitor> MonitorsOf(IEnumerable<ProfileMonitor>? monitors)
+    {
+        var list = new List<PlacementSpace.Monitor>();
+        if (monitors == null) return list;
+        foreach (var m in monitors)
+            list.Add(new PlacementSpace.Monitor(DeskArrange.Stable(m), m.X, m.Y, m.W, m.H));
+        return list;
     }
 
     public static PickProbe? Match(SessionWindow item, IReadOnlyList<PickProbe> probes)

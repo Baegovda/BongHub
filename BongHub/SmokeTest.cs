@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -90,6 +91,20 @@ public static class SmokeTest
                 var slider = w.NoteFontSlider;
                 t.Check("note font size is 7–48", slider != null && slider.Minimum == 7 && slider.Maximum == 48, slider == null ? "no slider" : $"{slider.Minimum}–{slider.Maximum}");
                 t.Check("notes page show/hide/copy/delete", w.HasNotesCommand("모두 보이기") && w.HasNotesCommand("모두 숨기기") && w.HasNotesCommand("텍스트 복사") && w.HasNotesCommand("삭제"));
+            }
+            if (page == "kakao")
+            {
+                var kakaoText = new StringBuilder();
+                void WalkKakao(DependencyObject node)
+                {
+                    if (node is TextBlock block && block.Text != null) kakaoText.Append(block.Text);
+                    int count = 0;
+                    try { count = VisualTreeHelper.GetChildrenCount(node); } catch { count = 0; }
+                    for (int i = 0; i < count; i++) WalkKakao(VisualTreeHelper.GetChild(node, i));
+                }
+                WalkKakao(w.PageHost);
+                string kakaoPage = kakaoText.ToString();
+                t.Check("kakao page has no dark overlay", !kakaoPage.Contains("다크") && !kakaoPage.Contains("/dark") && kakaoPage.Contains("광고 숨김"));
             }
             TestKit.SavePng(w, DarkUnder, $"settings_{page}.png");
             ContrastCheck(t, w, w.TitleBlock, $"{page} title", 7);
@@ -244,12 +259,12 @@ public static class SmokeTest
         }
         t.Check("kakao plan hides the ad on a fake window", !surface[2].Visible && !surface[8].Visible && surface[9].Visible && surface[3].Y == 30 && surface[6].Y == 129 && surface[6].H == 414 && surface[5].Y == 48 && KakaoSystem.WindowCalls == 0 && KakaoSystem.ProcessStarts == 0);
         var host = new FakeKakaoHost();
-        KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = true, Dark = false });
-        KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = false, Dark = true });
+        KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = true });
+        KakaoSync.Apply(host, new KakaoSettings { AdBlock = true, Compact = false });
         int running = host.Running;
-        string darkArgs = host.LastArgs ?? "";
+        string helperArgs = host.LastArgs ?? "";
         KakaoSync.Apply(host, new KakaoSettings { AdBlock = false });
-        t.Check("kakao helper args stay on the fake", running == 1 && darkArgs == "/nocompact /dark" && host.Running == 0 && host.Log.Contains("restore") && KakaoArgs.Format(new KakaoSettings { AdBlock = true, Compact = true, Dark = false }) == "");
+        t.Check("kakao helper args stay on the fake", running == 1 && helperArgs == "/nocompact" && !helperArgs.Contains("dark") && host.Running == 0 && host.Log.Contains("restore") && KakaoArgs.Format(new KakaoSettings { AdBlock = true, Compact = true }) == "" && KakaoArgs.Format(new KakaoSettings { AdBlock = true, Compact = false }) == "/nocompact");
         int kakaoBlocks = w.KakaoBlocks;
         w.RequestSyncKakao();
         bool kakaoThrew = false;
@@ -538,10 +553,15 @@ public static class SmokeTest
         double gap = bodyTop - titleBottom;
         var noteInk = NoteColors.Ink(note.Meta.Color);
         bool ink = titleBrush != null && caretBrush != null && titleBrush.Color == noteInk && caretBrush.Color == noteInk && editorCaret != null && editorCaret.Color == noteInk && titleBrush.Color.A == 255;
-        t.Check("note title uses the ink, sits under the toolbar, and leaves a short gap",
+        double titleRight = note.TitleBox.TranslatePoint(new Point(note.TitleBox.ActualWidth, 0), note).X;
+        double barLeft = note.Bar.TranslatePoint(new Point(0, 0), note).X;
+        double barTop = note.Bar.TranslatePoint(new Point(0, 0), note).Y;
+        bool inCaption = titleTop >= barTop - 10 && titleBottom <= barBottom + 10 && titleRight <= barLeft + 2;
+        t.Check("note title uses the ink and sits in the caption beside the tools",
             ink && note.TitleBox.FontWeight == FontWeights.Bold && titlePx / bodyPx > 1.55 && titlePx / bodyPx < 1.66
-            && Math.Abs(titleX - bodyX) < 2 && gap >= 8 && gap <= 18 && titleTop + 1 >= barBottom && titleTop - barBottom <= 12,
-            $"ink={titleBrush?.Color} caret={caretBrush?.Color} editor={editorCaret?.Color} size {titlePx:0.0}/{bodyPx:0.0} align {titleX:0.0}/{bodyX:0.0} gap {gap:0.0} above {titleTop - barBottom:0.0}");
+            && Math.Abs(titleX - bodyX) < 4 && inCaption,
+            $"ink={titleBrush?.Color} caret={caretBrush?.Color} editor={editorCaret?.Color} size {titlePx:0.0}/{bodyPx:0.0} align {titleX:0.0}/{bodyX:0.0} gap {gap:0.0} caption {titleTop:0.0}-{titleBottom:0.0} bar {barTop:0.0}-{barBottom:0.0} left {titleRight:0.0}/{barLeft:0.0}");
+        t.Check("format bar can reset the font size", note.ResetSizeBtn != null && note.ResetSizeBtn.Content as string == "\uE72C");
         note.SetTitle("");
         var hintBrush = note.TitleHint.Foreground as SolidColorBrush;
         t.Check("note title placeholder is dimmed", note.TitleHint.Visibility == Visibility.Visible && note.TitleHint.Opacity <= 0.45 && note.TitleHint.Opacity >= 0.25 && hintBrush != null && titleBrush != null && hintBrush.Color == titleBrush.Color);

@@ -215,22 +215,51 @@ public sealed class FakeWindowSurface : IWindowSurface
     public List<string> Ops { get; } = new();
     public IReadOnlyList<TrackedWindow> List() => Windows.Select(Clone).ToList();
     public bool TryWorkArea(string monitorId, long windowId, out WorkRect area) => Areas.TryGetValue(monitorId ?? "", out area);
+    public int WorkOriginX, WorkOriginY;
     public void Place(long id, int x, int y, int w, int h)
     {
         var win = Find(id);
         win.X = x; win.Y = y; win.W = w; win.H = h; win.Min = false; win.Max = false;
-        win.NormalX = x; win.NormalY = y; win.NormalW = w; win.NormalH = h;
+        var ws = PlacementSpace.ToWorkspace(new PlacementSpace.Box(x, y, w, h), WorkOriginX, WorkOriginY);
+        win.NormalX = ws.X; win.NormalY = ws.Y; win.NormalW = ws.W; win.NormalH = ws.H;
         Ops.Add("place " + id);
     }
     public void Minimize(long id) { var win = Find(id); win.Min = true; win.Max = false; Ops.Add("min " + id); }
     public void Maximize(long id, WorkRect area)
     {
         var win = Find(id);
-        if (win.NormalW <= 0) { win.NormalX = win.X; win.NormalY = win.Y; win.NormalW = win.W; win.NormalH = win.H; }
+        if (win.NormalW <= 0)
+        {
+            var ws = PlacementSpace.ToWorkspace(new PlacementSpace.Box(win.X, win.Y, win.W, win.H), WorkOriginX, WorkOriginY);
+            win.NormalX = ws.X; win.NormalY = ws.Y; win.NormalW = ws.W; win.NormalH = ws.H;
+        }
         win.Min = false; win.Max = true; win.X = area.X; win.Y = area.Y; win.W = area.W; win.H = area.H;
         Ops.Add("max " + id);
     }
     public void Restore(long id) { var win = Find(id); win.Min = false; win.Max = false; Ops.Add("restore " + id); }
+    /// <summary>What the taskbar does on restore: show the stored normal rect, which is workspace coordinates.</summary>
+    public void ShowRestored(long id)
+    {
+        var win = Find(id);
+        var screen = PlacementSpace.ToScreen(new PlacementSpace.Box(win.NormalX, win.NormalY, win.NormalW, win.NormalH), WorkOriginX, WorkOriginY);
+        win.Min = false; win.Max = false;
+        win.X = screen.X; win.Y = screen.Y; win.W = screen.W; win.H = screen.H;
+        Ops.Add("show " + id);
+    }
+    /// <summary>Rewrite the restore rect of windows the session did not place. Their normal rect is workspace coordinates.</summary>
+    public void Anchor(IReadOnlyCollection<long>? skip, IReadOnlyList<PlacementSpace.Monitor>? before, IReadOnlyList<PlacementSpace.Monitor>? after)
+    {
+        foreach (var win in Windows)
+        {
+            if (skip != null && skip.Contains(win.Id)) continue;
+            var now = new PlacementSpace.Box(win.X, win.Y, win.W, win.H);
+            var old = new PlacementSpace.Box(win.NormalX, win.NormalY, win.NormalW, win.NormalH);
+            var screen = PlacementSpace.RestoreTarget(win.Min, now, old, WorkOriginX, WorkOriginY, before, after);
+            var ws = PlacementSpace.ToWorkspace(screen, WorkOriginX, WorkOriginY);
+            win.NormalX = ws.X; win.NormalY = ws.Y; win.NormalW = ws.W; win.NormalH = ws.H;
+            Ops.Add("anchor " + win.Id);
+        }
+    }
     public void Pin(long id) { Find(id).TopMost = true; Ops.Add("pin " + id); }
     public void Dispose() { }
     TrackedWindow Find(long id) => Windows.First(w => w.Id == id);
@@ -441,6 +470,102 @@ public static class WorkspacePlan
 }
 
 /// <summary>
+/// <c>WINDOWPLACEMENT.rcNormalPosition</c> is workspace coordinates. The origin is the primary monitor's work area.
+/// Screen pixels are what <see cref="TrackedWindow"/> stores. Tests use <see cref="FakeWindowSurface"/> and never a real monitor.
+/// </summary>
+public static class PlacementSpace
+{
+    public readonly record struct Box(int X, int Y, int W, int H);
+    public readonly record struct Monitor(string Id, int X, int Y, int W, int H);
+
+    public static Box ToWorkspace(Box screen, int originX, int originY)
+        => new(screen.X - originX, screen.Y - originY, screen.W, screen.H);
+
+    public static Box ToScreen(Box workspace, int originX, int originY)
+        => new(workspace.X + originX, workspace.Y + originY, workspace.W, workspace.H);
+
+    public static bool Iconic(Box screen) => screen.X <= -30000 || screen.W <= 0 || screen.H <= 0;
+
+    /// <summary>Same local offset on the monitor with the same id, after that monitor moves.</summary>
+    public static Box Carry(Box screen, IReadOnlyList<Monitor>? before, IReadOnlyList<Monitor>? after)
+    {
+        if (before == null || after == null || before.Count == 0) return screen;
+        int cx = screen.X + Math.Max(1, screen.W) / 2;
+        int cy = screen.Y + Math.Max(1, screen.H) / 2;
+        Monitor host = default;
+        bool found = false;
+        foreach (var m in before)
+        {
+            if (cx < m.X || cy < m.Y || cx >= m.X + m.W || cy >= m.Y + m.H) continue;
+            host = m;
+            found = true;
+            break;
+        }
+        if (!found || string.IsNullOrEmpty(host.Id)) return screen;
+        foreach (var m in after)
+        {
+            if (!string.Equals(m.Id, host.Id, StringComparison.OrdinalIgnoreCase) || m.W <= 0 || m.H <= 0) continue;
+            return new Box(m.X + (screen.X - host.X), m.Y + (screen.Y - host.Y), screen.W, screen.H);
+        }
+        return screen;
+    }
+
+    /// <summary>
+    /// Screen rect a later restore should show. A visible window keeps the monitor it is on now.
+    /// A minimized window only has its old normal rect, so that rect rides the monitor it sat on.
+    /// </summary>
+    public static Box RestoreTarget(bool minimized, Box screenNow, Box oldNormalWorkspace, int originX, int originY, IReadOnlyList<Monitor>? before, IReadOnlyList<Monitor>? after)
+    {
+        if (!minimized && !Iconic(screenNow)) return screenNow;
+        var oldScreen = ToScreen(oldNormalWorkspace, originX, originY);
+        if (oldScreen.W <= 0 || oldScreen.H <= 0) return screenNow;
+        return Carry(oldScreen, before, after);
+    }
+
+    /// <summary>Fake windows only. Empty means the restore rect survives a monitor move and a taskbar offset.</summary>
+    public static string Story()
+    {
+        var screen = new Box(1920, 40, 640, 480);
+        var ws = ToWorkspace(screen, 0, 40);
+        if (ws.X != 1920 || ws.Y != 0 || ws.W != 640) return "workspace " + ws.X + "," + ws.Y;
+        var back = ToScreen(ws, 0, 40);
+        if (back.X != 1920 || back.Y != 40) return "screen " + back.X + "," + back.Y;
+        var placed = new FakeWindowSurface { WorkOriginY = 40 };
+        placed.Windows.Add(new TrackedWindow { Id = 3, X = 100, Y = 100, W = 200, H = 200 });
+        placed.Place(3, 1920, 40, 640, 480);
+        if (placed.Windows[0].NormalY != 0 || placed.Windows[0].NormalX != 1920 || placed.Windows[0].Y != 40) return "place wrote screen coordinates into the normal rect";
+        placed.Windows[0].Min = true;
+        placed.Windows[0].X = -32000;
+        placed.Windows[0].Y = -32000;
+        placed.Windows[0].W = 160;
+        placed.Windows[0].H = 28;
+        placed.ShowRestored(3);
+        if (placed.Windows[0].X != 1920 || placed.Windows[0].Y != 40 || placed.Windows[0].Min) return "restore left the right monitor";
+        var before = new[] { new Monitor("A", 0, 0, 1920, 1080), new Monitor("B", 1920, 0, 1920, 1080) };
+        var after = new[] { new Monitor("A", 0, 0, 1920, 1080), new Monitor("B", -1920, 0, 1920, 1080) };
+        var idle = new FakeWindowSurface();
+        idle.Windows.Add(new TrackedWindow { Id = 8, Min = true, X = -32000, Y = -32000, W = 160, H = 28, NormalX = 2000, NormalY = 100, NormalW = 800, NormalH = 600 });
+        idle.Windows.Add(new TrackedWindow { Id = 9, X = -1700, Y = 80, W = 500, H = 400, NormalX = 2100, NormalY = 80, NormalW = 500, NormalH = 400 });
+        idle.Anchor(null, before, after);
+        idle.ShowRestored(8);
+        var hidden = idle.Windows.First(w => w.Id == 8);
+        if (hidden.X != -1840 || hidden.Y != 100) return "minimized window restored at " + hidden.X + "," + hidden.Y;
+        idle.ShowRestored(9);
+        var shown = idle.Windows.First(w => w.Id == 9);
+        if (shown.X != -1700 || shown.Y != 80) return "visible window jumped to " + shown.X + "," + shown.Y;
+        var session = new FakeWindowSurface { WorkOriginY = 40 };
+        session.Windows.Add(new TrackedWindow { Id = 1 });
+        session.Place(1, 1920, 40, 400, 300);
+        session.Windows[0].X = -1800;
+        session.Windows[0].Y = 40;
+        session.Anchor(new long[] { 1 }, before, after);
+        session.ShowRestored(1);
+        if (session.Windows[0].X != 1920 || session.Windows[0].Y != 40) return "session window was reanchored";
+        return "";
+    }
+}
+
+/// <summary>
 /// Real top-level windows. The constructor enumerates only after <see cref="WindowGate.Demand"/>.
 /// There is no event hook and no timer here.
 /// </summary>
@@ -473,11 +598,13 @@ public sealed class LiveWindowSurface : IWindowSurface
     {
         if (!hwnds.TryGetValue(id, out var hwnd)) return;
         if (IsIconic(hwnd) || IsZoomed(hwnd)) ShowWindow(hwnd, 4);
+        var origin = PrimaryWorkOrigin();
+        var ws = PlacementSpace.ToWorkspace(new PlacementSpace.Box(x, y, w, h), origin.X, origin.Y);
         var placed = new WINDOWPLACEMENT
         {
             length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>(),
             showCmd = 1,
-            normal = new RECT { Left = x, Top = y, Right = x + w, Bottom = y + h }
+            normal = new RECT { Left = ws.X, Top = ws.Y, Right = ws.X + ws.W, Bottom = ws.Y + ws.H }
         };
         SetWindowPlacement(hwnd, ref placed);
         SetWindowPos(hwnd, IntPtr.Zero, x, y, w, h, 0x4 | 0x10 | 0x200);
@@ -495,11 +622,60 @@ public sealed class LiveWindowSurface : IWindowSurface
         if (!hwnds.TryGetValue(id, out var hwnd)) return;
         var placed = new WINDOWPLACEMENT { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
         if (!GetWindowPlacement(hwnd, ref placed) || placed.normal.Right <= placed.normal.Left)
-            placed.normal = new RECT { Left = area.X + 40, Top = area.Y + 40, Right = area.X + Math.Max(200, area.W - 80), Bottom = area.Y + Math.Max(150, area.H - 80) };
+        {
+            var origin = PrimaryWorkOrigin();
+            var ws = PlacementSpace.ToWorkspace(new PlacementSpace.Box(area.X + 40, area.Y + 40, Math.Max(200, area.W - 80), Math.Max(150, area.H - 80)), origin.X, origin.Y);
+            placed.normal = new RECT { Left = ws.X, Top = ws.Y, Right = ws.X + ws.W, Bottom = ws.Y + ws.H };
+        }
         placed.length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>();
         placed.showCmd = 3;
         SetWindowPlacement(hwnd, ref placed);
         if (windows.FirstOrDefault(w => w.Id == id) is { } win) { win.Min = false; win.Max = true; }
+    }
+
+    /// <summary>
+    /// After a monitor arrangement change, windows the session did not place still restore from the old normal rect.
+    /// Rewrite that rect from where the window is now, in workspace coordinates. Minimized windows ride their monitor.
+    /// </summary>
+    public int AnchorRestores(IReadOnlyCollection<long>? skip, IReadOnlyList<PlacementSpace.Monitor>? before, IReadOnlyList<PlacementSpace.Monitor>? after)
+    {
+        var origin = PrimaryWorkOrigin();
+        int n = 0;
+        foreach (var pair in hwnds)
+        {
+            if (skip != null && skip.Contains(pair.Key)) continue;
+            var hwnd = pair.Value;
+            if (!GetWindowRect(hwnd, out var rc)) continue;
+            var placed = new WINDOWPLACEMENT { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
+            if (!GetWindowPlacement(hwnd, ref placed)) continue;
+            var now = new PlacementSpace.Box(rc.Left, rc.Top, Math.Max(0, rc.Right - rc.Left), Math.Max(0, rc.Bottom - rc.Top));
+            var old = new PlacementSpace.Box(placed.normal.Left, placed.normal.Top, Math.Max(0, placed.normal.Right - placed.normal.Left), Math.Max(0, placed.normal.Bottom - placed.normal.Top));
+            var screen = PlacementSpace.RestoreTarget(IsIconic(hwnd), now, old, origin.X, origin.Y, before, after);
+            if (screen.W < 1 || screen.H < 1) continue;
+            var ws = PlacementSpace.ToWorkspace(screen, origin.X, origin.Y);
+            placed.length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>();
+            placed.normal = new RECT { Left = ws.X, Top = ws.Y, Right = ws.X + ws.W, Bottom = ws.Y + ws.H };
+            SetWindowPlacement(hwnd, ref placed);
+            n++;
+        }
+        return n;
+    }
+
+    static (int X, int Y) PrimaryWorkOrigin()
+    {
+        int x = 0, y = 0;
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (m, _, ref rc, _) =>
+        {
+            var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (GetMonitorInfo(m, ref mi) && (mi.flags & 1) != 0)
+            {
+                x = mi.rcWork.Left;
+                y = mi.rcWork.Top;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return (x, y);
     }
 
     public void Restore(long id)
@@ -610,6 +786,7 @@ public sealed class LiveWindowSurface : IWindowSurface
         EnumWindows((h, _) => { found.Add(h); return true; }, IntPtr.Zero);
         var list = new List<PickProbe>(found.Count);
         int z = found.Count;
+        var origin = PrimaryWorkOrigin();
         foreach (var h in found)
         {
             try
@@ -649,10 +826,11 @@ public sealed class LiveWindowSurface : IWindowSurface
                     var place = new WINDOWPLACEMENT { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
                     if (GetWindowPlacement(h, ref place) && place.normal.Right > place.normal.Left && place.normal.Bottom > place.normal.Top)
                     {
-                        list[^1].Window.NormalX = place.normal.Left;
-                        list[^1].Window.NormalY = place.normal.Top;
-                        list[^1].Window.NormalW = place.normal.Right - place.normal.Left;
-                        list[^1].Window.NormalH = place.normal.Bottom - place.normal.Top;
+                        var normal = PlacementSpace.ToScreen(new PlacementSpace.Box(place.normal.Left, place.normal.Top, place.normal.Right - place.normal.Left, place.normal.Bottom - place.normal.Top), origin.X, origin.Y);
+                        list[^1].Window.NormalX = normal.X;
+                        list[^1].Window.NormalY = normal.Y;
+                        list[^1].Window.NormalW = normal.W;
+                        list[^1].Window.NormalH = normal.H;
                     }
                 }
             }

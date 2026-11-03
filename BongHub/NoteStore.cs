@@ -185,20 +185,20 @@ public static class NoteColors
 {
     public static readonly string[] Keys = { "yellow", "green", "pink", "purple", "blue", "gray", "charcoal" };
     public static readonly string[] Names = { "노랑", "초록", "분홍", "보라", "파랑", "회색", "차콜" };
-    static readonly Color[] swatch = { C(240, 205, 90), C(120, 205, 140), C(240, 140, 190), C(180, 150, 240), C(120, 170, 245), C(180, 180, 190), C(110, 110, 120) };
-    static readonly Color[] partner = { C(255, 150, 110), C(64, 184, 176), C(183, 124, 255), C(228, 126, 244), C(76, 138, 254), C(110, 117, 144), C(46, 48, 72) };
+    static readonly Color[] swatch = { C(214, 197, 143), C(132, 184, 144), C(217, 155, 186), C(197, 182, 226), C(144, 174, 218), C(173, 173, 179), C(77, 77, 83) };
+    static readonly Color[] partner = { C(224, 169, 148), C(144, 193, 189), C(193, 162, 230), C(211, 152, 220), C(155, 180, 228), C(181, 183, 191), C(51, 52, 67) };
     public static readonly string[][] Gradients = {
-        new[] { "g:blocks", "블록", "4C8AFE", "E47EF4" }, new[] { "g:aurora", "오로라", "6EC6FF", "9084FF" }, new[] { "g:grape", "포도", "9D6BFF", "E47EF4" },
-        new[] { "g:lagoon", "라군", "40D9D0", "4C8AFE" }, new[] { "g:mint", "민트", "5EE7B0", "3FA9F5" }, new[] { "g:forest", "숲", "7BD88F", "2A9D8F" },
-        new[] { "g:lemon", "레몬", "F5E36B", "8FD66B" }, new[] { "g:peach", "복숭아", "FFC37A", "FF7EB3" }, new[] { "g:sunset", "노을", "FF9A6B", "E4589C" },
-        new[] { "g:ember", "불씨", "FF7A59", "B03A8F" }, new[] { "g:rose", "장미", "FF7EA8", "B06CFF" }, new[] { "g:ocean", "바다", "2E9BFF", "5B4BFF" },
-        new[] { "g:night", "밤하늘", "5560A8", "2A2B58" }, new[] { "g:slate", "슬레이트", "8A93A8", "4A5168" },
-        new[] { "g:sage", "세이지", "9AA58E", "747F6D" }, new[] { "g:dustrose", "더스티 로즈", "B58D94", "8C7077" }, new[] { "g:mauve", "모브", "9B8298", "706173" },
-        new[] { "g:bluegray", "블루 그레이", "879BA5", "647681" }, new[] { "g:sand", "샌드", "B3A388", "857862" }, new[] { "g:clay", "클레이", "B18670", "826552" },
-        new[] { "g:olive", "올리브", "94916D", "6E6C50" }, new[] { "g:ink", "잉크", "778296", "555E70" }, new[] { "g:lavendergray", "라벤더 그레이", "9D9BB3", "77758E" },
-        new[] { "g:petrol", "페트롤", "698985", "4F6D68" }, new[] { "g:cocoa", "코코아", "927A6D", "6D594F" }, new[] { "g:rosetaupe", "로즈 토프", "A88982", "806963" },
-        new[] { "g:mist", "미스트", "A5A5A0", "7D7D78" }, new[] { "g:mustard", "머스터드", "AC9B63", "817446" }, new[] { "g:deepteal", "딥 틸", "5C7E79", "48615D" },
-        new[] { "g:plumgray", "플럼 그레이", "8D8294", "665D6B" }, new[] { "g:smoke", "스모크", "9A9DA1", "72767A" }, new[] { "g:terracotta", "테라코타", "AA806B", "805F50" } };
+        new[] { "g:blocks", "블록", "93AEE2", "D9A8E1" }, new[] { "g:aurora", "오로라", "86BCDF", "ADA6E7" }, new[] { "g:grape", "포도", "C2AEEA", "D398DC" },
+        new[] { "g:lagoon", "라군", "83C8C4", "93AEE2" }, new[] { "g:mint", "민트", "6AC39F", "7FB2D7" }, new[] { "g:forest", "숲", "90C59C", "73B9B1" },
+        new[] { "g:lemon", "레몬", "CBBF6C", "9AC087" }, new[] { "g:peach", "복숭아", "DBAD76", "E396B6" }, new[] { "g:sunset", "노을", "DE9F82", "D79DB9" },
+        new[] { "g:ember", "불씨", "E09B8A", "D2ADC7" }, new[] { "g:rose", "장미", "E396AF", "C4A6E7" }, new[] { "g:ocean", "바다", "86B4DF", "ACA6E7" },
+        new[] { "g:night", "밤하늘", "464B69", "33334F" }, new[] { "g:slate", "슬레이트", "484B52", "464B57" },
+        new[] { "g:sage", "세이지", "A9AEA3", "B2B6AF" }, new[] { "g:dustrose", "더스티 로즈", "BCA9AC", "C1B8BB" }, new[] { "g:mauve", "모브", "524950", "524B54" },
+        new[] { "g:bluegray", "블루 그레이", "A4ADB2", "B0B6BA" }, new[] { "g:sand", "샌드", "B3AB9D", "B9B4AC" }, new[] { "g:clay", "클레이", "BBA99F", "C1B6AE" },
+        new[] { "g:olive", "올리브", "AEAD9E", "B7B6A9" }, new[] { "g:ink", "잉크", "494E55", "474C54" }, new[] { "g:lavendergray", "라벤더 그레이", "ADACB9", "B9B9C1" },
+        new[] { "g:petrol", "페트롤", "414D4B", "3F4E4B" }, new[] { "g:cocoa", "코코아", "554C47", "544A45" }, new[] { "g:rosetaupe", "로즈 토프", "B8ABA8", "BFB7B5" },
+        new[] { "g:mist", "미스트", "989894", "70706C" }, new[] { "g:mustard", "머스터드", "B3AC93", "BBB59F" }, new[] { "g:deepteal", "딥 틸", "3E4D4B", "404E4C" },
+        new[] { "g:plumgray", "플럼 그레이", "504C52", "4F4B52" }, new[] { "g:smoke", "스모크", "AAADB0", "B5B8BA" }, new[] { "g:terracotta", "테라코타", "594A43", "594A43" } };
     public static readonly Color Text = C(240, 240, 246);
     public static readonly Color DarkText = C(28, 28, 30);
     /// <summary>Foreground stored by 1.2 notes beside <see cref="Text"/>. It is not a chosen color.</summary>

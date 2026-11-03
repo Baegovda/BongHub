@@ -9,7 +9,6 @@ public sealed class KakaoSettings
 {
     public bool AdBlock;
     public bool Compact = true;
-    public bool Dark;
     public bool AutoApply = true;
 }
 
@@ -69,13 +68,10 @@ public static class KakaoSystem
 
 public static class KakaoArgs
 {
-    /// <summary>3.4.x order: <c>/nocompact</c> when compact is off, then <c>/dark</c>.</summary>
+    /// <summary><c>/nocompact</c> when compact is off. The stored overlay flag is not an argument.</summary>
     public static string Format(KakaoSettings cfg)
     {
-        var parts = new List<string>();
-        if (!cfg.Compact) parts.Add("/nocompact");
-        if (cfg.Dark) parts.Add("/dark");
-        return string.Join(" ", parts);
+        return cfg.Compact ? "" : "/nocompact";
     }
 
     public static bool IsAdTitle(string title)

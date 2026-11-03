@@ -696,6 +696,8 @@ public partial class MainWindow
             var home = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors[0];
             var homeView = ProfileSnap.ToCanvas(home.Box, scene, 8, 8);
             var chip = ProfileChrome.WindowChip(app.X, app.Y, app.W, app.H, home.W, home.H, homeView.X, homeView.Y, homeView.W, homeView.H);
+            bool homeDetail = ProfileChrome.Detail(homeView.W, homeView.H, home.W, home.H, home.Scale, home.Orientation, home.Primary, home.Connected).Length > 0;
+            var contentInset = ProfileChrome.ChipContent(chip, homeView.X, homeView.Y, homeView.W, ProfileChrome.BadgeBand(homeView.W, homeView.H, homeDetail));
             string shownName = app.Name.Length > 0 ? app.Name : (app.Title.Length > 0 ? app.Title : app.Process);
             string chipText = shownName.Length > 0 ? shownName : "창";
             bool countOnly = false;
@@ -740,7 +742,7 @@ public partial class MainWindow
             };
             Grid.SetColumn(nameBlock, 1);
             head.Children.Add(nameBlock);
-            var body = new Grid { Margin = new Thickness(6, 3, 4, 2) };
+            var body = new Grid { Margin = new Thickness(6 + contentInset.Left, 3 + contentInset.Top, 4, 2) };
             var lines = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
             lines.Children.Add(head);
             bool roomForSize = chip.H >= 48 && chip.W >= 72;

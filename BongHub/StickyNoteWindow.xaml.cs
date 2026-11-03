@@ -136,6 +136,12 @@ public partial class StickyNoteWindow : Window
         };
         ApplyTitle();
         TitleBox.TextChanged += (_, _) => OnTitleEdited();
+        TitleBox.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Enter) return;
+            e.Handled = true;
+            MoveToBody();
+        };
         TitleBox.CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, (_, e) => { CopyTitleText(false); e.Handled = true; }));
         TitleBox.CommandBindings.Add(new CommandBinding(ApplicationCommands.Cut, (_, e) => { CopyTitleText(true); e.Handled = true; }));
         TitleBox.CommandBindings.Add(new CommandBinding(ApplicationCommands.Paste, (_, e) => { PasteTitleClipboard(); e.Handled = true; }));
@@ -166,6 +172,7 @@ public partial class StickyNoteWindow : Window
         SizeBtn.Click += (_, _) => ShowHeadings(SizeBtn);
         SmallerBtn.Click += (_, _) => GrowFont(-1);
         LargerBtn.Click += (_, _) => GrowFont(1);
+        ResetSizeBtn.Click += (_, _) => ResetFontSize();
         ImageBtn.Click += (_, _) => PickImage();
         Viewer.AllowDrop = true;
         Viewer.PreviewDragOver += (_, e) => { if (CanDrop(e.Data)) { e.Effects = DragDropEffects.Copy; e.Handled = true; } };
@@ -1152,6 +1159,28 @@ public partial class StickyNoteWindow : Window
     public static double ClampPt(double pt) => Math.Clamp(pt, 7, 48);
     public static double PointsToDip(double pt) => ClampPt(pt) * 96.0 / 72.0;
     public void ApplyFontSize() { loading = true; try { Document.FontSize = PointsToDip(ConfigStore.Notes.FontSize); } finally { loading = false; } ApplyInk(); }
+    /// <summary>Enter in the title. The caret goes to the first character of the body.</summary>
+    public bool MoveToBody()
+    {
+        if (AppEnv.ReadOnly) return false;
+        var ed = EnsureEditor();
+        ed.CaretPosition = ed.Document.ContentStart;
+        ed.Focus();
+        return true;
+    }
+    /// <summary>Puts every run back on <see cref="ConfigStore.Notes.FontSize"/>.</summary>
+    public void ResetFontSize()
+    {
+        if (AppEnv.ReadOnly) return;
+        double dip = PointsToDip(ConfigStore.Notes.FontSize);
+        var ed = Editor;
+        ed.Document.FontSize = dip;
+        new TextRange(ed.Document.ContentStart, ed.Document.ContentEnd).ApplyPropertyValue(TextElement.FontSizeProperty, dip);
+        ed.Selection.ApplyPropertyValue(TextElement.FontSizeProperty, dip);
+        TextDirty = true;
+        textTimer.Stop();
+        textTimer.Start();
+    }
     public void ShowPalette() { BuildSwatches(); CustomColor.Load(Meta.Color); Palette.IsOpen = true; }
     public void ClosePalette() { Palette.IsOpen = false; CustomColor.ClosePicker(); }
     public void ApplyHeading(double pt)
