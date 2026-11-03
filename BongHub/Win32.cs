@@ -79,7 +79,11 @@ internal static class Win32
             var info = Marshal.PtrToStructure<MINMAXINFO>(lp);
             // ptMaxSize is the maximized rectangle. Leave it so maximize fills the monitor
             // instead of becoming a 30000px window that CaptureRect would store.
+            // Min track is physical pixels, same as the note file. A 90 DIP floor becomes 113 px at 125%.
             const int cap = 30000;
+            int minW = (int)StickyNoteWindow.NoteMinWidth, minH = (int)StickyNoteWindow.NoteMinHeight;
+            if (info.ptMinTrackSize.X != minW) info.ptMinTrackSize.X = minW;
+            if (info.ptMinTrackSize.Y != minH) info.ptMinTrackSize.Y = minH;
             if (info.ptMaxTrackSize.X < cap) info.ptMaxTrackSize.X = cap;
             if (info.ptMaxTrackSize.Y < cap) info.ptMaxTrackSize.Y = cap;
             Marshal.StructureToPtr(info, lp, false);

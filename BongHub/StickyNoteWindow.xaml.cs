@@ -99,6 +99,10 @@ public partial class StickyNoteWindow : Window
             Top = (meta.Y + AppEnv.OffsetY) / s;
         }
         ShownColorKey = meta.Color;
+        // XAML min/max are DIPs. Notes store physical pixels, so the limits have to be divided by DPI
+        // before the HWND is created. Otherwise 90 DIP becomes 113 px at 125% and the file's 90 px floor is lost.
+        ApplyPhysicalLimits(Win32.SystemScale);
+        DpiChanged += (_, e) => ApplyPhysicalLimits(e.NewDpi.DpiScaleX);
         ApplyColor();
         ApplyOpacity();
         ApplyZoom();
@@ -192,12 +196,27 @@ public partial class StickyNoteWindow : Window
         int px = x + AppEnv.OffsetX, py = y + AppEnv.OffsetY;
         double dpi = Win32.Scale(this);
         if (dpi < 0.5) dpi = 1;
+        ApplyPhysicalLimits(dpi);
         Width = w / dpi;
         Height = h / dpi;
         // Record the physical target before WPF applies Left/Top, so a monitor pull is undone exactly.
         Win32.RememberOffScreen(Win32.Handle(this), px, py);
         Win32.Place(this, px, py, w, h);
     }
+    /// <summary>
+    /// WPF min/max are DIPs and <c>WM_GETMINMAXINFO</c> ceilings them into physical pixels.
+    /// Keep that ceiling on the stored physical limit (90 px, not 90 DIP).
+    /// </summary>
+    void ApplyPhysicalLimits(double dpi)
+    {
+        if (dpi < 0.5) dpi = 1;
+        MinWidth = DipForPhysicalLimit(NoteMinWidth, dpi);
+        MinHeight = DipForPhysicalLimit(NoteMinHeight, dpi);
+        MaxWidth = NoteMaxWidth / dpi;
+        MaxHeight = NoteMaxHeight / dpi;
+    }
+    /// <summary>One physical pixel under the limit, so a DIP ceiling still lands on that pixel.</summary>
+    static double DipForPhysicalLimit(double physical, double dpi) => Math.Max(0, (physical - 0.49) / dpi);
     IntPtr Hook(IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled)
     {
         // Runs before WPF's own handler (HwndSource invokes the newest hook first) and leaves handled false.

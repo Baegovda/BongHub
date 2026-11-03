@@ -76,7 +76,15 @@ public static class NoteTest
             int wantH = StickyNoteWindow.ClampNoteSpan(x.m.H, StickyNoteWindow.NoteMinHeight, StickyNoteWindow.NoteMaxHeight);
             return r.Width == wantW && r.Height == wantH && raw.Contains($"\"W\":{x.m.W}") && raw.Contains($"\"H\":{x.m.H}");
         });
-        t.Check("legacy out-of-range size is shown clamped and left in the file", legacyShown, legacySize.Count == 0 ? "none in this copy" : string.Join("; ", legacySize.Select(x => $"{x.m.Id} {x.m.W}x{x.m.H}")));
+        t.Check("legacy out-of-range size is shown clamped and left in the file", legacyShown, legacySize.Count == 0 ? "none in this copy" : string.Join("; ", legacySize.Select(x =>
+        {
+            var r = Win32.Rect(x.w);
+            var raw = File.ReadAllText(NoteStore.MetaPath(x.m.Id), Encoding.UTF8);
+            int wantW = StickyNoteWindow.ClampNoteSpan(x.m.W, StickyNoteWindow.NoteMinWidth, StickyNoteWindow.NoteMaxWidth);
+            int wantH = StickyNoteWindow.ClampNoteSpan(x.m.H, StickyNoteWindow.NoteMinHeight, StickyNoteWindow.NoteMaxHeight);
+            bool fileKept = raw.Contains($"\"W\":{x.m.W}") && raw.Contains($"\"H\":{x.m.H}");
+            return $"{x.m.Id} stored {x.m.W}x{x.m.H} want {wantW}x{wantH} hwnd {r.Width}x{r.Height} fileKept={fileKept} dpi={Win32.Scale(x.w):0.###}";
+        })));
 
         // ---------- image note: edit text, images must survive ----------
         var img = wins.OrderByDescending(x => Pict(NoteStore.RtfPath(x.m.Id))).First();
