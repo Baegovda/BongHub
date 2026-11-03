@@ -602,17 +602,32 @@ public static class NoteTest
         }
         NoteColors.Raw("g:lemon", out var lemonA, out var lemonB);
         NoteColors.Raw("yellow", out var yellowA, out var yellowB);
-        NoteColors.Raw("g:mist", out var mistA, out var mistB);
         if (inkOk && (NoteColors.SurfA("g:lemon") != lemonA || NoteColors.SurfB("g:lemon") != lemonB || NoteColors.SurfA("yellow") != yellowA || NoteColors.SurfB("yellow") != yellowB))
         {
             inkOk = false;
             inkBad = "vivid";
         }
-        if (inkOk && (NoteColors.Lum(NoteColors.SurfA("g:mist")) <= NoteColors.Lum(mistA) || NoteColors.Lum(NoteColors.SurfB("g:mist")) <= NoteColors.Lum(mistB)))
+        bool whiteOk = true;
+        string whiteBad = "";
+        foreach (var key in NoteColors.PaletteKeys)
         {
-            inkOk = false;
-            inkBad = "mist";
+            if (NoteColors.Ink(key) != NoteColors.Text)
+            {
+                whiteOk = false;
+                whiteBad = key + " ink";
+                break;
+            }
+            var pure = System.Windows.Media.Color.FromRgb(255, 255, 255);
+            double white = Math.Min(NoteColors.Contrast(pure, NoteColors.SurfA(key)), Math.Min(NoteColors.Contrast(pure, NoteColors.SurfB(key)), NoteColors.Contrast(pure, NoteColors.Body(key))));
+            double ink = Math.Min(NoteColors.Contrast(NoteColors.Text, NoteColors.SurfA(key)), Math.Min(NoteColors.Contrast(NoteColors.Text, NoteColors.SurfB(key)), NoteColors.Contrast(NoteColors.Text, NoteColors.Body(key))));
+            if (white < 4.5 || ink < 4.5)
+            {
+                whiteOk = false;
+                whiteBad = key + " " + ink.ToString("0.00");
+                break;
+            }
         }
+        t.Check("white text clears 4.5 on every note color", whiteOk && NoteColors.PaletteKeys.Count() is >= 12 and <= 16 && NoteColors.Valid("g:lemon") && NoteColors.Valid("g:mist"), whiteBad);
         NoteColors.Raw("g:blocks", out var blocksA, out _);
         NoteColors.Raw("g:lemon", out var lemonRaw, out _);
         NoteColors.Raw("yellow", out var yellowRaw, out _);
@@ -631,7 +646,7 @@ public static class NoteTest
         {
             await TestKit.Until(() => legacyNote.Ready, 5000);
             var lemonInk = NoteColors.Ink("g:lemon");
-            t.Check("legacy default ink follows the note", legacyNote.TextInheritsInk("base") && legacyNote.TextInheritsInk("old") && legacyNote.PlainText().Contains("base") && lemonInk != NoteColors.Text && NoteColors.Contrast(lemonInk, NoteColors.Body("g:lemon")) >= 7);
+            t.Check("legacy default ink follows the note", legacyNote.TextInheritsInk("base") && legacyNote.TextInheritsInk("old") && legacyNote.PlainText().Contains("base") && lemonInk == NoteColors.Text && NoteColors.Contrast(lemonInk, NoteColors.Body("g:lemon")) >= 4.5);
             t.Check("legacy custom color stays", legacyNote.TextKeepsColor("blue", 0, 0, 255));
             legacyNote.Editor.Document.Blocks.Add(new Paragraph(new Run(" added")));
             legacyNote.FlushText();

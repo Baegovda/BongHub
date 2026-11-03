@@ -2,7 +2,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 
 namespace BongHub;
 
@@ -16,6 +18,7 @@ public partial class MainWindow
     }
 
     public Canvas? ProfileStage { get; private set; }
+    public FrameworkElement? ProfileCanvasHost { get; private set; }
     readonly Dictionary<int, Border> monitorFrames = new();
     double profileSceneScale = 0.1;
     public int HoveredMonitor { get; private set; }
@@ -115,9 +118,10 @@ public partial class MainWindow
                 var primary = live.FirstOrDefault(x => x.Primary) ?? live[0];
                 int originX = live.Min(s => s.X), originY = live.Min(s => s.Y);
                 int scale = primary.Scale <= 0 ? 100 : primary.Scale;
-                var bin = IconMap.ToClient(left.X + 40, left.Y + 36, originX, originY, scale);
-                var hub = IconMap.ToClient(left.X + 40, left.Y + 120, originX, originY, scale);
-                var doc = IconMap.ToClient(primary.X + 48, primary.Y + 36, originX, originY, scale);
+                int iconPx = IconMap.ImagePx(scale);
+                var bin = IconMap.ToClient(left.X + 40, left.Y + 36, originX, originY, 0, 0, iconPx);
+                var hub = IconMap.ToClient(left.X + 40, left.Y + 120, originX, originY, 0, 0, iconPx);
+                var doc = IconMap.ToClient(primary.X + 48, primary.Y + 36, originX, originY, 0, 0, iconPx);
                 profile0.Icons.Add(new ProfileIcon { Name = "휴지통", X = bin.X, Y = bin.Y, Show = true });
                 profile0.Icons.Add(new ProfileIcon { Name = "BongHub", X = hub.X, Y = hub.Y, Show = true });
                 profile0.Icons.Add(new ProfileIcon { Name = "문서", X = doc.X, Y = doc.Y, Show = false });
@@ -131,32 +135,80 @@ public partial class MainWindow
 
     bool windowPickerOpen;
     string hotkeyMessage = "";
+    string hotkeyCue = "";
 
-    void BuildProfileEditor(MonitorProfile profile)
+    public void OpenProfileEditor()
     {
-        ProfileMismatchBanner = false;
-        var live = ScreenCatalog.Current();
-        var note = new TextBlock
+        if (profileEditor != null)
         {
-            Text = ProfileDiff.Summary(profile, live),
-            Margin = new Thickness(16, 0, 16, 8),
-            FontSize = 12.5,
-            Foreground = (Brush)FindResource("Secondary"),
-            TextWrapping = TextWrapping.Wrap
-        };
-        PageHost.Children.Add(note);
-        if (ProfileApplyNote.Length > 0)
-            PageHost.Children.Add(new TextBlock { Text = ProfileApplyNote, Margin = new Thickness(16, 0, 16, 8), FontSize = 13, Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x9F, 0x0A)), TextWrapping = TextWrapping.Wrap });
-        DrawProfileCanvas(profile);
-        DrawWindowStrip(profile);
-        Header("선택");
-        DrawDetail(profile);
-        DrawIcons(profile);
+            if (AppEnv.Off) profileEditor.Redraw();
+            else profileEditor.Activate();
+            profileEditor.Redraw();
+            return;
+        }
+        profileEditor = new ProfileEditorWindow(this);
+        profileEditor.Closed += (_, _) => profileEditor = null;
+        if (AppEnv.Off)
+        {
+            profileEditor.WindowStartupLocation = WindowStartupLocation.Manual;
+            profileEditor.ShowActivated = false;
+            profileEditor.Left = -28000;
+            profileEditor.Top = -28000;
+        }
+        profileEditor.Show();
     }
 
-    void DrawIcons(MonitorProfile profile)
+    public void FillProfileEditor(Panel sink)
     {
-        var icons = Group();
+        var profile = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId) ?? Profiles.FirstOrDefault();
+        if (profile == null) return;
+        BuildProfileEditor(profile, sink);
+    }
+
+    void BuildProfileEditor(MonitorProfile profile, Panel sink)
+    {
+        ProfileMismatchBanner = false;
+        bool main = ReferenceEquals(sink, PageHost);
+        var live = ScreenCatalog.Current();
+        string summary = ProfileDiff.Summary(profile, live);
+        if (summary.Length > 0)
+            sink.Children.Add(new TextBlock
+            {
+                Text = summary,
+                Margin = new Thickness(12, 0, 12, 4),
+                FontSize = 12,
+                Foreground = (Brush)FindResource("Secondary"),
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                ToolTip = summary
+            });
+        if (ProfileApplyNote.Length > 0)
+            sink.Children.Add(new TextBlock { Text = ProfileApplyNote, Margin = new Thickness(12, 0, 12, 4), FontSize = 12, Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x9F, 0x0A)), TextWrapping = TextWrapping.Wrap });
+        DrawProfileCanvas(profile, sink, main);
+        DrawWindowStrip(profile, sink, main);
+        Header(sink, "프로필");
+        DrawProfileSettings(profile, sink);
+        var app = profile.Apps.FirstOrDefault(a => a.Id == selectedAppId);
+        var mon = profile.Monitors.FirstOrDefault(m => m.Number == selectedMonitorNumber) ?? profile.Monitors.FirstOrDefault(m => m.Primary) ?? profile.Monitors.FirstOrDefault();
+        if (app != null && mon != null)
+        {
+            Header(sink, "선택한 창");
+            var g = Group(sink);
+            DrawAppDetail(g, profile, app, mon);
+        }
+        else if (mon != null)
+        {
+            Header(sink, "선택한 모니터");
+            var g = Group(sink);
+            DrawMonitorDetail(g, profile, mon);
+        }
+        Header(sink, "아이콘");
+        DrawIcons(profile, sink);
+    }
+
+    void DrawIcons(MonitorProfile profile, Panel sink)
+    {
+        var icons = Group(sink);
         int shown = profile.Icons.Count(i => i.Show);
         int hidden = profile.Icons.Count - shown;
         string when = profile.Icons.Count == 0
@@ -164,9 +216,9 @@ public partial class MainWindow
             : "담긴 " + profile.Icons.Count + "개 · 보이는 " + shown + "개" + (hidden > 0 ? " · 숨김 " + hidden + "개" : "")
               + (profile.IconsSaved.Length == 0 ? "" : " · " + profile.IconsSaved);
         var save = Small("배치 저장", () => CaptureProfileIcons(profile));
-        Row(icons, "\uE8A9", "34C759", "아이콘 배치", when, save, wrap: true);
+        Row(icons, "\uE8A9", "34C759", "아이콘 배치", when, save, tight: true);
         if (IconSaveNote.Length > 0)
-            Row(icons, "\uE8A5", "34C759", IconSaveNote, "저장한 개수와 시각이에요. 점은 모니터 그림에 바로 나와요.", null, wrap: true);
+            Row(icons, "\uE8A5", "34C759", IconSaveNote, "저장한 개수와 시각이에요.", null, tight: true);
         string key = ScreenMap.Key(profile.Monitors.Where(m => m.Connected).Select(m => new MonitorSpec(m.W, m.H, m.X, m.Y, m.Primary)));
         string auto = ScreenMap.Describe(key);
         if (DesktopGate.RealAllowed)
@@ -175,9 +227,9 @@ public partial class MainWindow
             auto = found == null ? auto + " · 자동 저장은 아직 없어요." : auto + " · 자동 저장이 있어요.";
         }
         else auto += " · 화면 구성마다 자동 저장은 일반 실행에서 보여요.";
-        Row(icons, "\uE8A5", "5AC8FA", "이 화면 구성", auto, null, wrap: true);
-        Row(icons, "\uE8A5", "5AC8FA", "적용할 때 아이콘 되돌리기", "지금 적용은 보이는 아이콘만 옮겨요.", Switch(profile.RestoreIcons, v => { profile.RestoreIcons = v; SaveProfiles(); }, !AppEnv.ReadOnly), wrap: true);
-        Row(icons, "\uE8A5", "34C759", "그림 위 아이콘 점", "켜면 모니터 그림에 작은 점으로 보여요.", Switch(PreviewIcons, v => { PreviewIcons = v; Render("presets", false); }, true), wrap: true);
+        Row(icons, "\uE8A5", "5AC8FA", "이 화면 구성", auto, null, tight: true);
+        Row(icons, "\uE8A5", "5AC8FA", "적용할 때 아이콘 되돌리기", "보이는 아이콘만 옮겨요.", Switch(profile.RestoreIcons, v => { profile.RestoreIcons = v; SaveProfiles(); }, !AppEnv.ReadOnly), tight: true);
+        Row(icons, "\uE8A5", "34C759", "모니터맵 위 아이콘 점", "켜면 모니터맵에 작은 점으로 보여요.", Switch(PreviewIcons, v => { PreviewIcons = v; Render("presets", false); }, true), tight: true);
         if (profile.Icons.Count == 0) return;
         var scroll = new ScrollViewer { MaxHeight = 132, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         var wrap = new WrapPanel { Margin = new Thickness(8, 4, 8, 8) };
@@ -213,7 +265,7 @@ public partial class MainWindow
         scroll.Content = wrap;
         icons.Children.Add(scroll);
         var picked = profile.Icons.Where(i => i.Show).Select(i => i.Name).ToList();
-        Row(icons, "\uE8A5", "34C759", "고른 아이콘만 되돌리기", "눈 표시가 켜진 아이콘만 옮겨요.", Small("고른 것만", () => RestoreSelectedIcons(profile, picked)), wrap: true);
+        Row(icons, "\uE8A5", "34C759", "고른 아이콘만 되돌리기", "눈 표시가 켜진 아이콘만 옮겨요.", Small("고른 것만", () => RestoreSelectedIcons(profile, picked)), tight: true);
     }
 
     void DrawGhosts(MonitorProfile profile, Canvas stage, ProfileScene scene)
@@ -243,16 +295,24 @@ public partial class MainWindow
                 StrokeThickness = 1,
                 StrokeDashArray = new DoubleCollection { 3, 2 }
             });
-            ghost.Children.Add(new TextBlock
+            var reserved = new List<DipRect> { ProfileChrome.NumberPill(homeView.X, homeView.Y, home.Primary) };
+            var slot = CanvasInk.Line(chip, reserved, chip.W < 70 ? 12 : 14, 3);
+            if (slot.W >= 10)
             {
-                Text = win.Title.Length > 0 ? win.Title : win.Process,
-                Foreground = Brushes.White,
-                FontSize = chip.W < 70 ? 10 : 11,
-                Margin = new Thickness(6, 4, 6, 0),
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                TextWrapping = TextWrapping.NoWrap,
-                VerticalAlignment = VerticalAlignment.Top
-            });
+                ghost.Children.Add(new TextBlock
+                {
+                    Text = win.Title.Length > 0 ? win.Title : win.Process,
+                    Foreground = Brushes.White,
+                    FontSize = chip.W < 70 ? 10 : 11,
+                    Margin = new Thickness(Math.Max(0, slot.X - chip.X), Math.Max(0, slot.Y - chip.Y), 0, 0),
+                    MaxWidth = slot.W,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Tag = "ghost-label"
+                });
+            }
             Canvas.SetLeft(ghost, chip.X);
             Canvas.SetTop(ghost, chip.Y);
             Canvas.SetZIndex(ghost, 15);
@@ -260,7 +320,7 @@ public partial class MainWindow
         }
     }
 
-    void DrawWindowStrip(MonitorProfile profile)
+    void DrawWindowStrip(MonitorProfile profile, Panel sink, bool mainList)
     {
         var stack = new StackPanel { Margin = new Thickness(6, 6, 6, 4) };
         var wrap = new WrapPanel { Orientation = Orientation.Horizontal };
@@ -341,8 +401,8 @@ public partial class MainWindow
         var list = new Border { Style = (Style)FindResource("Group"), Child = stack, Margin = new Thickness(0, 8, 0, 0) };
         list.Tag = "keep:window-list";
         list.Focusable = true;
-        ProfileWindowList = list;
-        PageHost.Children.Add(list);
+        if (mainList) ProfileWindowList = list;
+        sink.Children.Add(list);
     }
 
     UIElement PickerBody(MonitorProfile profile)
@@ -374,62 +434,56 @@ public partial class MainWindow
         return s;
     }
 
-    void DrawDetail(MonitorProfile profile)
+    void DrawProfileSettings(MonitorProfile profile, Panel sink)
     {
-        var g = Group();
-        var nameBox = new TextBox { Text = profile.Name, MinWidth = 160, FontSize = 15, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground };
+        var g = Group(sink);
+        var nameBox = new TextBox { Text = profile.Name, MinWidth = 140, FontSize = 13, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground };
         nameBox.LostFocus += (_, _) => { ProfileDoc.Rename(profile, nameBox.Text); SaveProfiles(); ProfileHotkey.Bind(Profiles, ConfigStore.Notes.Hotkey); };
-        FieldRow(g, "이름", Chip(nameBox));
-        var hotkeyBox = new TextBox
+        Row(g, null, null, "이름", null, Chip(nameBox), tight: true);
+        var hotkeyBox = new HotkeyField();
+        hotkeyBox.SetValue(profile.Hotkey);
+        string cue = hotkeyCue;
+        hotkeyCue = "";
+        hotkeyBox.Loaded += (_, _) =>
         {
-            Text = profile.Hotkey.Length > 0 ? profile.Hotkey : "키를 누르세요",
-            MinWidth = 140,
-            FontSize = 14,
-            IsReadOnly = false,
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            Foreground = Foreground,
-            CaretBrush = Foreground
+            if (cue == "ok") hotkeyBox.Confirm();
+            else if (cue == "bad") hotkeyBox.Shake();
         };
-        hotkeyBox.PreviewKeyDown += (_, e) =>
+        hotkeyBox.Gesture += gesture =>
         {
-            e.Handled = true;
             if (AppEnv.ReadOnly) return;
-            string gesture;
-            if (e.Key == Key.Escape) gesture = "escape";
-            else if (e.Key == Key.Back) gesture = "back";
-            else if (e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.System) return;
-            else gesture = FormatHotkey(e.Key == Key.System ? e.SystemKey : e.Key, Keyboard.Modifiers);
-            if (gesture.Length == 0) return;
             var taken = Profiles.Where(p => p.Id != profile.Id).Select(p => p.Hotkey);
             var (value, error) = HotkeyEdit.Apply(profile.Hotkey, gesture, taken, ConfigStore.Notes.Hotkey);
             hotkeyMessage = error;
-            if (error.Length == 0 && value != profile.Hotkey)
+            if (error.Length > 0)
+            {
+                hotkeyCue = "bad";
+                Render("presets", false);
+                return;
+            }
+            bool changed = value != profile.Hotkey;
+            if (changed)
             {
                 profile.Hotkey = value;
                 SaveProfiles();
                 ProfileHotkey.Bind(Profiles, ConfigStore.Notes.Hotkey);
                 if (ProfileHotkey.LastError.Length > 0) hotkeyMessage = ProfileHotkey.LastError;
             }
-            hotkeyBox.Text = profile.Hotkey.Length > 0 ? profile.Hotkey : "키를 누르세요";
+            hotkeyCue = changed && value.Length > 0 && gesture is not "escape" and not "back" ? "ok" : "";
+            if (hotkeyMessage.Length > 0) hotkeyCue = "bad";
             Render("presets", false);
         };
-        FieldRow(g, "단축키", Chip(hotkeyBox));
+        Row(g, null, null, "단축키", null, hotkeyBox, tight: true);
         string remembered = profile.SessionSaved.Length == 0 ? "아직 남긴 배치가 없어요." : "마지막 기록 " + profile.SessionSaved + " · 창 " + profile.Session.Count + "개";
-        Row(g, "\uE8A5", "5AC8FA", "떠날 때 창 배치 기억", "다른 프로필로 바꾸기 직전에 열린 창을 남기고, 돌아오면 그 자리로 돌려요. 캔버스에 담은 창은 이 기록이 없을 때만 써요. " + remembered, Switch(profile.RememberWindows, v => { profile.RememberWindows = v; SaveProfiles(); }, !AppEnv.ReadOnly), wrap: true);
-        Row(g, "\uE7F8", "8E8E93", "모니터 위치 잠금", "켜 두면 창을 옮기는 동안 모니터가 따라 움직이지 않아요.", Switch(AppSettings.MonitorLocked, v => { AppSettings.SetMonitorLocked(v); Render("presets", false); }, true), wrap: true);
+        Row(g, "\uE8A5", "5AC8FA", "떠날 때 창 배치 기억", remembered, Switch(profile.RememberWindows, v => { profile.RememberWindows = v; SaveProfiles(); }, !AppEnv.ReadOnly), tight: true);
         if (hotkeyMessage.Length > 0)
-            Row(g, "\uE7BA", "FF9500", hotkeyMessage, "Esc는 취소, Backspace는 지워요.", null, wrap: true);
-        var app = profile.Apps.FirstOrDefault(a => a.Id == selectedAppId);
-        var mon = profile.Monitors.FirstOrDefault(m => m.Number == selectedMonitorNumber) ?? profile.Monitors.FirstOrDefault(m => m.Primary) ?? profile.Monitors.FirstOrDefault();
-        if (app != null && mon != null) DrawAppDetail(g, profile, app, mon);
-        else if (mon != null) DrawMonitorDetail(g, profile, mon);
+            Row(g, "\uE7BA", "FF9500", hotkeyMessage, "Esc는 취소, Backspace는 지워요.", null, tight: true);
     }
 
     void DrawAppDetail(StackPanel g, MonitorProfile profile, ProfileApp app, ProfileMonitor mon)
     {
         string label = app.Name.Length > 0 ? app.Name : app.Title;
-        Row(g, "\uE737", "5AC8FA", label.Length > 0 ? label : "창", app.W + "×" + app.H + (app.Process.Length > 0 ? " · " + app.Process : ""), null, wrap: true, icon: AppIcon.Lookup(app.Process, app.Path));
+        Row(g, "\uE737", "5AC8FA", label.Length > 0 ? label : "창", app.W + "×" + app.H + (app.Process.Length > 0 ? " · " + app.Process : ""), null, icon: AppIcon.Lookup(app.Process, app.Path), tight: true);
         var x = NumBox(app.X.ToString());
         var y = NumBox(app.Y.ToString());
         var w = NumBox(app.W.ToString());
@@ -442,7 +496,7 @@ public partial class MainWindow
         void Commit()
         {
             int nx = ParseNum(x.Text, app.X), ny = ParseNum(y.Text, app.Y), nw = ParseNum(w.Text, app.W), nh = ParseNum(h.Text, app.H);
-            var box = ProfileSnap.Resize(new ProfileBox(mon.X + nx, mon.Y + ny, nw, nh), mon.Box, "", 0, 0, 120);
+            var box = ProfileSnap.Resize(new ProfileBox(mon.X + nx, mon.Y + ny, nw, nh), mon.Work, "", 0, 0, 120);
             app.X = box.X - mon.X;
             app.Y = box.Y - mon.Y;
             app.W = box.W;
@@ -460,10 +514,12 @@ public partial class MainWindow
         nums.Children.Add(Chip(y));
         nums.Children.Add(Chip(w));
         nums.Children.Add(Chip(h));
-        FieldRow(g, "X  Y  너비  높이", nums);
-        Row(g, "\uE718", "FF9500", "항상 위", "적용할 때 이 창을 맨 위에 둬요.", Switch(app.TopMost, v => { app.TopMost = v; SaveProfiles(); }, !AppEnv.ReadOnly), wrap: true);
-        Row(g, "\uE921", "8E8E93", "최소화", "적용할 때 최소화해요.", Switch(app.State == "min", v => { app.State = v ? "min" : "normal"; SaveProfiles(); Render("presets", false); }, !AppEnv.ReadOnly), wrap: true);
-        Row(g, "\uE768", "34C759", "없으면 실행", "경로가 있고 창이 없을 때만 일반 실행에서 켜요.", Switch(app.Launch, v => { app.Launch = v; SaveProfiles(); }, !AppEnv.ReadOnly && app.Path.Length > 0), wrap: true);
+        Row(g, null, null, "X  Y  너비  높이", null, nums, tight: true);
+        var toggles = new StackPanel { Orientation = Orientation.Horizontal };
+        toggles.Children.Add(IconToggle("pin", "항상 위", "적용할 때 이 창을 맨 위에 둬요.", app.TopMost, v => { app.TopMost = v; SaveProfiles(); }, !AppEnv.ReadOnly));
+        toggles.Children.Add(IconToggle("min", "최소화", "적용할 때 최소화해요.", app.State == "min", v => { app.State = v ? "min" : "normal"; SaveProfiles(); Render("presets", false); }, !AppEnv.ReadOnly));
+        toggles.Children.Add(IconToggle("app", "없으면 실행", "경로가 있고 창이 없을 때만 일반 실행에서 켜요.", app.Launch, v => { app.Launch = v; SaveProfiles(); }, !AppEnv.ReadOnly && app.Path.Length > 0));
+        Row(g, null, null, "창 옵션", null, toggles, tight: true);
     }
 
     void DrawMonitorDetail(StackPanel g, MonitorProfile profile, ProfileMonitor mon)
@@ -473,14 +529,14 @@ public partial class MainWindow
             ? (mon.Enabled ? "적용하면 켜 둠" : "적용하면 이 화면을 꺼요") + " · " + (mon.Scale <= 0 ? 100 : mon.Scale) + "%" + orient
             : "연결 안 됨";
         UIElement? primary = mon.Connected ? Small(mon.Primary ? "주 모니터" : "주로 지정", () => { ProfileDoc.SetPrimary(profile, mon.Number); selectedMonitorNumber = mon.Number; SaveProfiles(); Render("presets", false); }) : null;
-        Row(g, "\uE7F4", mon.Connected ? "4C8AFE" : "8E8E93", mon.Number + "번 · " + mon.W + "×" + mon.H, state, primary, wrap: true);
+        Row(g, "\uE7F4", mon.Connected ? "4C8AFE" : "8E8E93", mon.Number + "번 · " + mon.W + "×" + mon.H, state, primary, tight: true);
         if (!mon.Connected) return;
         Row(g, "\uE7F4", "34C759", "이 모니터 켜기", mon.Primary ? "주 모니터라 이 프로필에서도 항상 켜져 있어요." : "끄면 이 프로필을 적용할 때 이 화면을 꺼요. 창 배치와는 별개예요.", Switch(mon.Enabled, v =>
         {
             if (!ProfileDoc.SetEnabled(profile, mon.Number, v)) { Render("presets", false); return; }
             SaveProfiles();
             Render("presets", false);
-        }, !AppEnv.ReadOnly && !mon.Primary), wrap: true);
+        }, !AppEnv.ReadOnly && !mon.Primary), tight: true);
         int bright = profile.Brightness.FirstOrDefault(b => string.Equals(b.Monitor, mon.Id, StringComparison.OrdinalIgnoreCase))?.Value ?? -1;
         bool brightOn = bright >= 0;
         Row(g, "\uE706", "FFCC00", "밝기", brightOn ? bright + "%" : "적용할 때 밝기는 그대로 둬요.", Switch(brightOn, v =>
@@ -488,7 +544,7 @@ public partial class MainWindow
             SetBrightness(profile, mon.Id, v ? (bright >= 0 ? bright : 70) : -1);
             SaveProfiles();
             Render("presets", false);
-        }, !AppEnv.ReadOnly), wrap: true);
+        }, !AppEnv.ReadOnly), tight: true);
         if (!brightOn) return;
         var label = Value(bright + "%");
         label.Margin = new Thickness(8, 0, 0, 0);
@@ -505,7 +561,7 @@ public partial class MainWindow
         var trail = new StackPanel { Orientation = Orientation.Horizontal };
         trail.Children.Add(slider);
         trail.Children.Add(label);
-        Row(g, "\uE706", "FFCC00", "밝기 값", "0–100. 지금 적용할 때만 바꿔요.", trail, wrap: true);
+        Row(g, "\uE706", "FFCC00", "밝기 값", "0–100. 지금 적용할 때만 바꿔요.", trail, tight: true);
     }
 
     static void SetBrightness(MonitorProfile profile, string id, int value)
@@ -609,23 +665,49 @@ public partial class MainWindow
         catch (Exception ex) { DisplayAction = ex.Message; }
     }
 
-    void DrawProfileCanvas(MonitorProfile profile)
+    FrameworkElement IconToggle(string kind, string title, string tip, bool on, Action<bool> changed, bool enabled)
     {
-        double availW = PageHost.ActualWidth;
+        var b = new Button
+        {
+            Width = 34,
+            Height = 26,
+            Margin = new Thickness(0, 0, 6, 0),
+            Padding = new Thickness(0),
+            ToolTip = title + "\n" + tip,
+            IsEnabled = enabled,
+            Background = on ? (Brush)FindResource("Accent") : new SolidColorBrush(Color.FromArgb(0x18, 255, 255, 255)),
+            BorderBrush = on ? (Brush)FindResource("Accent") : new SolidColorBrush(Color.FromArgb(0x44, 255, 255, 255)),
+            BorderThickness = new Thickness(on ? 0 : 1),
+            Content = ProfileMarks.Icon(kind, 13),
+            Tag = "path-icon"
+        };
+        b.Click += (_, _) => changed(!on);
+        return b;
+    }
+
+    void DrawProfileCanvas(MonitorProfile profile, Panel sink, bool main)
+    {
+        double availW = main ? PageHost.ActualWidth : sink.ActualWidth;
         if (availW < 280)
         {
-            double view = Scroller.ViewportWidth;
-            availW = view > 320 ? view - 4 : 680;
+            double view = main ? Scroller.ViewportWidth : 0;
+            availW = view > 320 ? view - 4 : (main ? 680 : 1040);
         }
-        double availH = Scroller.ViewportHeight > 240 ? Scroller.ViewportHeight : 560;
+        double availH = main && Scroller.ViewportHeight > 240 ? Scroller.ViewportHeight : (main ? 560 : 640);
         var (cw, fitH) = ProfileChrome.Stage(availW, availH);
+        if (!main) fitH = Math.Min(420, Math.Max(fitH, 280));
         const int pad = 16;
         var boxes = profile.Monitors.Select(m => m.Box).ToList();
         var scene = ProfileSnap.Fit(boxes, cw, fitH, pad);
-        profileSceneScale = scene.Scale < 0.02 || double.IsNaN(scene.Scale) ? 0.02 : scene.Scale;
+        if (main) profileSceneScale = scene.Scale < 0.02 || double.IsNaN(scene.Scale) ? 0.02 : scene.Scale;
         int ch = ProfileChrome.PaintedHeight(scene.Bounds.H, scene.Scale, pad);
         var stage = new Canvas { Width = cw, Height = ch, Margin = new Thickness(0, 0, 0, 6), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Top, SnapsToDevicePixels = true, UseLayoutRounding = true, Background = Brushes.Transparent };
-        ProfileStage = stage;
+        if (main)
+        {
+            ProfileStage = stage;
+            profileCanvasWidth = cw;
+            ProfileCanvasHost = null;
+        }
         var preview = new Border
         {
             BorderBrush = (Brush)FindResource("Accent"),
@@ -637,28 +719,80 @@ public partial class MainWindow
         };
         var previewLabel = new TextBlock { Foreground = Brushes.White, FontSize = 13, FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 8, 0, 0), IsHitTestVisible = false };
         preview.Child = previewLabel;
-        var guideLine = new Line { Stroke = (Brush)FindResource("Accent"), StrokeThickness = 2, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
-        var guideLine2 = new Line { Stroke = (Brush)FindResource("Accent"), StrokeThickness = 2, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        var monitorGhost = new Border
+        {
+            BorderBrush = (Brush)FindResource("Accent"),
+            BorderThickness = new Thickness(2),
+            Background = new SolidColorBrush(Color.FromArgb(0x33, 0x4C, 0x8A, 0xFE)),
+            CornerRadius = new CornerRadius(12),
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed,
+            Opacity = Fx.Enabled ? 0 : 0.9
+        };
+        var guideLine = new Line { Stroke = (Brush)FindResource("Accent"), StrokeThickness = 3, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        var guideLine2 = new Line { Stroke = (Brush)FindResource("Accent"), StrokeThickness = 3, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        void Reveal(UIElement el)
+        {
+            if (el.Visibility == Visibility.Visible) return;
+            el.Visibility = Visibility.Visible;
+            if (el is not UIElement u) return;
+            if (!Fx.Enabled) { u.Opacity = 0.92; return; }
+            u.Opacity = 0;
+            u.BeginAnimation(UIElement.OpacityProperty, Fx.Anim(0, 0.92, 140));
+        }
         int Vx(double x) => scene.Bounds.X + (int)Math.Round((x - scene.OriginX) / scene.Scale);
         int Vy(double y) => scene.Bounds.Y + (int)Math.Round((y - scene.OriginY) / scene.Scale);
+        void ShowEdge(Line line, bool on, int x1, int y1, int x2, int y2)
+        {
+            if (!on) { line.Visibility = Visibility.Collapsed; return; }
+            var a = ProfileSnap.ToPoint(x1, y1, scene);
+            var b = ProfileSnap.ToPoint(x2, y2, scene);
+            line.X1 = a.X; line.Y1 = a.Y; line.X2 = b.X; line.Y2 = b.Y;
+            Reveal(line);
+        }
+        void ShowCue(SnapCue cue)
+        {
+            var c = ProfileSnap.ToCanvas(cue.Box, scene, 2, 2);
+            preview.Width = Math.Max(2, c.W);
+            preview.Height = Math.Max(2, c.H);
+            Canvas.SetLeft(preview, c.X);
+            Canvas.SetTop(preview, c.Y);
+            previewLabel.Text = cue.Kind.Length > 0 ? ZoneName(cue.Kind) : "";
+            Reveal(preview);
+            bool used = false;
+            if (cue.Left || cue.Right)
+            {
+                int x = cue.Left ? cue.Box.X : cue.Box.Right;
+                ShowEdge(guideLine, true, x, cue.Box.Y, x, cue.Box.Bottom);
+                used = true;
+            }
+            else guideLine.Visibility = Visibility.Collapsed;
+            if (cue.Top || cue.Bottom)
+            {
+                int y = cue.Top ? cue.Box.Y : cue.Box.Bottom;
+                ShowEdge(used ? guideLine2 : guideLine, true, cue.Box.X, y, cue.Box.Right, y);
+            }
+            else if (!used) guideLine.Visibility = Visibility.Collapsed;
+            else guideLine2.Visibility = Visibility.Collapsed;
+        }
         void ShowGuide(SnapGuide guide)
         {
             if (!guide.Active) { guideLine.Visibility = Visibility.Collapsed; guideLine2.Visibility = Visibility.Collapsed; return; }
             var a = ProfileSnap.ToPoint(guide.X1, guide.Y1, scene);
             var b = ProfileSnap.ToPoint(guide.X2, guide.Y2, scene);
             guideLine.X1 = a.X; guideLine.Y1 = a.Y; guideLine.X2 = b.X; guideLine.Y2 = b.Y;
-            guideLine.Visibility = Visibility.Visible;
+            Reveal(guideLine);
             if (!guide.Corner) { guideLine2.Visibility = Visibility.Collapsed; return; }
             var c = ProfileSnap.ToPoint(guide.X3, guide.Y3, scene);
             var d = ProfileSnap.ToPoint(guide.X4, guide.Y4, scene);
             guideLine2.X1 = c.X; guideLine2.Y1 = c.Y; guideLine2.X2 = d.X; guideLine2.Y2 = d.Y;
-            guideLine2.Visibility = Visibility.Visible;
+            Reveal(guideLine2);
         }
         ProfileMonitor? HostAt(int x, int y)
             => profile.Monitors.FirstOrDefault(m => m.Connected && x >= m.X && y >= m.Y && x < m.X + m.W && y < m.Y + m.H)
                ?? profile.Monitors.FirstOrDefault(m => x >= m.X && y >= m.Y && x < m.X + m.W && y < m.Y + m.H)
                ?? profile.Monitors.FirstOrDefault();
-        monitorFrames.Clear();
+        if (main) monitorFrames.Clear();
         var chipSpots = new Dictionary<int, List<DipRect>>();
         var badges = new List<(FrameworkElement El, DipRect Box)>();
         foreach (var mon in profile.Monitors)
@@ -748,7 +882,14 @@ public partial class MainWindow
                 int vdy = (int)Math.Round((p.Y - grab.Y) / scene.Scale);
                 var others = profile.Monitors.Where(m => m != mon).Select(m => m.Box).ToList();
                 int reach = Math.Max(48, (int)Math.Round(16 / Math.Max(0.02, scene.Scale)));
-                ShowGuide(ProfileSnap.SnapMonitorWithGuide(new ProfileBox(start.X + vdx, start.Y + vdy, start.W, start.H), others, reach).Guide);
+                var liveSnap = ProfileSnap.SnapMonitorWithGuide(new ProfileBox(start.X + vdx, start.Y + vdy, start.W, start.H), others, reach);
+                ShowGuide(liveSnap.Guide);
+                var ghost = ProfileSnap.ToCanvas(liveSnap.Box, scene, 8, 8);
+                monitorGhost.Width = ghost.W;
+                monitorGhost.Height = ghost.H;
+                Canvas.SetLeft(monitorGhost, ghost.X);
+                Canvas.SetTop(monitorGhost, ghost.Y);
+                Reveal(monitorGhost);
             };
             frame.MouseLeftButtonUp += (_, e) =>
             {
@@ -766,13 +907,31 @@ public partial class MainWindow
                 Render("presets", false);
             };
             frame.Tag = "monitor-tile";
-            monitorFrames[mon.Number] = frame;
+            if (main) monitorFrames[mon.Number] = frame;
             Canvas.SetZIndex(frame, 1);
             stage.Children.Add(frame);
+            foreach (var strip in ProfileSnap.TaskbarStrips(mon))
+            {
+                var band = ProfileSnap.ToCanvas(strip, scene, 1, 1);
+                if (band.W < 1 || band.H < 1) continue;
+                var shade = new System.Windows.Shapes.Rectangle
+                {
+                    Width = band.W,
+                    Height = band.H,
+                    Fill = new SolidColorBrush(Color.FromArgb(0x55, 0x3A, 0x3D, 0x48)),
+                    IsHitTestVisible = false,
+                    Tag = "taskbar-strip"
+                };
+                Canvas.SetLeft(shade, band.X);
+                Canvas.SetTop(shade, band.Y);
+                Canvas.SetZIndex(shade, 2);
+                stage.Children.Add(shade);
+            }
         }
         int tileZ = 10;
         StackPanel? fallbackTools = null;
         bool drewSelected = false;
+        if (AppSettings.ChipsVisible)
         foreach (var app in profile.Apps)
         {
             var home = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors[0];
@@ -921,7 +1080,7 @@ public partial class MainWindow
                 edge = EdgeAt(grab, tile.ActualWidth, tile.ActualHeight);
                 int sx = Vx(chipX + grab.X), sy = Vy(chipY + grab.Y);
                 var startHost = HostAt(sx, sy) ?? home;
-                startedKind = ProfileSnap.PreviewAt(sx, sy, startHost.Box).Kind;
+                startedKind = ProfileSnap.PreviewAt(sx, sy, startHost.Work).Kind;
                 leftZone = startedKind.Length == 0;
                 tile.Cursor = CursorFor(edge);
                 e.Handled = true;
@@ -939,8 +1098,8 @@ public partial class MainWindow
                 bool movedFar = Math.Abs(p.X - (chipX + grab.X)) + Math.Abs(p.Y - (chipY + grab.Y)) > 6;
                 if (edge.Length > 0)
                 {
-                    preview.Visibility = Visibility.Collapsed;
-                    var resized = ProfileSnap.Resize(appStart, host.Box, edge, vdxLive, vdyLive, 120);
+                    var resized = ProfileSnap.Resize(appStart, host.Work, edge, vdxLive, vdyLive, 120);
+                    ShowCue(new SnapCue(resized, resized.X == host.Work.X, resized.Right == host.Work.Right, resized.Y == host.Work.Y, resized.Bottom == host.Work.Bottom, ""));
                     var hostView = ProfileSnap.ToCanvas(host.Box, scene, 8, 8);
                     var view = ProfileChrome.WindowChip(resized.X - host.X, resized.Y - host.Y, resized.W, resized.H, host.W, host.H, hostView.X, hostView.Y, hostView.W, hostView.H);
                     if (view.W >= 2 && view.H >= 2)
@@ -958,7 +1117,7 @@ public partial class MainWindow
                 }
                 else
                 {
-                    var hit = ProfileSnap.PreviewAt(px, py, host.Box);
+                    var hit = ProfileSnap.PreviewAt(px, py, host.Work);
                     if (startedKind.Length > 0 && hit.Kind != startedKind) leftZone = true;
                     bool arm = ProfileSnap.ArmZone(leftZone ? "" : startedKind, hit.Kind, movedFar);
                     if (arm)
@@ -972,6 +1131,10 @@ public partial class MainWindow
                         preview.Visibility = Visibility.Visible;
                     }
                     else preview.Visibility = Visibility.Collapsed;
+                    var movedBox = new ProfileBox(appStart.X + vdxLive, appStart.Y + vdyLive, appStart.W, appStart.H);
+                    var siblings = profile.Apps.Where(a => a != app && a.Monitor == host.Number).Select(a => new ProfileBox(host.X + a.X, host.Y + a.Y, a.W, a.H)).ToList();
+                    string zone = arm && hit.Kind.Length > 0 ? hit.Kind : "";
+                    ShowCue(SnapCueMath.Window(movedBox, host.Work, siblings, 1, ProfileSnap.EdgeSlop(scene.Scale), zone, hit.Box));
                     Canvas.SetLeft(tile, p.X - grab.X);
                     Canvas.SetTop(tile, p.Y - grab.Y);
                 }
@@ -987,7 +1150,7 @@ public partial class MainWindow
                 int vdy = (int)Math.Round((p.Y - (chipY + grab.Y)) / scene.Scale);
                 if (edge.Length > 0)
                 {
-                    var resized = ProfileSnap.Resize(appStart, host.Box, edge, vdx, vdy, 120);
+                    var resized = ProfileSnap.Resize(appStart, host.Work, edge, vdx, vdy, 120);
                     app.Monitor = host.Number;
                     app.X = resized.X - host.X;
                     app.Y = resized.Y - host.Y;
@@ -997,7 +1160,7 @@ public partial class MainWindow
                 }
                 else
                 {
-                    var hit = ProfileSnap.PreviewAt(px, py, host.Box);
+                    var hit = ProfileSnap.PreviewAt(px, py, host.Work);
                     bool movedFar = Math.Abs(p.X - (chipX + grab.X)) + Math.Abs(p.Y - (chipY + grab.Y)) > 6;
                     if (startedKind.Length > 0 && hit.Kind != startedKind) leftZone = true;
                     bool arm = ProfileSnap.ArmZone(leftZone ? "" : startedKind, hit.Kind, movedFar);
@@ -1016,7 +1179,7 @@ public partial class MainWindow
                         var (index, local) = ProfileSnap.Transfer(moved, profile.Monitors.Select(m => m.Box).ToList());
                         var landed = profile.Monitors[index];
                         var siblings = profile.Apps.Where(a => a != app && a.Monitor == landed.Number).Select(a => new ProfileBox(landed.X + a.X, landed.Y + a.Y, a.W, a.H)).ToList();
-                        var snapped = ProfileSnap.SnapWindow(new ProfileBox(landed.X + local.X, landed.Y + local.Y, local.W, local.H), landed.Box, siblings, 1, ProfileSnap.EdgeSlop(scene.Scale));
+                        var snapped = ProfileSnap.SnapWindow(new ProfileBox(landed.X + local.X, landed.Y + local.Y, local.W, local.H), landed.Work, siblings, 1, ProfileSnap.EdgeSlop(scene.Scale));
                         app.Monitor = landed.Number;
                         app.X = snapped.X - landed.X;
                         app.Y = snapped.Y - landed.Y;
@@ -1040,7 +1203,7 @@ public partial class MainWindow
             var iconFrame = IconMap.Frame(profile.Monitors);
             foreach (var icon in profile.Icons)
             {
-                var screen = IconMap.ToScreen(icon.X, icon.Y, iconFrame.Left, iconFrame.Top, iconFrame.Scale);
+                var screen = IconMap.ToScreen(icon.X, icon.Y, iconFrame.Left, iconFrame.Top, profile.IconOriginX, profile.IconOriginY, IconMap.ImagePx(iconFrame.Scale));
                 var home = profile.Monitors.FirstOrDefault(m => screen.X >= m.X && screen.Y >= m.Y && screen.X < m.X + m.W && screen.Y < m.Y + m.H);
                 if (home == null) continue;
                 var homeView = ProfileSnap.ToCanvas(home.Box, scene, 8, 8);
@@ -1112,38 +1275,69 @@ public partial class MainWindow
         stage.Children.Add(guideLine);
         stage.Children.Add(guideLine2);
         stage.Children.Add(preview);
+        var expand = VectorButton("expand", "모니터맵을 크게", () => OpenProfileEditor(), box: 26);
+        Canvas.SetLeft(expand, Math.Max(4, cw - 36));
+        Canvas.SetTop(expand, 4);
+        Canvas.SetZIndex(expand, 80);
+        stage.Children.Add(expand);
         var card = new DockPanel { Margin = new Thickness(0, 0, 0, 6), LastChildFill = true };
-        var bar = new Grid { Height = 34, Margin = new Thickness(2, 0, 2, 4) };
-        var lockPill = new Button
+        var bar = new Grid { Height = 32, Margin = new Thickness(2, 0, 2, 2) };
+        var pills = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        pills.Children.Add(StatePill(AppSettings.ChipsVisible, "eye", "eyeoff", "창 칩", "칩 숨김", "저장된 창 칩을 모니터맵에 보여요.", "chip-visibility", () =>
         {
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Center,
-            Padding = new Thickness(8, 3, 10, 3),
-            ToolTip = AppSettings.MonitorLocked ? "모니터 위치가 잠겨 있어요" : "모니터 위치를 잠글 수 있어요",
-            Tag = "monitor-lock"
-        };
-        var lockRow = new StackPanel { Orientation = Orientation.Horizontal };
-        lockRow.Children.Add(ProfileMarks.Icon(AppSettings.MonitorLocked ? "lock" : "unlock", 14));
-        lockRow.Children.Add(new TextBlock
-        {
-            Text = "위치 잠금",
-            Margin = new Thickness(6, 0, 0, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12.5,
-            Foreground = (Brush)FindResource(AppSettings.MonitorLocked ? "Text" : "Secondary")
-        });
-        lockPill.Content = lockRow;
-        lockPill.Click += (_, _) =>
+            AppSettings.SetChipsVisible(!AppSettings.ChipsVisible);
+            Render("presets", false);
+        }));
+        pills.Children.Add(StatePill(AppSettings.MonitorLocked, "lock", "unlock", "위치 잠금", "잠금 해제", "켜 두면 창을 옮기는 동안 모니터가 따라 움직이지 않아요.", "monitor-lock", () =>
         {
             AppSettings.SetMonitorLocked(!AppSettings.MonitorLocked);
             Render("presets", false);
-        };
-        bar.Children.Add(lockPill);
+        }));
+        bar.Children.Add(pills);
         DockPanel.SetDock(bar, Dock.Top);
         card.Children.Add(bar);
         stage.Margin = new Thickness(0);
         card.Children.Add(stage);
-        PageHost.Children.Add(card);
+        if (main) ProfileCanvasHost = card;
+        sink.Children.Add(card);
+    }
+
+    Border StatePill(bool on, string onIcon, string offIcon, string onText, string offText, string tip, string tag, Action click)
+    {
+        var pill = new Border
+        {
+            CornerRadius = new CornerRadius(11),
+            Padding = new Thickness(8, 3, 10, 3),
+            Margin = new Thickness(6, 0, 0, 0),
+            Cursor = Cursors.Hand,
+            BorderThickness = new Thickness(1.5),
+            Tag = tag,
+            ToolTip = tip,
+            Background = new SolidColorBrush(on ? Color.FromRgb(0x4C, 0x8A, 0xFE) : Color.FromArgb(0x14, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(on ? Color.FromRgb(0x4C, 0x8A, 0xFE) : Color.FromArgb(0x66, 0xA3, 0xAB, 0xBC))
+        };
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(ProfileMarks.Icon(on ? onIcon : offIcon, 14));
+        row.Children.Add(new TextBlock
+        {
+            Text = on ? onText : offText,
+            Margin = new Thickness(6, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 12,
+            Foreground = on ? Brushes.White : (Brush)FindResource("Secondary")
+        });
+        pill.Child = row;
+        pill.MouseLeftButtonUp += (_, _) =>
+        {
+            if (!Fx.Enabled) { click(); return; }
+            var bg = (SolidColorBrush)pill.Background;
+            var next = !on;
+            bg.BeginAnimation(SolidColorBrush.ColorProperty, new System.Windows.Media.Animation.ColorAnimation(next ? Color.FromRgb(0x4C, 0x8A, 0xFE) : Color.FromArgb(0x14, 255, 255, 255), TimeSpan.FromMilliseconds(160)));
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(160) };
+            timer.Tick += (_, _) => { timer.Stop(); click(); };
+            timer.Start();
+        };
+        return pill;
     }
 
     static string ZoneName(string kind) => kind switch
@@ -1275,7 +1469,10 @@ public partial class MainWindow
             try
             {
                 using var icons = new ExplorerIconSurface();
-                StoreIcons(profile, icons.Read(), auto: true);
+                var read = icons.Read();
+                profile.IconOriginX = icons.OriginX;
+                profile.IconOriginY = icons.OriginY;
+                StoreIcons(profile, read, auto: true);
             }
             catch (Exception ex) { DesktopAction = ex.Message; IconSaveNote = ex.Message; Render("presets", false); }
             return;
@@ -1358,7 +1555,7 @@ public partial class MainWindow
         var mon = profile?.Monitors.FirstOrDefault(m => m.Number == app?.Monitor);
         if (profile == null || app == null || mon == null) return false;
         selectedAppId = app.Id;
-        var resized = ProfileSnap.Resize(new ProfileBox(mon.X + app.X, mon.Y + app.Y, app.W, app.H), mon.Box, edge, dx, dy, 120);
+        var resized = ProfileSnap.Resize(new ProfileBox(mon.X + app.X, mon.Y + app.Y, app.W, app.H), mon.Work, edge, dx, dy, 120);
         app.X = resized.X - mon.X;
         app.Y = resized.Y - mon.Y;
         app.W = resized.W;
@@ -1480,6 +1677,7 @@ static class ProfileMarks
                 "undo" => "M3.2,7.2 L7.4,3 L7.4,5.4 L12.6,5.4 L12.6,9.2 L7.4,9.2 L7.4,11.6 Z",
                 "power" => "M8,3.4 A4.4,4.4 0 1 0 8.02,3.4 Z M7.15,1.2 H8.85 V6.4 H7.15 Z",
                 "star" => "M8,1.6 L9.5,5.6 L13.8,5.8 L10.5,8.6 L11.6,12.8 L8,10.6 L4.4,12.8 L5.5,8.6 L2.2,5.8 L6.5,5.6 Z",
+                "expand" => "M2,6 V2 H6 M10,2 H14 V6 M14,10 V14 H10 M6,14 H2 V10",
                 _ => "M2,2 H14 V14 H2 Z"
             })
         };

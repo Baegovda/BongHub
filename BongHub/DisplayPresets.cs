@@ -246,6 +246,8 @@ public sealed class ProfileMonitor
     /// <summary>Windows Display Settings number, the same one Identify shows.</summary>
     public int Number = 1;
     public int X, Y, W = 1920, H = 1080;
+    /// <summary>Work area in the same pixels as <see cref="X"/>. Zero size means the full monitor, for profiles saved before the taskbar was recorded.</summary>
+    public int WorkX, WorkY, WorkW, WorkH;
     public bool Primary = true;
     public bool Enabled = true;
     public string Device = "";
@@ -258,6 +260,8 @@ public sealed class ProfileMonitor
     /// <summary>Runtime. False when this saved screen is not in the current display list.</summary>
     public bool Connected = true;
     public ProfileBox Box => new(X, Y, W, H);
+    /// <summary>Snap target. Half, maximize, quarter, and dock-flush use this, not the full monitor.</summary>
+    public ProfileBox Work => WorkW > 8 && WorkH > 8 ? new ProfileBox(WorkX, WorkY, WorkW, WorkH) : Box;
 }
 
 public sealed class ProfileApp
@@ -309,6 +313,8 @@ public sealed class MonitorProfile
     public bool RememberWindows = true;
     public string SessionSaved = "";
     public List<SessionWindow> Session = new();
+    /// <summary><c>LVM_GETORIGIN</c> captured with the icons. Missing JSON means zero.</summary>
+    public int IconOriginX, IconOriginY;
 }
 
 public readonly record struct SnapPreview(string Kind, ProfileBox Box);
@@ -589,6 +595,20 @@ public static class ProfileSnap
         return new ProfileBox(x, y, Math.Max(min, w), Math.Max(min, h));
     }
 
+    /// <summary>Bands of the monitor that are not in the work area. Empty when no taskbar was stored.</summary>
+    public static List<ProfileBox> TaskbarStrips(ProfileMonitor m)
+    {
+        var list = new List<ProfileBox>();
+        if (m == null || m.WorkW <= 8 || m.WorkH <= 8) return list;
+        var full = m.Box;
+        var work = m.Work;
+        if (work.Y > full.Y) list.Add(new ProfileBox(full.X, full.Y, full.W, work.Y - full.Y));
+        if (work.Bottom < full.Bottom) list.Add(new ProfileBox(full.X, work.Bottom, full.W, full.Bottom - work.Bottom));
+        if (work.X > full.X) list.Add(new ProfileBox(full.X, full.Y, work.X - full.X, full.H));
+        if (work.Right < full.Right) list.Add(new ProfileBox(work.Right, full.Y, full.Right - work.Right, full.H));
+        return list;
+    }
+
     public static ProfileBox SnapWindow(ProfileBox window, ProfileBox monitor, IReadOnlyList<ProfileBox> others, int grid, int? edgeSlop = null)
     {
         int g = grid < 1 ? 1 : grid;
@@ -705,6 +725,8 @@ public sealed class ScreenInfo
     public int Scale = 100;
     /// <summary>0, 90, 180, or 270.</summary>
     public int Orientation;
+    /// <summary>Work area in screen pixels. Zero size means the caller did not measure a taskbar.</summary>
+    public int WorkX, WorkY, WorkW, WorkH;
 }
 
 /// <summary>Binds saved monitors to physical screens. No display API.</summary>
@@ -777,6 +799,7 @@ public static class ScreenBind
             m.Edid = hit.Edid ?? "";
             m.W = hit.W;
             m.H = hit.H;
+            ApplyWork(m, hit);
             string hitPath = hit.Path ?? "";
             string hitDevice = hit.Device ?? "";
             if ((m.Id ?? "").Length == 0) m.Id = hitPath.Length > 0 ? hitPath : hitDevice;
@@ -789,6 +812,8 @@ public static class ScreenBind
                 Id = (s.Path ?? "").Length > 0 ? s.Path ?? "" : s.Device ?? "",
                 Number = s.Number,
                 X = s.X, Y = s.Y, W = s.W, H = s.H,
+                WorkX = s.WorkW > 8 ? s.WorkX : s.X, WorkY = s.WorkH > 8 ? s.WorkY : s.Y,
+                WorkW = s.WorkW > 8 ? s.WorkW : s.W, WorkH = s.WorkH > 8 ? s.WorkH : s.H,
                 Primary = s.Primary, Enabled = true, Connected = true,
                 Device = s.Device ?? "", Path = s.Path ?? "", Edid = s.Edid ?? ""
             };
@@ -833,6 +858,7 @@ public static class ScreenBind
             m.Connected = true;
             m.Number = hit.Number;
             m.X = hit.X; m.Y = hit.Y; m.W = hit.W; m.H = hit.H;
+            ApplyWork(m, hit);
             m.Primary = hit.Primary;
             m.Device = hit.Device ?? "";
             m.Path = hit.Path ?? "";
@@ -846,6 +872,8 @@ public static class ScreenBind
             {
                 Id = (s.Path ?? "").Length > 0 ? s.Path ?? "" : s.Number.ToString(),
                 Number = s.Number, X = s.X, Y = s.Y, W = s.W, H = s.H,
+                WorkX = s.WorkW > 8 ? s.WorkX : s.X, WorkY = s.WorkH > 8 ? s.WorkY : s.Y,
+                WorkW = s.WorkW > 8 ? s.WorkW : s.W, WorkH = s.WorkH > 8 ? s.WorkH : s.H,
                 Primary = s.Primary, Enabled = true, Connected = true,
                 Device = s.Device ?? "", Path = s.Path ?? "", Edid = s.Edid ?? ""
             };
@@ -872,7 +900,9 @@ public static class ScreenBind
     {
         if (live == null || live.Count == 0) return "";
         return string.Join("|", live.OrderBy(s => s.Number).ThenBy(s => s.X).ThenBy(s => s.Y).Select(s =>
-            s.Number + "@" + s.X + "," + s.Y + " " + s.W + "x" + s.H + " " + (s.Scale <= 0 ? 100 : s.Scale) + "% r" + s.Orientation
+            s.Number + "@" + s.X + "," + s.Y + " " + s.W + "x" + s.H
+            + " w" + s.WorkX + "," + s.WorkY + " " + s.WorkW + "x" + s.WorkH
+            + " " + (s.Scale <= 0 ? 100 : s.Scale) + "% r" + s.Orientation
             + (s.Primary ? "*" : "") + " " + (s.Device ?? "")));
     }
 
@@ -919,6 +949,22 @@ public static class ScreenBind
         ProfileDoc.SyncLists(profile);
     }
 
+    static void ApplyWork(ProfileMonitor m, ScreenInfo s)
+    {
+        if (s.WorkW > 8 && s.WorkH > 8)
+        {
+            m.WorkX = s.WorkX;
+            m.WorkY = s.WorkY;
+            m.WorkW = s.WorkW;
+            m.WorkH = s.WorkH;
+            return;
+        }
+        m.WorkX = s.X;
+        m.WorkY = s.Y;
+        m.WorkW = s.W;
+        m.WorkH = s.H;
+    }
+
     static void CopyLive(ProfileMonitor m, ScreenInfo hit)
     {
         m.Connected = true;
@@ -927,6 +973,7 @@ public static class ScreenBind
         m.Y = hit.Y;
         m.W = hit.W;
         m.H = hit.H;
+        ApplyWork(m, hit);
         m.Scale = hit.Scale <= 0 ? 100 : hit.Scale;
         m.Orientation = hit.Orientation;
         m.Primary = hit.Primary;
@@ -945,6 +992,8 @@ public static class ScreenBind
             Id = path.Length > 0 ? path : (device.Length > 0 ? device : s.Number.ToString()),
             Number = s.Number,
             X = s.X, Y = s.Y, W = s.W, H = s.H,
+            WorkX = s.WorkW > 8 ? s.WorkX : s.X, WorkY = s.WorkH > 8 ? s.WorkY : s.Y,
+            WorkW = s.WorkW > 8 ? s.WorkW : s.W, WorkH = s.WorkH > 8 ? s.WorkH : s.H,
             Scale = s.Scale <= 0 ? 100 : s.Scale,
             Orientation = s.Orientation,
             Primary = s.Primary,
@@ -1304,7 +1353,7 @@ public static class ProfileDoc
             used.Add(hit.Id);
             var mon = profile.Monitors.FirstOrDefault(m => m.Number == app.Monitor) ?? profile.Monitors.FirstOrDefault();
             if (mon == null) continue;
-            if (app.State is "top" or "max") surface.Maximize(hit.Id, new WorkRect(mon.X, mon.Y, mon.W, mon.H));
+            if (app.State is "top" or "max") surface.Maximize(hit.Id, new WorkRect(mon.Work.X, mon.Work.Y, mon.Work.W, mon.Work.H));
             else if (app.State == "min") surface.Minimize(hit.Id);
             else
             {
@@ -1338,7 +1387,7 @@ public static class ProfileDoc
 
     static ProfileBox ZoneBoxRelative(string state, ProfileMonitor mon)
     {
-        var abs = ProfileSnap.ZoneBox(state, mon.Box);
+        var abs = ProfileSnap.ZoneBox(state, mon.Work);
         return abs;
     }
 
@@ -1358,6 +1407,7 @@ public static class ProfileDoc
             monitors.Add(new JsonObject
             {
                 ["id"] = m.Id, ["number"] = m.Number, ["x"] = m.X, ["y"] = m.Y, ["w"] = m.W, ["h"] = m.H,
+                ["workX"] = m.Work.X, ["workY"] = m.Work.Y, ["workW"] = m.Work.W, ["workH"] = m.Work.H,
                 ["scale"] = m.Scale <= 0 ? 100 : m.Scale, ["orientation"] = m.Orientation,
                 ["primary"] = m.Primary, ["enabled"] = m.Enabled, ["device"] = m.Device, ["path"] = m.Path, ["edid"] = m.Edid
             });
@@ -1377,6 +1427,7 @@ public static class ProfileDoc
         {
             ["id"] = p.Id, ["name"] = p.Name, ["hotkey"] = p.Hotkey, ["primary"] = p.Primary, ["layout"] = p.Layout, ["windowSpace"] = "pixels",             ["iconsSaved"] = p.IconsSaved, ["restoreIcons"] = p.RestoreIcons,
             ["rememberWindows"] = p.RememberWindows, ["sessionSaved"] = p.SessionSaved ?? "",
+            ["iconOriginX"] = p.IconOriginX, ["iconOriginY"] = p.IconOriginY,
             ["deskLayout"] = p.DeskLayout, ["icons"] = p.DeskLayout, ["workspace"] = p.Workspace,
             ["enable"] = new JsonArray(p.Enable.Select(s => JsonValue.Create(s)).ToArray()),
             ["disable"] = new JsonArray(p.Disable.Select(s => JsonValue.Create(s)).ToArray()),
@@ -1425,7 +1476,9 @@ public static class ProfileDoc
             IconsSaved = Str(node["iconsSaved"]),
             RestoreIcons = node["restoreIcons"] == null || Bool(node["restoreIcons"]),
             RememberWindows = node["rememberWindows"] == null || Bool(node["rememberWindows"]),
-            SessionSaved = Str(node["sessionSaved"])
+            SessionSaved = Str(node["sessionSaved"]),
+            IconOriginX = Num(node["iconOriginX"]),
+            IconOriginY = Num(node["iconOriginY"])
         };
         if (profile.Id.Length == 0) profile.Id = NewId();
         Strings(node["enable"], profile.Enable);
@@ -1443,6 +1496,10 @@ public static class ProfileDoc
                     Y = Num(item["y"]),
                     W = Num(item["w"], 1920),
                     H = Num(item["h"], 1080),
+                    WorkX = Num(item["workX"]),
+                    WorkY = Num(item["workY"]),
+                    WorkW = Num(item["workW"]),
+                    WorkH = Num(item["workH"]),
                     Primary = Bool(item["primary"]),
                     Enabled = item["enabled"] == null || Bool(item["enabled"]),
                     Scale = Num(item["scale"], 100),
@@ -1990,6 +2047,20 @@ public static class HotkeyChord
         return string.Join("+", parts);
     }
 
+    public const string ListenPrompt = "키를 누르세요…";
+
+    /// <summary>Modifiers held during capture, drawn as key caps. The ellipsis waits for the key.</summary>
+    public static string Caps(bool win, bool ctrl, bool alt, bool shift)
+    {
+        var parts = new List<string>();
+        if (win) parts.Add("Win");
+        if (ctrl) parts.Add("Ctrl");
+        if (alt) parts.Add("Alt");
+        if (shift) parts.Add("Shift");
+        if (parts.Count == 0) return "";
+        return string.Join(" + ", parts) + " + …";
+    }
+
     static bool TryVk(string token, out uint vk)
     {
         vk = 0;
@@ -2256,26 +2327,38 @@ public static class ProfileChrome
 /// <summary>Names of the profile-page symbols drawn as vectors, not as a font glyph.</summary>
 public static class ProfileGlyph
 {
-    public static readonly string[] Kinds = { "ellipsis", "trash", "pencil", "pin", "min", "app", "eye", "eyeoff", "undo", "lock", "unlock", "power", "star" };
+    public static readonly string[] Kinds = { "ellipsis", "trash", "pencil", "pin", "min", "app", "eye", "eyeoff", "undo", "lock", "unlock", "power", "star", "expand" };
     public static bool Known(string? kind) => kind != null && Kinds.Contains(kind);
 }
 
 /// <summary>
-/// Desktop list-view points are logical pixels whose origin is the top-left of the virtual desktop,
-/// not physical screen pixels and not "whatever monitor.X happens to be". Monitor rectangles are physical.
+/// Explorer's list view is per-monitor DPI aware, so item positions are already physical pixels.
+/// <c>LVM_GETITEMPOSITION</c> is a view point. Client = view − <c>LVM_GETORIGIN</c>.
+/// The list's client origin on the screen is the virtual-screen origin. The point stored is the icon image's top-left;
+/// the image is 48px at 96 DPI. The dot uses the image center.
 /// </summary>
 public static class IconMap
 {
-    public static (int X, int Y) ToScreen(int clientX, int clientY, int virtualLeft, int virtualTop, int scalePercent)
+    public static int ImagePx(int scalePercent)
     {
-        double s = scalePercent < 50 ? 1 : scalePercent / 100.0;
-        return (virtualLeft + (int)Math.Round(clientX * s), virtualTop + (int)Math.Round(clientY * s));
+        int s = scalePercent < 50 ? 100 : scalePercent;
+        return Math.Max(8, (int)Math.Round(48.0 * s / 100.0));
     }
 
-    public static (int X, int Y) ToClient(int screenX, int screenY, int virtualLeft, int virtualTop, int scalePercent)
+    public static (int X, int Y) ToScreen(int viewX, int viewY, int virtualLeft, int virtualTop, int originX, int originY, int iconPx)
     {
-        double s = scalePercent < 50 ? 1 : scalePercent / 100.0;
-        return ((int)Math.Round((screenX - virtualLeft) / s), (int)Math.Round((screenY - virtualTop) / s));
+        int half = Math.Max(0, iconPx) / 2;
+        return (viewX - originX + virtualLeft + half, viewY - originY + virtualTop + half);
+    }
+
+    /// <summary><c>LVM_GETITEMRECT(LVIR_ICON)</c> is already in client coordinates. Its center plus the virtual origin is the screen point.</summary>
+    public static (int X, int Y) Center(int left, int top, int right, int bottom, int virtualLeft, int virtualTop)
+        => (virtualLeft + (left + right) / 2, virtualTop + (top + bottom) / 2);
+
+    public static (int X, int Y) ToClient(int screenX, int screenY, int virtualLeft, int virtualTop, int originX, int originY, int iconPx)
+    {
+        int half = Math.Max(0, iconPx) / 2;
+        return (screenX - half - virtualLeft + originX, screenY - half - virtualTop + originY);
     }
 
     public static (int Left, int Top, int Scale) Frame(IReadOnlyList<ProfileMonitor>? monitors)
@@ -2464,5 +2547,158 @@ public static class MonitorIdentify
         if (!real) return string.Join(",", nums);
         NativeCalls++;
         return "live:" + string.Join(",", nums);
+    }
+}
+
+/// <summary>Physical-pixel card on a monitor. No Win32 calls. Mixed DPI uses each monitor's own scale.</summary>
+public readonly record struct ScreenCard(int Number, bool Primary, int X, int Y, int W, int H);
+
+/// <summary>
+/// One line of canvas text that must not meet a badge, button, icon, or another line.
+/// An empty width means the line is hidden.
+/// </summary>
+public static class CanvasInk
+{
+    public readonly record struct Mark(string Kind, DipRect Box);
+
+    public static DipRect Line(DipRect host, IReadOnlyList<DipRect>? reserved, double lineH, double pad = 4)
+    {
+        if (host.W < 8 || host.H < 8 || lineH < 8) return new DipRect(host.X, host.Y, 0, 0);
+        double p = host.H < lineH + pad * 2 ? 1 : pad;
+        double x0 = host.X + p, y0 = host.Y + p, x1 = host.Right - p, y1 = host.Bottom - p;
+        if (x1 - x0 < 8 || y1 - y0 < lineH - 1)
+        {
+            if (p > 1) return Line(host, reserved, Math.Min(lineH, Math.Max(8, host.H - 2)), 1);
+            return new DipRect(host.X, host.Y, 0, 0);
+        }
+        var blocks = new List<DipRect>();
+        if (reserved != null)
+            foreach (var r in reserved)
+                if (r.W > 0.5 && r.H > 0.5 && host.Hits(r)) blocks.Add(r);
+        var candidates = new List<DipRect> { new(x0, y0, x1 - x0, lineH) };
+        foreach (var b in blocks)
+        {
+            double rx = Math.Max(x0, b.Right + 2);
+            if (x1 - rx >= 8) candidates.Add(new DipRect(rx, y0, x1 - rx, lineH));
+            double lx = Math.Min(x1, b.X - 2);
+            if (lx - x0 >= 8) candidates.Add(new DipRect(x0, y0, lx - x0, lineH));
+            double by = Math.Max(y0, b.Bottom + 2);
+            if (y1 - by >= lineH - 1 && x1 - x0 >= 8) candidates.Add(new DipRect(x0, by, x1 - x0, lineH));
+        }
+        DipRect best = default;
+        double score = -1;
+        foreach (var c in candidates)
+        {
+            double left = Math.Max(x0, c.X);
+            double top = Math.Max(y0, c.Y);
+            double right = Math.Min(x1, c.X + c.W);
+            double bottom = Math.Min(y1, c.Y + c.H);
+            var clipped = new DipRect(left, top, right - left, bottom - top);
+            if (clipped.W < 8 || clipped.H < lineH - 1) continue;
+            if (blocks.Any(b => clipped.Hits(b))) continue;
+            double s = clipped.W * 1000 - clipped.Y;
+            if (s > score) { score = s; best = clipped; }
+        }
+        return score < 0 ? new DipRect(host.X, host.Y, 0, 0) : best;
+    }
+
+    /// <summary>Fake canvas: number pill, chip text, ghost text, and a monitor line. Returned boxes do not meet each other or the pill.</summary>
+    public static List<Mark> Arrange(DipRect tile, bool primary, IReadOnlyList<DipRect> chips)
+    {
+        var marks = new List<Mark>();
+        var reserved = new List<DipRect> { ProfileChrome.NumberPill(tile.X, tile.Y, primary) };
+        foreach (var chip in chips)
+        {
+            if (chip.W >= 88 && chip.H >= 36)
+            {
+                double bw = Math.Min(36, chip.W * 0.4);
+                double bh = Math.Min(18, chip.H * 0.45);
+                reserved.Add(new DipRect(chip.Right - bw - 3, chip.Bottom - bh - 3, bw, bh));
+            }
+        }
+        var pill = reserved[0];
+        var labelHost = new DipRect(tile.X + 6, pill.Bottom + 2, Math.Max(0, tile.W - 12), 14);
+        var labelObs = new List<DipRect>(reserved);
+        labelObs.AddRange(chips);
+        var label = Line(labelHost, labelObs, 12, 1);
+        if (label.W >= 8) { marks.Add(new Mark("monitor", label)); reserved.Add(label); }
+        foreach (var chip in chips)
+        {
+            double line = Math.Min(14, Math.Max(8, chip.H - 4));
+            var text = Line(chip, reserved, line, chip.H < 30 ? 2 : 4);
+            if (text.W >= 8) { marks.Add(new Mark("chip", text)); reserved.Add(text); }
+        }
+        return marks;
+    }
+}
+
+public static class IdentifyLayout
+{
+    public const int BaseW = 220;
+    public const int BaseH = 148;
+    public const int BaseMargin = 72;
+
+    public static int Px(int dip, int scalePercent)
+    {
+        int s = scalePercent < 50 ? 100 : scalePercent;
+        return Math.Max(1, (int)Math.Round(dip * s / 100.0));
+    }
+
+    /// <summary>Bottom-left card inside the monitor, in the same physical pixels as <see cref="ProfileMonitor.X"/>.</summary>
+    public static ScreenCard Of(ProfileMonitor m)
+    {
+        int scale = m.Scale <= 0 ? 100 : m.Scale;
+        int w = Math.Min(Px(BaseW, scale), Math.Max(1, m.W));
+        int h = Math.Min(Px(BaseH, scale), Math.Max(1, m.H));
+        int margin = Math.Min(Px(BaseMargin, scale), Math.Max(0, Math.Min(m.W - w, m.H - h)));
+        int x = m.X + margin;
+        int y = m.Y + m.H - h - margin;
+        if (x + w > m.X + m.W) x = m.X + m.W - w;
+        if (y < m.Y) y = m.Y;
+        return new ScreenCard(m.Number, m.Primary, x, y, w, h);
+    }
+
+    /// <summary>Centered card, for the profile-switch overlay on one monitor.</summary>
+    public static ScreenCard Center(ProfileMonitor m, int baseW, int baseH)
+    {
+        int scale = m.Scale <= 0 ? 100 : m.Scale;
+        int w = Math.Min(Px(baseW, scale), Math.Max(1, m.W));
+        int h = Math.Min(Px(baseH, scale), Math.Max(1, m.H));
+        int x = m.X + Math.Max(0, (m.W - w) / 2);
+        int y = m.Y + Math.Max(0, (m.H - h) / 2);
+        return new ScreenCard(m.Number, m.Primary, x, y, w, h);
+    }
+
+    public static ProfileMonitor? HostOf(IReadOnlyList<ProfileMonitor>? monitors)
+    {
+        if (monitors == null || monitors.Count == 0) return null;
+        return monitors.FirstOrDefault(m => m.Primary) ?? monitors[0];
+    }
+}
+
+/// <summary>Where a dragged window or its snapped edges land. Canvas drawing is separate.</summary>
+public readonly record struct SnapCue(ProfileBox Box, bool Left, bool Right, bool Top, bool Bottom, string Kind);
+
+public static class SnapCueMath
+{
+    public static SnapCue Window(ProfileBox raw, ProfileBox monitor, IReadOnlyList<ProfileBox>? others, int grid, int edgeSlop, string? zoneKind, ProfileBox zoneBox)
+    {
+        if (!string.IsNullOrEmpty(zoneKind))
+        {
+            string k = zoneKind;
+            return new SnapCue(zoneBox,
+                k is "left" or "tl" or "bl",
+                k is "right" or "tr" or "br",
+                k is "top" or "tl" or "tr" or "max",
+                k is "bl" or "br",
+                k);
+        }
+        var snapped = ProfileSnap.SnapWindow(raw, monitor, others ?? Array.Empty<ProfileBox>(), grid < 1 ? 1 : grid, edgeSlop);
+        return new SnapCue(snapped,
+            snapped.X == monitor.X,
+            snapped.Right == monitor.Right,
+            snapped.Y == monitor.Y,
+            snapped.Bottom == monitor.Bottom,
+            "");
     }
 }
