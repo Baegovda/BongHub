@@ -876,6 +876,8 @@ public static class SmokeTest
         int ccdNatives = DisplaySystem.NativeCalls;
         string ccdStory = CcdLayout.DisconnectStory();
         t.Check("turning a monitor off deactivates it and a round trip turns it on", ccdStory.Length == 0 && DisplaySystem.NativeCalls == ccdNatives && DisplaySystem.SetDisplayConfigCalls == 0 && DisplaySystem.MmtStarts == 0 && DisplaySystem.ChangeDisplaySettingsExCalls == 0, ccdStory);
+        string allPaths = CcdLayout.AllPathsStory();
+        t.Check("ccd all-paths keeps one path per monitor", allPaths.Length == 0 && DisplayNative.TargetNameBytes == 420 && DisplayNative.SourceNameBytes == 84 && DisplaySystem.NativeCalls == ccdNatives && DisplaySystem.MmtStarts == 0, allPaths);
         int holdNatives = LiveWindowSurface.NativeCalls;
         string holdStory = SwitchHold.Story();
         t.Check("windows stay on their snapshot when a monitor turns off", holdStory.Length == 0 && LiveWindowSurface.NativeCalls == holdNatives, holdStory);

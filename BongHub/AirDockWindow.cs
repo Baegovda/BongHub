@@ -49,6 +49,8 @@ public sealed class AirDockWindow : Window
     }
 
     public static AirDockWindow? Current => current;
+    /// <summary>Device path, else EDID, else the GDI name. Empty until a dock is placed on a monitor.</summary>
+    public static string LastMonitorKey { get; private set; } = "";
 
     public static void OpenAtCursor()
     {
@@ -62,6 +64,7 @@ public sealed class AirDockWindow : Window
             {
                 if (cursor.X < screen.X || cursor.Y < screen.Y || cursor.X >= screen.X + screen.W || cursor.Y >= screen.Y + screen.H) continue;
                 x = screen.X; y = screen.Y; w = screen.W; h = screen.H; dpi = screen.Scale <= 0 ? 100 : screen.Scale;
+                LastMonitorKey = MonitorKey.Choose(screen.Path, screen.Edid, screen.Device);
                 found = true;
                 break;
             }

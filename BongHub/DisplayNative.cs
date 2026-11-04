@@ -32,32 +32,41 @@ public static class DisplayNative
     /// The primary source position is (0,0). A path that was off is restored with <c>SDC_TOPOLOGY_SUPPLIED</c>
     /// and the saved topology. MultiMonitorTool runs only when CCD returns an error.
     /// </summary>
-    public static void ApplyArrangement(IReadOnlyList<DeskScreen> desired)
+    public static int TargetNameBytes => Marshal.SizeOf<TARGET_NAME>();
+    public static int SourceNameBytes => Marshal.SizeOf<SOURCE_NAME>();
+    public static int ModeBytes => Marshal.SizeOf<MODE>();
+    public static int PathBytes => Marshal.SizeOf<PATH>();
+
+    public static void ApplyArrangement(IReadOnlyList<DeskScreen> desired, string? name = null)
     {
         DisplayGate.Demand();
+        string label = string.IsNullOrWhiteSpace(name) ? "profile" : name!;
         string error = DeskArrange.Validate(desired);
         if (error.Length > 0) throw new InvalidOperationException(error);
         var live = QueryPaths();
         if (live == null)
         {
             AppEnv.Log("display: QueryDisplayConfig failed");
-            if (!Fallback(desired)) throw new InvalidOperationException("화면 배치를 적용하지 못했어요.");
+            if (!Fallback(desired, label)) throw new InvalidOperationException("화면 위치를 적용하지 못했어요.");
             return;
         }
         CcdBank.RememberIfFuller(live.Logical);
-        var commit = CcdLayout.Build(live.Logical, desired, CcdBank.Saved);
-        if (!Covers(live, commit))
+        var chosen = CcdLayout.Collapse(live.Logical);
+        var commit = CcdLayout.Build(chosen, desired, CcdBank.Saved);
+        if (!CcdLayout.Covers(chosen, commit))
         {
             AppEnv.Log("display: a monitor has no CCD path");
-            if (!Fallback(desired)) throw new InvalidOperationException("화면 배치를 적용하지 못했어요.");
+            if (!Fallback(desired, label)) throw new InvalidOperationException("화면 위치를 적용하지 못했어요.");
             return;
         }
-        int rc = ApplyNative(live, commit);
+        int rc = ApplyNative(live, chosen, commit, true);
         if (rc != 0)
         {
             AppEnv.Log("display: SetDisplayConfig returned " + rc);
-            if (!Fallback(desired)) throw new InvalidOperationException("화면 배치를 적용하지 못했어요. (" + rc + ")");
+            if (!Fallback(desired, label)) throw new InvalidOperationException("화면 위치를 적용하지 못했어요. (" + rc + ")");
+            return;
         }
+        AppEnv.Log("display: apply " + label + " via CCD");
     }
 
     static bool CommitChecked(IReadOnlyList<string>? commands)
@@ -113,9 +122,24 @@ public static class DisplayNative
         return ok;
     }
 
-    static bool Fallback(IReadOnlyList<DeskScreen> desired)
+    static bool Fallback(IReadOnlyList<DeskScreen> desired, string label)
     {
         var cmds = new List<string>();
+        DeskScreen? primary = null;
+        foreach (var s in desired)
+            if (s.Enabled && s.W > 0 && s.H > 0 && s.Primary) { primary = s; break; }
+        if (primary == null)
+            foreach (var s in desired)
+                if (s.Enabled && s.W > 0 && s.H > 0) { primary = s; break; }
+        int ox = primary?.X ?? 0, oy = primary?.Y ?? 0;
+        var placed = new List<string>();
+        foreach (var s in desired)
+        {
+            if (!s.Enabled || s.W <= 0 || s.H <= 0 || !MonitorKey.IsGdi(s.Device)) continue;
+            placed.Add("Name=" + s.Device + " Left=" + (s.X - ox) + " Top=" + (s.Y - oy) + " Width=" + s.W + " Height=" + s.H);
+        }
+        bool positions = placed.Count > 0;
+        if (positions) cmds.Add("monitors " + string.Join(" | ", placed));
         foreach (var s in desired)
         {
             if (s.StableId.Length == 0 || !s.Enabled) continue;
@@ -134,8 +158,11 @@ public static class DisplayNative
             if (!s.Enabled && s.StableId.Length > 0) off.Add(s.StableId);
         if (off.Count > 0) cmds.Add("disable " + string.Join(" ", off));
         if (cmds.Count == 0) return false;
-        AppEnv.Log("display: falling back to MultiMonitorTool");
-        return CommitChecked(cmds);
+        AppEnv.Log("display: apply " + label + " via MMT");
+        if (!positions) AppEnv.Log("display: positions were not applied");
+        bool ok = CommitChecked(cmds);
+        if (ok) AppEnv.Log("display: MultiMonitorTool applied " + label);
+        return ok && positions;
     }
 
     sealed class NativeSet
@@ -148,9 +175,9 @@ public static class DisplayNative
 
     static NativeSet? QueryPaths()
     {
-        if (Marshal.SizeOf<MODE>() != 64 || Marshal.SizeOf<PATH>() != 72)
+        if (Marshal.SizeOf<MODE>() != 64 || Marshal.SizeOf<PATH>() != 72 || Marshal.SizeOf<TARGET_NAME>() != 420 || Marshal.SizeOf<SOURCE_NAME>() != 84)
         {
-            AppEnv.Log("display: CCD struct size mode " + Marshal.SizeOf<MODE>() + " path " + Marshal.SizeOf<PATH>());
+            AppEnv.Log("display: CCD struct size mode " + Marshal.SizeOf<MODE>() + " path " + Marshal.SizeOf<PATH>() + " target " + Marshal.SizeOf<TARGET_NAME>() + " source " + Marshal.SizeOf<SOURCE_NAME>());
             return null;
         }
         int rc = GetDisplayConfigBufferSizes(QdcAllPaths, out uint pathCount, out uint modeCount);
@@ -174,9 +201,28 @@ public static class DisplayNative
         }
         var logical = new List<CcdPath>((int)pathCount);
         var ids = new string[pathCount];
+        var cache = new Dictionary<(uint Low, int High, uint Id), TargetFacts>();
+        int looked = 0, failed = 0, skipped = 0;
         for (int i = 0; i < pathCount; i++)
         {
-            string id = TargetId(paths[i]);
+            bool active = (paths[i].flags & PathActive) != 0;
+            bool available = paths[i].targetInfo.targetAvailable != 0;
+            string id = "", edid = "", gdi = "";
+            if (active || available)
+            {
+                var key = (paths[i].targetInfo.adapterId.Low, paths[i].targetInfo.adapterId.High, paths[i].targetInfo.id);
+                if (!cache.TryGetValue(key, out var facts))
+                {
+                    looked++;
+                    facts = ReadTarget(paths[i]);
+                    cache[key] = facts;
+                    if (!facts.Ok) failed++;
+                }
+                id = facts.Path.Length > 0 ? facts.Path : facts.Edid;
+                edid = facts.Edid;
+                gdi = SourceName(paths[i]);
+            }
+            else skipped++;
             ids[i] = id;
             int x = 0, y = 0, w = 0, h = 0;
             uint idx = paths[i].sourceInfo.modeInfoIdx;
@@ -187,41 +233,54 @@ public static class DisplayNative
                 x = modes[idx].positionX;
                 y = modes[idx].positionY;
             }
-            bool active = (paths[i].flags & PathActive) != 0;
             logical.Add(new CcdPath
             {
+                Index = i,
                 StableId = id,
-                Gdi = SourceName(paths[i]),
+                Edid = edid,
+                Gdi = gdi,
                 X = x, Y = y, W = w, H = h,
                 Active = active,
                 Primary = active && x == 0 && y == 0,
-                Available = paths[i].targetInfo.targetAvailable != 0
+                Available = available
             });
         }
+        AppEnv.Log("display: paths " + pathCount + " looked " + looked + " failed " + failed + " skipped " + skipped);
         return new NativeSet { Logical = logical.ToArray(), Paths = paths, Modes = modes, Ids = ids };
     }
 
-    static bool Covers(NativeSet live, CcdCommit commit)
+    static int ApplyNative(NativeSet live, IReadOnlyList<CcdPath> chosen, CcdCommit commit, bool allowRevive)
     {
-        foreach (var want in commit.Paths)
-        {
-            if (!want.Active || want.StableId.Length == 0) continue;
-            bool found = false;
-            foreach (var id in live.Ids)
-                if (string.Equals(id, want.StableId, StringComparison.OrdinalIgnoreCase)) { found = true; break; }
-            if (!found) return false;
-        }
-        return true;
-    }
-
-    static int ApplyNative(NativeSet live, CcdCommit commit)
-    {
-        bool revive = commit.Kind == "topology";
+        bool revive = allowRevive && commit.Kind == "topology";
         var paths = live.Paths;
         var modes = live.Modes;
         uint modeCount = (uint)modes.Length;
+        var keep = new HashSet<int>();
+        var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in chosen)
+        {
+            if (p.Index >= 0) keep.Add(p.Index);
+            if (p.StableId.Length > 0) targets.Add(p.StableId);
+        }
         for (int i = 0; i < paths.Length; i++)
         {
+            if (!keep.Contains(i))
+            {
+                string id = i < live.Ids.Length ? live.Ids[i] : "";
+                if (id.Length > 0 && targets.Contains(id))
+                {
+                    var extra = paths[i];
+                    extra.flags &= ~PathActive;
+                    var srcOff = extra.sourceInfo;
+                    var dstOff = extra.targetInfo;
+                    srcOff.modeInfoIdx = ModeInvalid;
+                    dstOff.modeInfoIdx = ModeInvalid;
+                    extra.sourceInfo = srcOff;
+                    extra.targetInfo = dstOff;
+                    paths[i] = extra;
+                }
+                continue;
+            }
             var want = CcdLayout.Find(live.Ids[i], commit.Paths);
             if (want == null || live.Ids[i].Length == 0) continue;
             var path = paths[i];
@@ -244,7 +303,7 @@ public static class DisplayNative
                 modes[idx].positionX = want.X;
                 modes[idx].positionY = want.Y;
             }
-            else revive = true;
+            else if (allowRevive) revive = true;
             paths[i] = path;
         }
         if (revive)
@@ -257,30 +316,12 @@ public static class DisplayNative
             }
             var again = QueryPaths();
             if (again == null) return 0;
-            return ApplyPositions(again, commit);
+            var settled = new CcdCommit { Paths = commit.Paths, Kind = "supplied", Flags = CcdLayout.ApplySupplied };
+            return ApplyNative(again, CcdLayout.Collapse(again.Logical), settled, false);
         }
         int applied = CallSet(paths, modeCount, modes, CcdLayout.ApplySupplied);
         if (applied != 0) AppEnv.Log("display: SetDisplayConfig supplied returned " + applied);
         return applied;
-    }
-
-    static int ApplyPositions(NativeSet live, CcdCommit commit)
-    {
-        var paths = live.Paths;
-        var modes = live.Modes;
-        uint modeCount = (uint)modes.Length;
-        for (int i = 0; i < paths.Length; i++)
-        {
-            var want = CcdLayout.Find(live.Ids[i], commit.Paths);
-            if (want == null || !want.Active) continue;
-            uint idx = paths[i].sourceInfo.modeInfoIdx;
-            if (idx == ModeInvalid || idx >= modeCount || modes[idx].infoType != SourceMode) continue;
-            modes[idx].positionX = want.X;
-            modes[idx].positionY = want.Y;
-        }
-        int rc = CallSet(paths, modeCount, modes, CcdLayout.ApplySupplied);
-        if (rc != 0) AppEnv.Log("display: SetDisplayConfig positions returned " + rc);
-        return rc;
     }
 
     static int CallSet(PATH[] paths, uint modeCount, MODE[]? modes, uint flags)
@@ -290,7 +331,15 @@ public static class DisplayNative
         return rc;
     }
 
-    static string TargetId(PATH path)
+    struct TargetFacts
+    {
+        public string Path;
+        public string Edid;
+        public bool Ok;
+        public TargetFacts(string path, string edid, bool ok) { Path = path; Edid = edid; Ok = ok; }
+    }
+
+    static TargetFacts ReadTarget(PATH path)
     {
         var target = new TARGET_NAME
         {
@@ -303,17 +352,12 @@ public static class DisplayNative
             }
         };
         int rc = DisplayConfigGetDeviceInfo(ref target);
-        if (rc != 0)
-        {
-            AppEnv.Log("display: DisplayConfigGetDeviceInfo target returned " + rc);
-            return "";
-        }
+        if (rc != 0) return new TargetFacts("", "", false);
         string devicePath = target.monitorDevicePath ?? "";
-        if (devicePath.Length > 0) return devicePath;
-        if (target.edidManufactureId != 0 || target.edidProductCodeId != 0)
-            return target.edidManufactureId.ToString("X4") + ":" + target.edidProductCodeId.ToString("X4") + ":" + (target.monitorFriendlyDeviceName ?? "");
-        AppEnv.Log("display: target has no device path or EDID");
-        return "";
+        string edid = "";
+        if (target.edidManufactureId != 0 || target.edidProductCodeId != 0 || (target.monitorFriendlyDeviceName ?? "").Length > 0)
+            edid = target.edidManufactureId.ToString("X4") + ":" + target.edidProductCodeId.ToString("X4") + ":" + (target.monitorFriendlyDeviceName ?? "");
+        return new TargetFacts(devicePath, edid, devicePath.Length > 0 || edid.Length > 0);
     }
 
     static string SourceName(PATH path)
@@ -329,11 +373,7 @@ public static class DisplayNative
             }
         };
         int rc = DisplayConfigGetDeviceInfo(ref src);
-        if (rc != 0)
-        {
-            AppEnv.Log("display: DisplayConfigGetDeviceInfo source returned " + rc);
-            return "";
-        }
+        if (rc != 0) return "";
         return src.viewGdiDeviceName ?? "";
     }
 
@@ -378,7 +418,10 @@ public static class DisplayNative
     {
         public DEV_HEADER header;
         public uint flags;
-        public ushort outputTechnology, edidManufactureId, edidProductCodeId, connectorInstance;
+        public uint outputTechnology;
+        public ushort edidManufactureId;
+        public ushort edidProductCodeId;
+        public uint connectorInstance;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string monitorFriendlyDeviceName;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string monitorDevicePath;
     }
@@ -396,6 +439,11 @@ public static class DisplayNative
         if (cmd.StartsWith("disable ", StringComparison.Ordinal)) return "/disable " + cmd.Substring(8);
         if (cmd.StartsWith("primary ", StringComparison.Ordinal)) return "/SetPrimary " + cmd.Substring(8);
         if (cmd.StartsWith("load ", StringComparison.Ordinal)) return "/LoadConfig \"" + cmd.Substring(5) + "\"";
+        if (cmd.StartsWith("monitors ", StringComparison.Ordinal))
+        {
+            var bits = cmd.Substring(9).Split(" | ", StringSplitOptions.RemoveEmptyEntries);
+            return "/SetMonitors " + string.Join(" ", bits.Select(b => "\"" + b + "\""));
+        }
         return "";
     }
 

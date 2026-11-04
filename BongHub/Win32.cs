@@ -390,7 +390,10 @@ internal static class Win32
     {
         public DISPLAYCONFIG_DEVICE_INFO_HEADER header;
         public uint flags;
-        public ushort outputTechnology, edidManufactureId, edidProductCodeId, connectorInstance;
+        public uint outputTechnology;
+        public ushort edidManufactureId;
+        public ushort edidProductCodeId;
+        public uint connectorInstance;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string monitorFriendlyDeviceName;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string monitorDevicePath;
     }
@@ -431,27 +434,31 @@ internal static class Win32
         GC.KeepAlive(cb);
         try
         {
-            if (GetDisplayConfigBufferSizes(2, out uint pathCount, out uint modeCount) == 0 && pathCount > 0)
+            int targetBytes = Marshal.SizeOf<DISPLAYCONFIG_TARGET_DEVICE_NAME>();
+            int sourceBytes = Marshal.SizeOf<DISPLAYCONFIG_SOURCE_DEVICE_NAME>();
+            if (targetBytes != 420 || sourceBytes != 84)
+                AppEnv.Log("display: identity struct target " + targetBytes + " source " + sourceBytes);
+            else if (GetDisplayConfigBufferSizes(2, out uint pathCount, out uint modeCount) == 0 && pathCount > 0)
             {
                 var paths = new DISPLAYCONFIG_PATH_INFO[pathCount];
                 var modes = new DISPLAYCONFIG_MODE_INFO[Math.Max(1, modeCount)];
                 if (QueryDisplayConfig(2, ref pathCount, paths, ref modeCount, modes, IntPtr.Zero) == 0)
                 {
+                    int failed = 0;
                     for (int i = 0; i < pathCount; i++)
                     {
-                        var src = new DISPLAYCONFIG_SOURCE_DEVICE_NAME { header = new DISPLAYCONFIG_DEVICE_INFO_HEADER { type = 1, size = (uint)Marshal.SizeOf<DISPLAYCONFIG_SOURCE_DEVICE_NAME>(), adapterId = paths[i].sourceInfo.adapterId, id = paths[i].sourceInfo.id } };
+                        var src = new DISPLAYCONFIG_SOURCE_DEVICE_NAME { header = new DISPLAYCONFIG_DEVICE_INFO_HEADER { type = 1, size = (uint)sourceBytes, adapterId = paths[i].sourceInfo.adapterId, id = paths[i].sourceInfo.id } };
                         if (DisplayConfigGetDeviceInfo(ref src) != 0) continue;
                         string device = src.viewGdiDeviceName ?? "";
                         if (!byDevice.TryGetValue(device, out var info)) continue;
-                        var target = new DISPLAYCONFIG_TARGET_DEVICE_NAME { header = new DISPLAYCONFIG_DEVICE_INFO_HEADER { type = 2, size = (uint)Marshal.SizeOf<DISPLAYCONFIG_TARGET_DEVICE_NAME>(), adapterId = paths[i].targetInfo.adapterId, id = paths[i].targetInfo.id } };
-                        if (DisplayConfigGetDeviceInfo(ref target) == 0)
-                        {
-                            info.Path = target.monitorDevicePath ?? "";
-                            info.Edid = target.edidManufactureId.ToString("X4") + ":" + target.edidProductCodeId.ToString("X4") + ":" + (target.monitorFriendlyDeviceName ?? "");
-                        }
+                        var target = new DISPLAYCONFIG_TARGET_DEVICE_NAME { header = new DISPLAYCONFIG_DEVICE_INFO_HEADER { type = 2, size = (uint)targetBytes, adapterId = paths[i].targetInfo.adapterId, id = paths[i].targetInfo.id } };
+                        if (DisplayConfigGetDeviceInfo(ref target) != 0) { failed++; continue; }
+                        info.Path = target.monitorDevicePath ?? "";
+                        info.Edid = target.edidManufactureId.ToString("X4") + ":" + target.edidProductCodeId.ToString("X4") + ":" + (target.monitorFriendlyDeviceName ?? "");
                         int n = ScreenBind.WindowsNumber(device);
                         if (n > 0) info.Number = n;
                     }
+                    if (failed > 0) AppEnv.Log("display: DisplayConfigGetDeviceInfo target failed " + failed);
                 }
             }
         }
