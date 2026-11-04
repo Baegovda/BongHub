@@ -140,7 +140,9 @@ internal static class Win32
             bool changed = false;
             int w = pos.cx > 0 ? pos.cx : t.W;
             int h = pos.cy > 0 ? pos.cy : t.H;
-            if ((pos.flags & SWP_NOMOVE) == 0 && w > 0 && h > 0 && OnAnyMonitor(pos.x, pos.y, w, h))
+            // WPF reapplies Left/Top after a caption layout. Values past -32768 are clamped, so a note
+            // stored at -3610 with the off-screen offset lands at -2768. Keep the Place target.
+            if ((pos.flags & SWP_NOMOVE) == 0 && (pos.x != t.X || pos.y != t.Y) && (t.W > 0 || OnAnyMonitor(pos.x, pos.y, w, h)))
             {
                 pos.x = t.X; pos.y = t.Y; changed = true;
             }

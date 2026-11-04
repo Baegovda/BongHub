@@ -518,7 +518,6 @@ public static class NoteTest
             t.Check("slash command turns the line into a to-do", made && todo.StartsWith("Todo|☐"), menu + " -> " + todo);
             string narrow = host.CaptionFitReport(StickyNoteWindow.NoteMinWidth);
             t.Check("narrow note keeps the title and toolbar inside the caption", narrow.Length == 0, narrow);
-            host.Width = 330;
             host.SetTitle("강 메모");
             host.UpdateLayout();
             var textPt = host.TitleBox.TranslatePoint(new Point(6, Math.Max(1, host.TitleBox.ActualHeight / 2)), host);

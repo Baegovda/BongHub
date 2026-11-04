@@ -594,7 +594,6 @@ public static class SmokeTest
         string narrowNote = note.CaptionFitReport(StickyNoteWindow.NoteMinWidth);
         t.Check("narrow note title and toolbar stay inside the caption", narrowNote.Length == 0, narrowNote);
         note.SetTitle("강 메모");
-        note.Width = 330;
         note.UpdateLayout();
         var textPt = note.TitleBox.TranslatePoint(new Point(6, Math.Max(1, note.TitleBox.ActualHeight / 2)), note);
         double titleEdge = note.TitleBox.TranslatePoint(new Point(note.TitleBox.ActualWidth, 0), note).X;
