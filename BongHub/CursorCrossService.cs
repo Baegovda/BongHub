@@ -36,6 +36,9 @@ public static class CursorCrossService
         Active = true;
     }
 
+    /// <summary>Reads the live layout once. Smoke never calls this.</summary>
+    public static List<EdgeMonitor> Capture() => ReadScreens();
+
     public static void Stop()
     {
         timer?.Stop();
@@ -69,13 +72,22 @@ public static class CursorCrossService
             foreach (var s in Win32.DisplayIdentities())
             {
                 var (wmm, hmm) = EdidMm(s.Device);
-                list.Add(new EdgeMonitor
+                var panel = new EdgeMonitor
                 {
                     Id = s.Path.Length > 0 ? s.Path : s.Device,
                     X = s.X, Y = s.Y, W = s.W, H = s.H,
                     WidthMm = wmm, HeightMm = hmm,
                     Orientation = s.Orientation
-                });
+                };
+                var tune = AppSettings.FindPhysical(panel.Id);
+                if (tune != null)
+                {
+                    panel.OverrideWmm = tune.WidthMm;
+                    panel.OverrideHmm = tune.HeightMm;
+                    panel.ShiftXmm = tune.ShiftXmm;
+                    panel.ShiftYmm = tune.ShiftYmm;
+                }
+                list.Add(panel);
             }
         }
         catch (Exception ex) { AppEnv.Log("cursor cross: " + ex.Message); }

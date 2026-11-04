@@ -332,6 +332,14 @@ public static class ConfigStore
     public static int CountNotes() => NoteStore.All.Count;
 }
 
+/// <summary>One monitor's physical size and shift. Zero millimetres mean "use EDID".</summary>
+public sealed class PhysicalTune
+{
+    public string Id = "";
+    public int WidthMm, HeightMm;
+    public double ShiftXmm, ShiftYmm;
+}
+
 /// <summary>Preferences kept outside the shared config.json.</summary>
 public static class AppSettings
 {
@@ -342,8 +350,11 @@ public static class AppSettings
     public static bool ChipsVisible { get; private set; } = true;
     /// <summary>Remap the pointer along a shared monitor edge by EDID millimetres. Missing JSON means off.</summary>
     public static bool CursorCross { get; private set; }
+    public static IReadOnlyList<PhysicalTune> Physical => physical;
+    static List<PhysicalTune> physical = new();
     public static void Load()
     {
+        physical = new List<PhysicalTune>();
         try
         {
             if (File.Exists(AppEnv.SettingsPath) && JsonNode.Parse(File.ReadAllText(AppEnv.SettingsPath)) is JsonObject o)
@@ -352,11 +363,36 @@ public static class AppSettings
                 MonitorLocked = o["MonitorLocked"] == null || (o["MonitorLocked"]?.GetValue<bool>() ?? true);
                 ChipsVisible = o["ChipsVisible"] == null || (o["ChipsVisible"]?.GetValue<bool>() ?? true);
                 CursorCross = o["CursorCross"]?.GetValue<bool>() ?? false;
+                if (o["Physical"] is JsonArray arr)
+                    foreach (var node in arr)
+                    {
+                        if (node is not JsonObject item) continue;
+                        string id = item["Id"]?.GetValue<string>() ?? "";
+                        if (id.Length == 0) continue;
+                        physical.Add(new PhysicalTune
+                        {
+                            Id = id,
+                            WidthMm = item["WidthMm"]?.GetValue<int>() ?? 0,
+                            HeightMm = item["HeightMm"]?.GetValue<int>() ?? 0,
+                            ShiftXmm = item["ShiftXmm"]?.GetValue<double>() ?? 0,
+                            ShiftYmm = item["ShiftYmm"]?.GetValue<double>() ?? 0
+                        });
+                    }
             }
         }
         catch { }
         Fx.Enabled = !ReduceMotion;
         CursorCrossService.Sync();
+    }
+    public static PhysicalTune? FindPhysical(string? id)
+        => string.IsNullOrEmpty(id) ? null : physical.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase));
+    public static void SetPhysical(IReadOnlyList<PhysicalTune> next)
+    {
+        physical = next.Where(p => p.Id.Length > 0).Select(p => new PhysicalTune
+        {
+            Id = p.Id, WidthMm = Math.Max(0, p.WidthMm), HeightMm = Math.Max(0, p.HeightMm), ShiftXmm = p.ShiftXmm, ShiftYmm = p.ShiftYmm
+        }).ToList();
+        Write();
     }
     public static void SetReduceMotion(bool v)
     {
@@ -384,7 +420,10 @@ public static class AppSettings
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(AppEnv.SettingsPath)!);
-            File.WriteAllText(AppEnv.SettingsPath, new JsonObject { ["ReduceMotion"] = ReduceMotion, ["MonitorLocked"] = MonitorLocked, ["ChipsVisible"] = ChipsVisible, ["CursorCross"] = CursorCross }.ToJsonString());
+            var rows = new JsonArray();
+            foreach (var p in physical)
+                rows.Add(new JsonObject { ["Id"] = p.Id, ["WidthMm"] = p.WidthMm, ["HeightMm"] = p.HeightMm, ["ShiftXmm"] = p.ShiftXmm, ["ShiftYmm"] = p.ShiftYmm });
+            File.WriteAllText(AppEnv.SettingsPath, new JsonObject { ["ReduceMotion"] = ReduceMotion, ["MonitorLocked"] = MonitorLocked, ["ChipsVisible"] = ChipsVisible, ["CursorCross"] = CursorCross, ["Physical"] = rows }.ToJsonString());
         }
         catch { }
     }

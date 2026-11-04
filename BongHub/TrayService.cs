@@ -111,6 +111,34 @@ public sealed class TrayService : IDisposable
         icon.Dispose();
     }
 
+    readonly List<MenuItem> profileItems = new();
+    Separator? profileSep;
+
+    /// <summary>Puts the applied profile first in the menu with a check. Names are the profile names, not the check prefix.</summary>
+    public void SetProfiles(IReadOnlyList<string> names, string active, Action<string>? apply = null)
+    {
+        foreach (var item in profileItems) Menu.Items.Remove(item);
+        profileItems.Clear();
+        if (profileSep != null) { Menu.Items.Remove(profileSep); profileSep = null; }
+        int exit = -1;
+        for (int i = 0; i < Menu.Items.Count; i++)
+            if (Menu.Items[i] is MenuItem mi && (mi.Header as string) == "종료") exit = i;
+        if (exit < 0 || names == null || names.Count == 0) return;
+        int at = exit;
+        foreach (var name in names)
+        {
+            if (string.IsNullOrWhiteSpace(name)) continue;
+            string label = string.Equals(name, active, StringComparison.Ordinal) ? "✓ " + name : name;
+            string captured = name;
+            var item = Item(label, () => apply?.Invoke(captured));
+            profileItems.Add(item);
+            Menu.Items.Insert(at++, item);
+        }
+        if (profileItems.Count == 0) return;
+        profileSep = new Separator { Style = (Style)Application.Current.FindResource(typeof(Separator)) };
+        Menu.Items.Insert(at, profileSep);
+    }
+
     ContextMenu BuildMenu()
     {
         var menu = new ContextMenu { Style = (Style)Application.Current.FindResource(typeof(ContextMenu)) };
