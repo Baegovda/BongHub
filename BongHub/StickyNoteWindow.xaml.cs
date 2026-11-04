@@ -62,6 +62,7 @@ public partial class StickyNoteWindow : Window
     Image? selectedImage;
     bool loading, metaDirty, corruptBackedUp, closing, discarding, sizing, stylingLinks;
     Brush linkBrush = Brushes.Transparent;
+    Brush titleInkBrush = Brushes.White;
     Run? hoveredLink;
     RichTextBox? editor;
     public bool IsEditing => editor != null;
@@ -877,6 +878,7 @@ public partial class StickyNoteWindow : Window
     void ApplyInk()
     {
         var body = InkBrush(NoteColors.Ink(Meta.Color));
+        titleInkBrush = body;
         double size = Math.Round(PointsToDip(ClampPt(ConfigStore.Notes.FontSize)) * 1.6, 2);
         TitleBox.Opacity = 1;
         TitleBox.Foreground = body;
@@ -1294,12 +1296,15 @@ public partial class StickyNoteWindow : Window
         return true;
     }
 
-    /// <summary>Empty when the title and the tools both sit in the caption and inside <paramref name="width"/>.</summary>
+    /// <summary>Empty when the title and the tools both sit in the caption and inside <paramref name="width"/> physical pixels.</summary>
     public string CaptionFitReport(double width)
     {
         int metaW = Meta.W;
         double saved = Width;
-        Width = width;
+        double scale = 1;
+        try { scale = VisualTreeHelper.GetDpi(this).DpiScaleX; } catch { }
+        if (scale < 0.5 || double.IsNaN(scale)) scale = 1;
+        Width = width / scale;
         UpdateLayout();
         FitCaption();
         UpdateLayout();
@@ -1335,13 +1340,23 @@ public partial class StickyNoteWindow : Window
     /// <summary>True only when a real hit-test lands on the title box, not the empty caption.</summary>
     public bool TitleEditsAt(Point windowPoint)
     {
-        var hit = VisualTreeHelper.HitTest(this, windowPoint)?.VisualHit as DependencyObject;
-        while (hit != null)
-        {
-            if (hit == TitleBox) return true;
-            hit = VisualTreeHelper.GetParent(hit) as DependencyObject;
-        }
-        return false;
+        bool titleHit = false;
+        VisualTreeHelper.HitTest(this,
+            potential => potential is UIElement element && !element.IsHitTestVisible
+                ? HitTestFilterBehavior.ContinueSkipSelfAndChildren
+                : HitTestFilterBehavior.Continue,
+            result =>
+            {
+                var hit = result.VisualHit as DependencyObject;
+                while (hit != null)
+                {
+                    if (hit == TitleBox) { titleHit = true; return HitTestResultBehavior.Stop; }
+                    hit = VisualTreeHelper.GetParent(hit) as DependencyObject;
+                }
+                return HitTestResultBehavior.Continue;
+            },
+            new PointHitTestParameters(windowPoint));
+        return titleHit;
     }
 
     /// <summary>A click on the empty caption drags. A double-click there does not focus the title.</summary>
@@ -1395,9 +1410,12 @@ public partial class StickyNoteWindow : Window
         TitleClip.MaxWidth = avail;
         TitleClip.FontSize = TitleBox.FontSize;
         TitleClip.FontFamily = TitleBox.FontFamily;
-        TitleClip.Foreground = TitleBox.Foreground;
+        // The textbox text is transparent while clipped so the ellipsis can replace it. Keep the
+        // visible ink separate: a later sizing pass must not copy that transparent brush here.
+        TitleClip.Foreground = titleInkBrush;
         TitleClip.Visibility = clip && !editing ? Visibility.Visible : Visibility.Collapsed;
-        TitleBox.Opacity = clip && !editing ? 0 : 1;
+        TitleBox.Foreground = clip && !editing ? Brushes.Transparent : titleInkBrush;
+        TitleBox.Opacity = 1; // keep the text box hit-testable beneath the non-hit-testable ellipsis
     }
 
     void FitCaption()

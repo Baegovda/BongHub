@@ -70,7 +70,7 @@ dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Relea
 
 | 명령 | 결과 |
 |---|---|
-| `--smoketest` | **167 PASS**. 임시 폴더만 써요. `--data`와 `BONGHUB_DATA`는 무시해요. |
+| `--smoketest` | **168 PASS**. 임시 폴더만 써요. `--data`와 `BONGHUB_DATA`는 무시해요. |
 | `--notetest --data <복사본>` | **155 PASS**. `data/` 원본이 아니라 복사본만 넘겨요. |
 | PatchTests | `RESULT PASS` |
 | RichEditTests | 1×1 `\pngblip` 왕복 `RESULT PASS` |
@@ -163,7 +163,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 | 1.7.0 | 맞닿은 변을 넘는 커서를 EDID mm의 같은 실물 위치로 옮겨요. 기본은 꺼짐이고, 후크는 없어요. | 162 / 154 |
 | 1.7.1 | 프로필 편집 창, 스위치는 누른 것만 움직이고, 현재 프로필 표시, 실물 배치에서 mm를 고쳐요. | 165 / 154 |
 | 1.7.2 | CCD 대상 이름은 420바이트예요. 모니터마다 경로 하나만 켜고, 장치 경로·EDID·GDI 이름 순으로 맞춰요. | 166 / 154 |
-| 1.7.3 | 메모 제목은 글자 너비만큼만 고치고, 빈 제목 막대는 창을 끌어요. | 167 / 155 |
+| 1.7.3 | 메모 제목은 글자 너비만큼만 고치고, 빈 제목 막대는 창을 끌어요. | 168 / 155 |
 
 ## 7. 시험할 때 지키면 안 되는 것
 

@@ -518,7 +518,7 @@ public static class SmokeTest
         t.Check("older profiles keep their fields and gain topmost, launch, and icon visibility", aged[0].Monitors[0].Id == "SAM1" && agedBack[0].Workspace == "W1" && agedBack[0].Hotkey == "Ctrl+Alt+1" && agedBack[0].Brightness[0].Value == 40 && agedBack[0].Monitors[0].Scale == 125 && agedBack[0].Monitors[0].Orientation == 90 && agedBack[0].Apps[0].TopMost && agedBack[0].Apps[0].Launch && !agedBack[0].Icons[0].Show && ProfileDoc.Parse(oldProfile)[0].Monitors[0].Scale == 100 && ProfileDoc.Parse(oldProfile)[0].Icons[0].Show && missingLaunch.Count == 1 && presentLaunch.Count == 0 && placed.Windows[0].TopMost && undone != null && undone.Name == "작업" && ProfileUndo.Last == null);
 
         // ---------- sticky note ----------
-        var meta = NoteStore.Create("g:aurora", 200, 200, 330, 330);
+        var meta = NoteStore.Create("g:aurora", 200, 200, 520, 330);
         meta.Color = "g:lemon";   // one of the lightest gradients: hardest case for white text
         var nsw = Stopwatch.StartNew();
         var note = NoteManager.Open(meta.Id, activate: false)!;
@@ -529,7 +529,7 @@ public static class SmokeTest
         t.Check("note did not take focus (ShowActivated=false)", noteFocus == null && !note.ShowActivated, noteFocus ?? (note.ShowActivated ? "showActivated=true" : ""));
         var r = Win32.Rect(note);
         bool onScreen = Win32.OnAnyMonitor(r.Left, r.Top, r.Width, r.Height);
-        t.Check("note placed by physical pixels", !onScreen && r.Left == 200 + AppEnv.OffsetX && r.Top == 200 + AppEnv.OffsetY && r.Width == 330 && r.Height == 330, $"onScreen={onScreen} {r.Left},{r.Top} {r.Width}x{r.Height}");
+        t.Check("note placed by physical pixels", !onScreen && r.Left == 200 + AppEnv.OffsetX && r.Top == 200 + AppEnv.OffsetY && r.Width == 520 && r.Height == 330, $"onScreen={onScreen} {r.Left},{r.Top} {r.Width}x{r.Height}");
         var noteMode = HwndSource.FromHwnd(Win32.Handle(note))?.CompositionTarget?.RenderMode;
         t.Check("note window renders in software", noteMode == RenderMode.SoftwareOnly, noteMode?.ToString() ?? "no target");
         note.Editor.Document.Blocks.Clear();
@@ -560,6 +560,8 @@ public static class SmokeTest
         double bodyPx = note.Editor.Document.FontSize;
         double titlePx = note.TitleBox.FontSize;
         var titleBrush = note.TitleBox.Foreground as SolidColorBrush;
+        var visibleTitleBrush = note.TitleClip.Visibility == Visibility.Visible
+            ? note.TitleClip.Foreground as SolidColorBrush : titleBrush;
         var caretBrush = note.TitleBox.CaretBrush as SolidColorBrush;
         var editorCaret = note.Editor.CaretBrush as SolidColorBrush;
         double titleX = note.TitleBox.TranslatePoint(new Point(note.TitleBox.Padding.Left, 0), note).X;
@@ -570,7 +572,7 @@ public static class SmokeTest
         double titleTop = note.TitleBox.TranslatePoint(new Point(0, 0), note).Y;
         double gap = bodyTop - titleBottom;
         var noteInk = NoteColors.Ink(note.Meta.Color);
-        bool ink = titleBrush != null && caretBrush != null && titleBrush.Color == noteInk && caretBrush.Color == noteInk && editorCaret != null && editorCaret.Color == noteInk && titleBrush.Color.A == 255;
+        bool ink = visibleTitleBrush != null && caretBrush != null && visibleTitleBrush.Color == noteInk && caretBrush.Color == noteInk && editorCaret != null && editorCaret.Color == noteInk && visibleTitleBrush.Color.A == 255;
         double titleRight = note.TitleBox.TranslatePoint(new Point(note.TitleBox.ActualWidth, 0), note).X;
         double barLeft = note.Bar.TranslatePoint(new Point(0, 0), note).X;
         double barTop = note.Bar.TranslatePoint(new Point(0, 0), note).Y;
@@ -582,7 +584,7 @@ public static class SmokeTest
         t.Check("format bar can reset the font size", note.ResetSizeBtn != null && note.ResetSizeBtn.Content as string == "\uE72C");
         note.SetTitle("");
         var hintBrush = note.TitleHint.Foreground as SolidColorBrush;
-        t.Check("note title placeholder is dimmed", note.TitleHint.Visibility == Visibility.Visible && note.TitleHint.Opacity <= 0.45 && note.TitleHint.Opacity >= 0.25 && hintBrush != null && titleBrush != null && hintBrush.Color == titleBrush.Color);
+        t.Check("note title placeholder is dimmed", note.TitleHint.Visibility == Visibility.Visible && note.TitleHint.Opacity <= 0.45 && note.TitleHint.Opacity >= 0.25 && hintBrush != null && visibleTitleBrush != null && hintBrush.Color == visibleTitleBrush.Color);
         note.SetTitle("회의");
         foreach (var key in new[] { "g:lemon", "yellow", "g:mist", "g:blocks", "g:mint", "charcoal" })
         {
@@ -593,13 +595,40 @@ public static class SmokeTest
         note.SetColor("g:aurora");
         string narrowNote = note.CaptionFitReport(StickyNoteWindow.NoteMinWidth);
         t.Check("narrow note title and toolbar stay inside the caption", narrowNote.Length == 0, narrowNote);
+
+        // Widths and offsets below are physical pixels, as NoteMeta stores them. WPF layout and
+        // HitTest points use DIPs, so convert with this off-screen window's own DPI.
+        double dpiScale = VisualTreeHelper.GetDpi(note).DpiScaleX;
+        if (dpiScale < 0.5 || double.IsNaN(dpiScale)) dpiScale = 1;
+        Point TitlePoint(StickyNoteWindow target, double physicalX) => target.TitleBox.TranslatePoint(
+            new Point(physicalX / dpiScale, Math.Max(1, target.TitleBox.ActualHeight / 2)), target);
+
+        var narrowMeta = NoteStore.Create("g:aurora", 400, 600, 330, 330);
+        var narrowWindow = NoteManager.Open(narrowMeta.Id, activate: false)!;
+        bool narrowReady = await TestKit.Until(() => narrowWindow.Ready, 6000);
+        if (narrowReady)
+        {
+            narrowWindow.SetTitle(new string('가', 40));
+            narrowWindow.UpdateLayout();
+        }
+        var clippedTextPt = TitlePoint(narrowWindow, 6);
+        var clipBrush = narrowWindow.TitleClip.Foreground as SolidColorBrush;
+        var hiddenBrush = narrowWindow.TitleBox.Foreground as SolidColorBrush;
+        bool clippedInk = clipBrush != null && clipBrush.Color == NoteColors.Ink(narrowWindow.Meta.Color)
+            && hiddenBrush != null && hiddenBrush.Color.A == 0 && narrowWindow.TitleBox.Opacity >= 0.99;
+        bool clippedTextEdits = narrowReady && narrowWindow.TitleClip.Visibility == Visibility.Visible
+            && clippedInk && narrowWindow.TitleEditsAt(clippedTextPt);
+        t.Check("clipped title stays visible and editable at the current DPI", clippedTextEdits,
+            $"dpi={dpiScale:0.##} ready={narrowReady} clip={narrowWindow.TitleClip.Visibility} ink={clipBrush?.Color} hit={narrowWindow.TitleEditsAt(clippedTextPt)} boxOpacity={narrowWindow.TitleBox.Opacity:0.00}");
+        narrowWindow.CloseNote();
+
         note.SetTitle("강 메모");
         note.UpdateLayout();
-        var textPt = note.TitleBox.TranslatePoint(new Point(6, Math.Max(1, note.TitleBox.ActualHeight / 2)), note);
+        var textPt = TitlePoint(note, 6);
         double titleEdge = note.TitleBox.TranslatePoint(new Point(note.TitleBox.ActualWidth, 0), note).X;
         double toolsLeft = note.Bar.TranslatePoint(new Point(0, 0), note).X;
-        var gapPt = new Point(titleEdge + 18, textPt.Y);
-        bool gapClear = gapPt.X < toolsLeft - 4;
+        var gapPt = new Point(titleEdge + 18 / dpiScale, textPt.Y);
+        bool gapClear = gapPt.X < toolsLeft - 4 / dpiScale;
         bool textEdits = note.TitleEditsAt(textPt);
         bool gapEdits = note.TitleEditsAt(gapPt);
         string drag = note.CaptionPress(gapPt, 1);
@@ -609,14 +638,18 @@ public static class SmokeTest
         double longFull = note.MeasureTitle(note.TitleBox.Text);
         double longRight = note.TitleBox.TranslatePoint(new Point(note.TitleBox.ActualWidth, 0), note).X;
         double longBar = note.Bar.TranslatePoint(new Point(0, 0), note).X;
-        bool longFits = note.TitleClip.Visibility == Visibility.Visible && note.TitleBox.ActualWidth + 6 < longFull && longRight <= longBar + 2;
+        bool longFits = note.TitleClip.Visibility == Visibility.Visible && note.TitleBox.ActualWidth + 6 / dpiScale < longFull && longRight <= longBar + 2 / dpiScale;
+        bool longTitleEdits = note.TitleEditsAt(TitlePoint(note, 6));
         note.SetTitle("");
         note.UpdateLayout();
-        var hintPt = note.TitleBox.TranslatePoint(new Point(4, Math.Max(1, note.TitleBox.ActualHeight / 2)), note);
+        var hintPt = TitlePoint(note, 4);
         double hintEdge = note.TitleBox.TranslatePoint(new Point(note.TitleBox.ActualWidth, 0), note).X;
-        var pastHint = new Point(hintEdge + 16, hintPt.Y);
-        bool emptySized = note.TitleBox.ActualWidth >= 28 && note.TitleBox.ActualWidth < 120 && note.TitleEditsAt(hintPt) && !note.TitleEditsAt(pastHint);
-        t.Check("title edit hits the text and the empty caption drags", gapClear && textEdits && !gapEdits && drag == "drag" && dbl == "drag" && !note.TitleBox.IsKeyboardFocusWithin && longFits && emptySized, $"gap {gapPt.X:0}/{toolsLeft:0} text {textEdits} gapHit {gapEdits} drag {drag}/{dbl} long {note.TitleBox.ActualWidth:0}/{longFull:0} empty {note.TitleBox.ActualWidth:0}");
+        var pastHint = new Point(hintEdge + 16 / dpiScale, hintPt.Y);
+        bool emptySized = note.TitleBox.ActualWidth * dpiScale >= 28 && note.TitleBox.ActualWidth * dpiScale < 120
+            && note.TitleEditsAt(hintPt) && !note.TitleEditsAt(pastHint);
+        t.Check("title text edits and the empty caption drags", gapClear && textEdits && !gapEdits
+            && drag == "drag" && dbl == "drag" && !note.TitleBox.IsKeyboardFocusWithin && longFits && longTitleEdits && emptySized,
+            $"gap {gapPt.X:0}/{toolsLeft:0} text {textEdits} gapHit {gapEdits} drag {drag}/{dbl} long {note.TitleBox.ActualWidth:0}/{longFull:0} longHit={longTitleEdits} empty {note.TitleBox.ActualWidth * dpiScale:0}");
         note.SetTitle("회의");
         note.Editor.Document.Blocks.Clear();
         for (int line = 0; line < 40; line++)
