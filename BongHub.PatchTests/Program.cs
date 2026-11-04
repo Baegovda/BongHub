@@ -715,6 +715,14 @@ string dockStory = AirDockLayout.Story();
 Check("airdock stays on the cursor monitor without launching", dockStory.Length == 0 && AirDockLaunch.NativeStarts == 0, dockStory);
 string crossStory = CursorCross.Story();
 Check("cursor cross matches physical millimetres on a fake desk", crossStory.Length == 0, crossStory);
+if (repo != null)
+{
+    string xaml = File.ReadAllText(Path.Combine(repo, "BongHub", "App.xaml"));
+    int at = xaml.IndexOf("x:Key=\"Switch\"", StringComparison.Ordinal);
+    int end = xaml.IndexOf("x:Key=\"SlimThumb\"", StringComparison.Ordinal);
+    string body = at >= 0 && end > at ? xaml[at..end] : "";
+    Check("switch template does not share a storyboard", body.Contains("TranslateTransform") && !body.Contains("BeginStoryboard"));
+}
 string clipHtml = NoteClip.ToHtml(clip);
 int fragAt = clipHtml.IndexOf("<!--StartFragment-->", StringComparison.Ordinal);
 int fragEnd = clipHtml.IndexOf("<!--EndFragment-->", StringComparison.Ordinal);
@@ -854,8 +862,9 @@ var compared = IconLayout.Compare(savedIcons, currentIcons);
 var iconSurface2 = new MemoryIconSurface();
 iconSurface2.Icons.Add(new DeskIcon { Name = "휴지통", X = 0, Y = 0 });
 iconSurface2.Icons.Add(new DeskIcon { Name = "문서", X = 0, Y = 0 });
-var partialRestore = ProfileDoc.RestoreIcons(savedIcons, iconSurface2, new[] { "문서" });
-Check("icon preview compares a layout and restores the chosen names", IconLayout.Host(-100, 40, iconMonitors) == 0 && IconLayout.Host(50, 50, iconMonitors) == 1 && compared.Same == 1 && compared.Moved == 1 && compared.Missing == 1 && compared.Extra == 1 && compared.Hidden == 1 && partialRestore.Ok && iconSurface2.Icons[0].X == 0 && iconSurface2.Icons[1].X == 10);
+iconSurface2.Icons.Add(new DeskIcon { Name = "숨김", X = 5, Y = 5 });
+var partialRestore = ProfileDoc.RestoreIcons(savedIcons, iconSurface2);
+Check("icon preview compares a layout and restores every saved icon", IconLayout.Host(-100, 40, iconMonitors) == 0 && IconLayout.Host(50, 50, iconMonitors) == 1 && compared.Same == 1 && compared.Moved == 1 && compared.Missing == 1 && compared.Extra == 1 && compared.Hidden == 1 && partialRestore.Ok && iconSurface2.Icons[0].X == -100 && iconSurface2.Icons[0].Y == 40 && iconSurface2.Icons[1].X == 10 && iconSurface2.Icons[1].Y == 10 && iconSurface2.Icons[2].X == 20 && iconSurface2.Icons[2].Y == 20);
 var ownerDesk = new List<ScreenInfo>
 {
     new() { Number = 3, Device = @"\\.\DISPLAY3", Path = "P3", W = 3840, H = 2160, X = -3840, Y = 0, Scale = 125 },

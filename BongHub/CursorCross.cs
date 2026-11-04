@@ -6,6 +6,10 @@ public sealed class EdgeMonitor
     public string Id = "";
     public int X, Y, W, H;
     public int WidthMm, HeightMm;
+    /// <summary>Room width and height in millimetres. Zero keeps the EDID size.</summary>
+    public int OverrideWmm, OverrideHmm;
+    /// <summary>Extra physical shift, in millimetres, from the pixel layout.</summary>
+    public double ShiftXmm, ShiftYmm;
     /// <summary>0, 90, 180, or 270. 90 and 270 swap which EDID side is the room width. Nothing reverses the room axis.</summary>
     public int Orientation;
     public int Right => X + W;
@@ -29,7 +33,7 @@ public static class CursorCross
         var src = Hit(screens, from);
         var dst = Hit(screens, to);
         if (src == null || dst == null || ReferenceEquals(src, dst)) return to;
-        if (src.WidthMm <= 0 || src.HeightMm <= 0 || dst.WidthMm <= 0 || dst.HeightMm <= 0) return to;
+        if (AxisMm(src, true) <= 0 || AxisMm(src, false) <= 0 || AxisMm(dst, true) <= 0 || AxisMm(dst, false) <= 0) return to;
         if (TrySide(src, dst, from, out int y)) return new CursorPoint(to.X, y);
         if (TryStack(src, dst, from, out int x)) return new CursorPoint(x, to.Y);
         return to;
@@ -52,6 +56,10 @@ public static class CursorCross
         // 960px into the shared edge is 150mm on the 4K and lands 480px (150mm) into the 1080p.
         var up = Step(desk, new CursorPoint(-961, 2), new CursorPoint(-961, -2));
         if (up.Y != -2 || up.X != -1441) return "up cross " + up.X + "," + up.Y;
+        topLeft.ShiftXmm = 10;
+        var shifted = Step(desk, new CursorPoint(-961, 2), new CursorPoint(-961, -2));
+        topLeft.ShiftXmm = 0;
+        if (shifted.Y != -2 || shifted.X != -1473) return "shift " + shifted.X + "," + shifted.Y;
 
         var down = Step(desk, new CursorPoint(-1441, -2), new CursorPoint(-1441, 2));
         if (down.Y != 2 || down.X != -961) return "down cross " + down.X + "," + down.Y;
@@ -113,7 +121,89 @@ public static class CursorCross
         };
         var skipped = Step(wide, new CursorPoint(998, 100), new CursorPoint(1010, 100));
         if (skipped != new CursorPoint(1010, 100)) return "a 3px gap was a shared edge " + skipped.X + "," + skipped.Y;
+
+        var bare = new[] { M("a", 0, 0, 1920, 1080, 0, 0, 0), M("b", 1920, 0, 1920, 1080, 0, 0, 0) };
+        bare[0].OverrideWmm = 600; bare[0].OverrideHmm = 300;
+        bare[1].OverrideWmm = 600; bare[1].OverrideHmm = 150;
+        var typed = Step(bare, new CursorPoint(1910, 100), new CursorPoint(1930, 100));
+        if (typed.X != 1930 || typed.Y != 200) return "override without EDID " + typed.X + "," + typed.Y;
+        var inches = MmFromDiagonal(27, 3840, 2160);
+        if (inches.W != 598 || inches.H != 336) return "diagonal " + inches.W + "x" + inches.H;
+
+        var laid = Arrange(desk);
+        var leftBox = laid.First(b => b.Id == "4k-l");
+        var topBox = laid.First(b => b.Id == "1080-l");
+        if (Math.Abs(leftBox.X + 600) > 0.2 || Math.Abs(leftBox.Y) > 0.2) return "layout left " + leftBox.X + "," + leftBox.Y;
+        if (Math.Abs(topBox.Y + 340) > 0.2 || Math.Abs(topBox.X + 300.16) > 0.6) return "layout top " + topBox.X + "," + topBox.Y;
+        topLeft.ShiftXmm = 12;
+        var dragged = Arrange(desk).First(b => b.Id == "1080-l");
+        topLeft.ShiftXmm = 0;
+        if (Math.Abs(dragged.X - (topBox.X + 12)) > 0.2) return "drag " + dragged.X;
         return "";
+    }
+
+    public static EdgeMonitor[] SampleDesk() => new[]
+    {
+        M("4k-l", -3840, 0, 3840, 2160, 600, 340, 0),
+        M("4k-r", 0, 0, 3840, 2160, 600, 340, 0),
+        M("1080-l", -1921, -1080, 1920, 1080, 600, 340, 0),
+        M("1080-r", -1, -1080, 1920, 1080, 600, 340, 180),
+        M("small", 1919, -1096, 960, 640, 210, 140, 0)
+    };
+
+    public readonly record struct PanelMm(int W, int H);
+
+    /// <summary>16:9 at 27 inches is 598×336 mm. Pixel width and height are the room size.</summary>
+    public static PanelMm MmFromDiagonal(double inches, int pixelW, int pixelH)
+    {
+        if (inches <= 0 || pixelW <= 0 || pixelH <= 0) return new PanelMm(0, 0);
+        double diag = inches * 25.4;
+        double aspect = pixelW / (double)pixelH;
+        double h = diag / Math.Sqrt(aspect * aspect + 1.0);
+        return new PanelMm((int)Math.Round(h * aspect), (int)Math.Round(h));
+    }
+
+    public static double DiagonalInches(double widthMm, double heightMm)
+    {
+        if (widthMm <= 0 || heightMm <= 0) return 0;
+        return Math.Sqrt(widthMm * widthMm + heightMm * heightMm) / 25.4;
+    }
+
+    public readonly record struct PhysBox(string Id, double X, double Y, double W, double H);
+
+    /// <summary>Places each panel in millimetres from the pixel seams, then adds the user's shift.</summary>
+    public static List<PhysBox> Arrange(IReadOnlyList<EdgeMonitor> screens)
+    {
+        var placed = new Dictionary<EdgeMonitor, (double X, double Y)>();
+        if (screens == null || screens.Count == 0) return new List<PhysBox>();
+        var root = screens.FirstOrDefault(s => s.X <= 0 && s.Right > 0 && s.Y <= 0 && s.Bottom > 0) ?? screens[0];
+        var queue = new Queue<EdgeMonitor>();
+        queue.Enqueue(root);
+        placed[root] = (root.ShiftXmm, root.ShiftYmm);
+        while (queue.Count > 0)
+        {
+            var a = queue.Dequeue();
+            var (ax, ay) = placed[a];
+            foreach (var b in screens)
+            {
+                if (placed.ContainsKey(b) || ReferenceEquals(a, b)) continue;
+                if (!TryOffset(a, b, ax, ay, out double bx, out double by)) continue;
+                placed[b] = (bx + b.ShiftXmm, by + b.ShiftYmm);
+                queue.Enqueue(b);
+            }
+        }
+        double right = placed.Count == 0 ? 0 : placed.Max(kv => kv.Value.X + Room(kv.Key, true));
+        foreach (var s in screens)
+        {
+            if (placed.ContainsKey(s)) continue;
+            placed[s] = (right + s.ShiftXmm, s.ShiftYmm);
+            right += Room(s, true) + 12;
+        }
+        return screens.Select(s =>
+        {
+            var p = placed[s];
+            return new PhysBox(s.Id, p.X, p.Y, Room(s, true), Room(s, false));
+        }).ToList();
     }
 
     static EdgeMonitor M(string id, int x, int y, int w, int h, int wmm, int hmm, int orientation)
@@ -150,10 +240,11 @@ public static class CursorCross
         double srcPer = MmPerPx(src, horizontal);
         double dstPer = MmPerPx(dst, horizontal);
         if (srcPer <= 0 || dstPer <= 0) return pixel;
-        double srcMm = (pixel - start) * srcPer;
-        if (srcMm < 0) srcMm = 0;
-        int along = (int)Math.Round(srcMm / dstPer);
-        int at = start + along;
+        double srcShift = horizontal ? src.ShiftXmm : src.ShiftYmm;
+        double dstShift = horizontal ? dst.ShiftXmm : dst.ShiftYmm;
+        double rel = (pixel - start) * srcPer + srcShift - dstShift;
+        int alongPx = (int)Math.Round(rel / dstPer);
+        int at = start + alongPx;
         if (at < start) at = start;
         if (at > end) at = end;
         return at;
@@ -188,8 +279,48 @@ public static class CursorCross
         return null;
     }
 
+    static bool TryOffset(EdgeMonitor a, EdgeMonitor b, double ax, double ay, out double bx, out double by)
+    {
+        bx = by = 0;
+        double aw = Room(a, true), ah = Room(a, false), bw = Room(b, true), bh = Room(b, false);
+        if (Beside(a, b))
+        {
+            bx = ax + aw;
+            by = ay + (b.Y - a.Y) * (ah / Math.Max(1, a.H));
+            return true;
+        }
+        if (Beside(b, a))
+        {
+            bx = ax - bw;
+            by = ay + (b.Y - a.Y) * (ah / Math.Max(1, a.H));
+            return true;
+        }
+        if (Stacked(a, b))
+        {
+            by = ay + ah;
+            bx = ax + (b.X - a.X) * (aw / Math.Max(1, a.W));
+            return true;
+        }
+        if (Stacked(b, a))
+        {
+            by = ay - bh;
+            bx = ax + (b.X - a.X) * (aw / Math.Max(1, a.W));
+            return true;
+        }
+        return false;
+    }
+
+    static double Room(EdgeMonitor s, bool horizontal)
+    {
+        double mm = AxisMm(s, horizontal);
+        if (mm > 0) return mm;
+        return Math.Max(40, (horizontal ? s.W : s.H) * 0.15);
+    }
+
     static double AxisMm(EdgeMonitor s, bool horizontal)
     {
+        if (horizontal && s.OverrideWmm > 0) return s.OverrideWmm;
+        if (!horizontal && s.OverrideHmm > 0) return s.OverrideHmm;
         int o = ((s.Orientation % 360) + 360) % 360;
         bool portrait = o is 90 or 270;
         double mm = horizontal

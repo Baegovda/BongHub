@@ -1318,15 +1318,9 @@ public static class ProfileDoc
     public static List<ProfileIcon> CaptureIcons(IReadOnlyList<DeskIcon> icons)
         => (icons ?? Array.Empty<DeskIcon>()).Select(i => new ProfileIcon { Name = i.Name ?? "", X = i.X, Y = i.Y }).ToList();
 
-    public static DeskResult RestoreIcons(IReadOnlyList<ProfileIcon> icons, IIconSurface surface, IReadOnlyCollection<string>? only = null)
+    public static DeskResult RestoreIcons(IReadOnlyList<ProfileIcon> icons, IIconSurface surface)
     {
         IEnumerable<ProfileIcon> src = icons ?? Array.Empty<ProfileIcon>();
-        src = src.Where(i => i.Show);
-        if (only != null)
-        {
-            var set = new HashSet<string>(only, StringComparer.OrdinalIgnoreCase);
-            src = src.Where(i => set.Contains(i.Name ?? ""));
-        }
         return IconMatch.Apply(surface, src.Select(i => new DeskIcon { Name = i.Name ?? "", X = i.X, Y = i.Y }).ToList());
     }
 
@@ -1928,7 +1922,7 @@ public static class ProfileDiff
                 if (s != null && (s.X != m.X || s.Y != m.Y || s.W != m.W || s.H != m.H)) moved++;
             }
         int wins = profile.Apps?.Count ?? 0;
-        int icons = profile.RestoreIcons ? (profile.Icons?.Count(i => i.Show) ?? 0) : 0;
+        int icons = profile.RestoreIcons ? (profile.Icons?.Count ?? 0) : 0;
         int bright = profile.Brightness?.Count(b => b.Value >= 0) ?? 0;
         var parts = new List<string>();
         if (moved > 0) parts.Add("모니터 " + moved + "곳");

@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 
@@ -346,11 +347,45 @@ public partial class MainWindow : Window
         group.Children.Add(row);
         return row;
     }
-    CheckBox Switch(bool on, Action<bool> changed, bool enabled = true)
+    string? switchCue;
+
+    CheckBox Switch(bool on, Action<bool> changed, bool enabled = true, string? cue = null)
     {
         var c = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = on, IsEnabled = enabled };
-        c.Click += (_, _) => changed(c.IsChecked == true);
+        c.Loaded += (_, _) =>
+        {
+            bool animate = cue != null && cue == switchCue;
+            if (animate) switchCue = null;
+            SlideSwitch(c, c.IsChecked == true, animate);
+        };
+        c.Click += (_, _) =>
+        {
+            bool next = c.IsChecked == true;
+            switchCue = cue;
+            SlideSwitch(c, next, true);
+            changed(next);
+            if (switchCue == cue) switchCue = null;
+        };
         return c;
+    }
+
+    /// <summary>A fresh clock for this checkbox. The template used to share one storyboard, so every knob moved.</summary>
+    void SlideSwitch(CheckBox box, bool on, bool animate)
+    {
+        box.ApplyTemplate();
+        if (box.Template?.FindName("T", box) is not TranslateTransform knob) return;
+        if (box.Template.FindName("On", box) is not UIElement fill) return;
+        if (!animate || !Fx.Enabled)
+        {
+            knob.BeginAnimation(TranslateTransform.XProperty, null);
+            knob.X = on ? 20 : 0;
+            fill.BeginAnimation(UIElement.OpacityProperty, null);
+            fill.Opacity = on ? 1 : 0;
+            return;
+        }
+        var ease = new BackEase { Amplitude = 0.35, EasingMode = EasingMode.EaseOut };
+        knob.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(on ? 0 : 20, on ? 20 : 0, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease, FillBehavior = FillBehavior.HoldEnd });
+        fill.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(on ? 0 : 1, on ? 1 : 0, TimeSpan.FromMilliseconds(180)) { FillBehavior = FillBehavior.HoldEnd });
     }
     TextBlock Value(string text) => new() { Text = text, FontSize = 14, Foreground = (Brush)FindResource("Secondary") };
     TextBlock Chevron() => new() { Text = "\uE76C", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 11, Foreground = (Brush)FindResource("Tertiary") };
@@ -498,7 +533,7 @@ public partial class MainWindow : Window
                 Interlocked.Exchange(ref displayBusy, 0);
                 bool done = ok;
                 string fail = err;
-                try { Dispatcher.BeginInvoke(() => { if (done) ProfileOsd.Succeed(); else ProfileOsd.Fail(fail); if (switchHoldPending) ScheduleWindowSettle(); else NoteManager.SettleTopology(); if (CurrentPage == "presets") Render("presets", false); }); } catch { }
+                try { Dispatcher.BeginInvoke(() => { if (done) ProfileOsd.Succeed(); else ProfileOsd.Fail(fail); if (switchHoldPending) ScheduleWindowSettle(); else NoteManager.SettleTopology(); PublishProfiles(); if (CurrentPage == "presets") Render("presets", false); }); } catch { }
             }
         });
     }
@@ -591,8 +626,28 @@ public partial class MainWindow : Window
             SelectedProfileId = Profiles.FirstOrDefault()?.Id ?? "";
     }
 
+    DispatcherTimer? saveTimer;
+    Action? pendingEdit;
+
+    /// <summary>Profile fields write themselves. Text waits a moment so a keystroke does not rebuild the page.</summary>
+    void SaveSoon(Action edit)
+    {
+        pendingEdit = edit;
+        saveTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(240) };
+        saveTimer.Stop();
+        saveTimer.Tick -= FlushSave;
+        saveTimer.Tick += FlushSave;
+        saveTimer.Start();
+    }
+
+    void FlushSave(object? sender, EventArgs e) => SaveProfiles();
+
     void SaveProfiles()
     {
+        saveTimer?.Stop();
+        var edit = pendingEdit;
+        pendingEdit = null;
+        edit?.Invoke();
         if (AppEnv.Off || AppEnv.Smoke || AppEnv.NoteTest || AppEnv.ReadOnly) return;
         try
         {
@@ -600,6 +655,30 @@ public partial class MainWindow : Window
             File.WriteAllText(System.IO.Path.Combine(AppEnv.DataDir, "profiles.json"), ProfileDoc.ToJson(Profiles));
         }
         catch { }
+    }
+
+    void PublishProfiles()
+    {
+        var names = Profiles.Select(p => p.Name).Where(n => n.Length > 0).ToList();
+        (Application.Current as App)?.Tray?.SetProfiles(names, ActivePreset, name =>
+        {
+            var hit = Profiles.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
+            if (hit != null) RequestApplyProfile(hit.Id);
+        });
+    }
+
+    /// <summary>Marks the applied profile. Adds a fake row when the test desk has no profile by that name.</summary>
+    public void NoteCurrentProfile(string name)
+    {
+        RememberPreset(name);
+        EnsureProfiles();
+        if (Profiles.All(p => !string.Equals(p.Name, name, StringComparison.Ordinal)))
+        {
+            var added = ProfileDoc.Add(Profiles);
+            ProfileDoc.Rename(added, name);
+        }
+        if (CurrentPage == "presets") Render("presets", false);
+        PublishProfiles();
     }
 
     void TouchProfile(Action edit)
@@ -862,8 +941,26 @@ public partial class MainWindow : Window
                 trail.Children.Add(undo);
             }
             trail.Children.Add(ProfileMenu(item));
+            if (string.Equals(item.Name, ActivePreset, StringComparison.Ordinal) && item.Name.Length > 0)
+            {
+                var badge = new Border
+                {
+                    Tag = "current-profile",
+                    CornerRadius = new CornerRadius(8),
+                    Background = (Brush)FindResource("Accent"),
+                    Padding = new Thickness(8, 3, 8, 3),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Child = new TextBlock { Text = "현재", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White }
+                };
+                trail.Children.Insert(0, badge);
+            }
             var row = Row(g, "\uE7F4", hexes[i++ % hexes.Length], item.Name.Length > 0 ? item.Name : "(이름 없음)", sub, trail, () => SelectProfile(item.Id));
             if (item.Id == SelectedProfileId) row.Background = new SolidColorBrush(Color.FromArgb(0x22, 0x4C, 0x8A, 0xFE));
+            if (string.Equals(item.Name, ActivePreset, StringComparison.Ordinal) && item.Name.Length > 0)
+                row.BorderBrush = (Brush)FindResource("Accent");
+            if (string.Equals(item.Name, ActivePreset, StringComparison.Ordinal))
+                row.BorderThickness = new Thickness(1.5);
         }
         var cmds = new StackPanel { Orientation = Orientation.Horizontal };
         cmds.Children.Add(Small("추가", () => { var n = ProfileDoc.Add(Profiles); SelectedProfileId = n.Id; SaveProfiles(); ProfileHotkey.Bind(Profiles, ConfigStore.Notes.Hotkey); Render("presets", false); }));
@@ -871,8 +968,9 @@ public partial class MainWindow : Window
         DrawProfileSwitchSettings();
         var selected = Profiles.FirstOrDefault(p => p.Id == SelectedProfileId);
         if (selected != null) BuildProfileEditor(selected, PageHost);
-        Footer("지금 적용을 눌렀을 때만 화면이 바뀌어요. 시험에서는 디스플레이와 실제 창을 열지 않아요.");
+        Footer("지금 적용을 눌렀을 때만 화면이 바뀌어요. 고친 값은 바로 저장돼요. 시험에서는 디스플레이와 실제 창을 열지 않아요.");
         profileEditor?.Redraw();
+        PublishProfiles();
     }
 
     void PageNotes()

@@ -32,6 +32,16 @@ public static class SmokeTest
         app.ExitSmoke(code);
     }
 
+    static bool HasTag(DependencyObject root, string tag)
+    {
+        if (root is FrameworkElement fe && Equals(fe.Tag, tag)) return true;
+        int count = 0;
+        try { count = VisualTreeHelper.GetChildrenCount(root); } catch { count = 0; }
+        for (int i = 0; i < count; i++)
+            if (HasTag(VisualTreeHelper.GetChild(root, i), tag)) return true;
+        return false;
+    }
+
     static void ContrastCheck(TestKit t, Window w, FrameworkElement? el, string name, double need)
     {
         if (el == null) { t.Check($"contrast {name}", false, "element missing"); return; }
@@ -466,8 +476,9 @@ public static class SmokeTest
         var iconSurface2 = new MemoryIconSurface();
         iconSurface2.Icons.Add(new DeskIcon { Name = "휴지통", X = 0, Y = 0 });
         iconSurface2.Icons.Add(new DeskIcon { Name = "문서", X = 0, Y = 0 });
-        var partialRestore = ProfileDoc.RestoreIcons(savedIcons, iconSurface2, new[] { "문서" });
-        t.Check("icon preview compares a layout and restores the chosen names", IconLayout.Host(-100, 40, iconMonitors) == 0 && IconLayout.Host(50, 50, iconMonitors) == 1 && compared.Same == 1 && compared.Moved == 1 && compared.Missing == 1 && compared.Extra == 1 && compared.Hidden == 1 && partialRestore.Ok && iconSurface2.Icons[0].X == 0 && iconSurface2.Icons[1].X == 10 && iconSurface2.Icons[1].Y == 10);
+        iconSurface2.Icons.Add(new DeskIcon { Name = "숨김", X = 5, Y = 5 });
+        var partialRestore = ProfileDoc.RestoreIcons(savedIcons, iconSurface2);
+        t.Check("icon preview compares a layout and restores every saved icon", IconLayout.Host(-100, 40, iconMonitors) == 0 && IconLayout.Host(50, 50, iconMonitors) == 1 && compared.Same == 1 && compared.Moved == 1 && compared.Missing == 1 && compared.Extra == 1 && compared.Hidden == 1 && partialRestore.Ok && iconSurface2.Icons[0].X == -100 && iconSurface2.Icons[0].Y == 40 && iconSurface2.Icons[1].X == 10 && iconSurface2.Icons[1].Y == 10 && iconSurface2.Icons[2].X == 20 && iconSurface2.Icons[2].Y == 20);
         var ownerDesk = new List<ScreenInfo>
         {
             new() { Number = 3, Device = @"\\.\DISPLAY3", Path = "P3", W = 3840, H = 2160, X = -3840, Y = 0, Scale = 125 },
@@ -679,6 +690,18 @@ public static class SmokeTest
         t.Check("tray show-all opens notes", await TestKit.Until(() => NoteManager.Windows.Count >= 1, 4000), $"open {NoteManager.Windows.Count}");
         t.Check("tray note commands still installed no hook", NoteHotkey.HookInstalls == 0 && NoteHotkey.NativeRegistrations == 0);
 
+        w.NoteCurrentProfile("작업");
+        w.OpenProfileEditor();
+        int readsBeforePhysical = CursorCrossService.Reads;
+        w.OpenPhysicalEditor();
+        var editor = Application.Current.Windows.OfType<ProfileEditorWindow>().FirstOrDefault();
+        var phys = Application.Current.Windows.OfType<PhysicalLayoutWindow>().FirstOrDefault();
+        bool mmSet = phys != null && phys.SetMillimetres("4k-l", 610, 350);
+        bool mmSaved = AppSettings.FindPhysical("4k-l") is { WidthMm: 610, HeightMm: 350 };
+        bool darkEditor = editor != null && editor.WindowStyle == WindowStyle.None && editor.Left < -20000 && ThemeMark.GetOn(editor) && (editor.Background is not SolidColorBrush ink || NoteColors.Lum(ink.Color) < 0.2);
+        t.Check("profile editor is a dark rounded window off-screen", darkEditor);
+        t.Check("physical layout edits fake millimetres and does not read a monitor", phys != null && phys.Left < -20000 && mmSet && mmSaved && CursorCrossService.Reads == readsBeforePhysical && CursorCrossService.HookInstalls == 0 && !CursorCrossService.Active);
+
         var bare = new HashSet<string>();
         var pageClips = new List<string>();
         foreach (var page in new[] { "notes", "general", "powertoys", "airdock", "kakao", "presets" })
@@ -698,6 +721,9 @@ public static class SmokeTest
         foreach (var item in ThemeAudit.Bare(tray.Menu)) bare.Add(item);
         t.Check("every control uses a themed style", bare.Count == 0, bare.Count == 0 ? "" : string.Join(", ", bare.Take(12)));
         t.Check("settings pages do not clip text", pageClips.Count == 0, pageClips.Count == 0 ? "" : string.Join(" | ", pageClips.Take(4)));
+        tray.SetProfiles(new[] { "작업", "집" }, "작업");
+        bool trayMark = tray.Menu.Items.OfType<MenuItem>().Any(m => (m.Header as string) == "✓ 작업") && !tray.Menu.Items.OfType<MenuItem>().Any(m => (m.Header as string) == "✓ 집");
+        t.Check("current profile is marked in the list and the tray", HasTag(w, "current-profile") && trayMark);
         string crossStory = CursorCross.Story();
         AppSettings.SetCursorCross(true);
         bool crossOff = !CursorCrossService.Active && CursorCrossService.HookInstalls == 0 && CursorCrossService.Reads == 0;

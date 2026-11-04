@@ -228,8 +228,8 @@ public partial class MainWindow
         }
         else auto += " · 화면 구성마다 자동 저장은 일반 실행에서 보여요.";
         Row(icons, "\uE8A5", "5AC8FA", "이 화면 구성", auto, null, tight: true);
-        Row(icons, "\uE8A5", "5AC8FA", "적용할 때 아이콘 되돌리기", "보이는 아이콘만 옮겨요.", Switch(profile.RestoreIcons, v => { profile.RestoreIcons = v; SaveProfiles(); }, !AppEnv.ReadOnly), tight: true);
-        Row(icons, "\uE8A5", "34C759", "모니터맵 위 아이콘 점", "켜면 모니터맵에 작은 점으로 보여요.", Switch(PreviewIcons, v => { PreviewIcons = v; Render("presets", false); }, true), tight: true);
+        Row(icons, "\uE8A5", "5AC8FA", "적용할 때 아이콘 되돌리기", "담긴 아이콘을 전부 옮겨요.", Switch(profile.RestoreIcons, v => { profile.RestoreIcons = v; SaveProfiles(); }, !AppEnv.ReadOnly, "restore-icons"), tight: true);
+        Row(icons, "\uE8A5", "34C759", "모니터맵 위 아이콘 점", "켜면 모니터맵에 작은 점으로 보여요.", Switch(PreviewIcons, v => { PreviewIcons = v; SaveProfiles(); Render("presets", false); }, true, "preview-icons"), tight: true);
         if (profile.Icons.Count == 0) return;
         var scroll = new ScrollViewer { MaxHeight = 132, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         var wrap = new WrapPanel { Margin = new Thickness(8, 4, 8, 8) };
@@ -264,8 +264,6 @@ public partial class MainWindow
         }
         scroll.Content = wrap;
         icons.Children.Add(scroll);
-        var picked = profile.Icons.Where(i => i.Show).Select(i => i.Name).ToList();
-        Row(icons, "\uE8A5", "34C759", "고른 아이콘만 되돌리기", "눈 표시가 켜진 아이콘만 옮겨요.", Small("고른 것만", () => RestoreSelectedIcons(profile, picked)), tight: true);
     }
 
     void DrawGhosts(MonitorProfile profile, Canvas stage, ProfileScene scene)
@@ -437,9 +435,18 @@ public partial class MainWindow
     void DrawProfileSettings(MonitorProfile profile, Panel sink)
     {
         var g = Group(sink);
-        Row(g, "\uE7F8", "5AC8FA", "화면 경계", "EDID mm로 같은 실물 위치에 둬요. 기본은 꺼짐.", Switch(AppSettings.CursorCross, v => AppSettings.SetCursorCross(v), !AppEnv.ReadOnly), tight: true);
+        var crossTrail = new StackPanel { Orientation = Orientation.Horizontal };
+        crossTrail.Children.Add(Small("실물 배치", OpenPhysicalEditor));
+        crossTrail.Children.Add(Switch(AppSettings.CursorCross, v => AppSettings.SetCursorCross(v), !AppEnv.ReadOnly, "cursor-cross"));
+        Row(g, "\uE7F8", "5AC8FA", "화면 경계", "EDID로 맞춰요. 없으면 그대로 둬요.", crossTrail, tight: true);
         var nameBox = new TextBox { Text = profile.Name, MinWidth = 140, FontSize = 13, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Foreground };
-        nameBox.LostFocus += (_, _) => { ProfileDoc.Rename(profile, nameBox.Text); SaveProfiles(); ProfileHotkey.Bind(Profiles, ConfigStore.Notes.Hotkey); };
+        void KeepName()
+        {
+            ProfileDoc.Rename(profile, nameBox.Text);
+            ProfileHotkey.Bind(Profiles, ConfigStore.Notes.Hotkey);
+        }
+        nameBox.TextChanged += (_, _) => SaveSoon(KeepName);
+        nameBox.LostFocus += (_, _) => { KeepName(); SaveProfiles(); };
         Row(g, null, null, "이름", null, Chip(nameBox), tight: true);
         var hotkeyBox = new HotkeyField();
         hotkeyBox.SetValue(profile.Hotkey);
@@ -476,7 +483,7 @@ public partial class MainWindow
         };
         Row(g, null, null, "단축키", null, hotkeyBox, tight: true);
         string remembered = profile.SessionSaved.Length == 0 ? "아직 남긴 배치가 없어요." : "마지막 기록 " + profile.SessionSaved + " · 창 " + profile.Session.Count + "개";
-        Row(g, "\uE8A5", "5AC8FA", "떠날 때 창 배치 기억", remembered, Switch(profile.RememberWindows, v => { profile.RememberWindows = v; SaveProfiles(); }, !AppEnv.ReadOnly), tight: true);
+        Row(g, "\uE8A5", "5AC8FA", "떠날 때 창 배치 기억", remembered, Switch(profile.RememberWindows, v => { profile.RememberWindows = v; SaveProfiles(); }, !AppEnv.ReadOnly, "remember-windows"), tight: true);
         if (hotkeyMessage.Length > 0)
             Row(g, "\uE7BA", "FF9500", hotkeyMessage, "Esc는 취소, Backspace는 지워요.", null, tight: true);
     }
@@ -494,7 +501,7 @@ public partial class MainWindow
         y.Tag = "keep:y:" + app.Id;
         w.Tag = "keep:w:" + app.Id;
         h.Tag = "keep:h:" + app.Id;
-        void Commit()
+        void ApplyNumbers()
         {
             int nx = ParseNum(x.Text, app.X), ny = ParseNum(y.Text, app.Y), nw = ParseNum(w.Text, app.W), nh = ParseNum(h.Text, app.H);
             var box = ProfileSnap.Resize(new ProfileBox(mon.X + nx, mon.Y + ny, nw, nh), mon.Work, "", 0, 0, 120);
@@ -503,13 +510,15 @@ public partial class MainWindow
             app.W = box.W;
             app.H = box.H;
             app.State = "normal";
-            SaveProfiles();
-            Render("presets", false);
         }
-        x.LostFocus += (_, _) => Commit();
-        y.LostFocus += (_, _) => Commit();
-        w.LostFocus += (_, _) => Commit();
-        h.LostFocus += (_, _) => Commit();
+        x.TextChanged += (_, _) => SaveSoon(ApplyNumbers);
+        y.TextChanged += (_, _) => SaveSoon(ApplyNumbers);
+        w.TextChanged += (_, _) => SaveSoon(ApplyNumbers);
+        h.TextChanged += (_, _) => SaveSoon(ApplyNumbers);
+        x.LostFocus += (_, _) => { ApplyNumbers(); SaveProfiles(); Render("presets", false); };
+        y.LostFocus += (_, _) => { ApplyNumbers(); SaveProfiles(); Render("presets", false); };
+        w.LostFocus += (_, _) => { ApplyNumbers(); SaveProfiles(); Render("presets", false); };
+        h.LostFocus += (_, _) => { ApplyNumbers(); SaveProfiles(); Render("presets", false); };
         var nums = new StackPanel { Orientation = Orientation.Horizontal };
         nums.Children.Add(Chip(x));
         nums.Children.Add(Chip(y));
@@ -537,7 +546,7 @@ public partial class MainWindow
             if (!ProfileDoc.SetEnabled(profile, mon.Number, v)) { Render("presets", false); return; }
             SaveProfiles();
             Render("presets", false);
-        }, !AppEnv.ReadOnly && !mon.Primary), tight: true);
+        }, !AppEnv.ReadOnly && !mon.Primary, "monitor-" + mon.Number), tight: true);
         int bright = profile.Brightness.FirstOrDefault(b => string.Equals(b.Monitor, mon.Id, StringComparison.OrdinalIgnoreCase))?.Value ?? -1;
         bool brightOn = bright >= 0;
         Row(g, "\uE706", "FFCC00", "밝기", brightOn ? bright + "%" : "적용할 때 밝기는 그대로 둬요.", Switch(brightOn, v =>
@@ -545,7 +554,7 @@ public partial class MainWindow
             SetBrightness(profile, mon.Id, v ? (bright >= 0 ? bright : 70) : -1);
             SaveProfiles();
             Render("presets", false);
-        }, !AppEnv.ReadOnly), tight: true);
+        }, !AppEnv.ReadOnly, "bright-" + mon.Id), tight: true);
         if (!brightOn) return;
         var label = Value(bright + "%");
         label.Margin = new Thickness(8, 0, 0, 0);
@@ -1607,22 +1616,29 @@ public partial class MainWindow
         return true;
     }
 
-    void RestoreSelectedIcons(MonitorProfile profile, IReadOnlyList<string> names)
+    public void OpenPhysicalEditor()
     {
-        if (!DesktopGate.RealAllowed)
+        IReadOnlyList<EdgeMonitor> panels = CursorCrossService.NativeAllowed ? CursorCrossService.Capture() : CursorCross.SampleDesk();
+        if (physicalEditor != null)
         {
-            DesktopBlocks++;
-            DesktopAction = "blocked";
+            physicalEditor.LoadPanels(panels);
+            if (!AppEnv.Off) physicalEditor.Activate();
             return;
         }
-        try
+        physicalEditor = new PhysicalLayoutWindow();
+        physicalEditor.Closed += (_, _) => physicalEditor = null;
+        physicalEditor.LoadPanels(panels);
+        if (AppEnv.Off)
         {
-            using var icons = new ExplorerIconSurface();
-            var result = ProfileDoc.RestoreIcons(profile.Icons, icons, names);
-            DesktopAction = result.Summary();
+            physicalEditor.WindowStartupLocation = WindowStartupLocation.Manual;
+            physicalEditor.ShowActivated = false;
+            physicalEditor.Left = -28000;
+            physicalEditor.Top = -28000;
         }
-        catch (Exception ex) { DesktopAction = ex.Message; }
+        physicalEditor.Show();
     }
+
+    PhysicalLayoutWindow? physicalEditor;
 }
 
 /// <summary>Full-screen crosshair. Created only after the window gate is open, so tests never construct it.</summary>

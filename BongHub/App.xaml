@@ -46,6 +46,8 @@
       <Style TargetType="{x:Type local:MainWindow}" BasedOn="{StaticResource WindowBase}"/>
       <Style TargetType="{x:Type local:StickyNoteWindow}" BasedOn="{StaticResource WindowBase}"/>
       <Style TargetType="{x:Type local:ImageViewerWindow}" BasedOn="{StaticResource WindowBase}"/>
+      <Style TargetType="{x:Type local:ProfileEditorWindow}" BasedOn="{StaticResource WindowBase}"/>
+      <Style TargetType="{x:Type local:PhysicalLayoutWindow}" BasedOn="{StaticResource WindowBase}"/>
       <Style TargetType="Window" BasedOn="{StaticResource WindowBase}"/>
 
       <!-- ===== buttons: pill with hover tint and springy press ===== -->
@@ -150,16 +152,6 @@
                 </Ellipse>
               </Grid>
               <ControlTemplate.Triggers>
-                <Trigger Property="IsChecked" Value="True">
-                  <Trigger.EnterActions><BeginStoryboard><Storyboard>
-                    <DoubleAnimation Storyboard.TargetName="T" Storyboard.TargetProperty="X" To="20" Duration="0:0:0.26"><DoubleAnimation.EasingFunction><BackEase Amplitude="0.35" EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation>
-                    <DoubleAnimation Storyboard.TargetName="On" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.18"/>
-                  </Storyboard></BeginStoryboard></Trigger.EnterActions>
-                  <Trigger.ExitActions><BeginStoryboard><Storyboard>
-                    <DoubleAnimation Storyboard.TargetName="T" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.26"><DoubleAnimation.EasingFunction><BackEase Amplitude="0.35" EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation>
-                    <DoubleAnimation Storyboard.TargetName="On" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.18"/>
-                  </Storyboard></BeginStoryboard></Trigger.ExitActions>
-                </Trigger>
                 <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Root" Property="Opacity" Value="0.38"/></Trigger>
               </ControlTemplate.Triggers>
             </ControlTemplate>
