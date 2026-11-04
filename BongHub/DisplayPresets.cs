@@ -1535,7 +1535,54 @@ public static class ProfileDoc
                 });
         string space = Str(node["windowSpace"]);
         profile.LiftCanvas = space != "pixels" && profile.Apps.Count > 0 && profile.Apps.All(ProfileLegacy.InCanvas);
+        string note = DedupeMonitors(profile);
+        if (note.Length > 0) LastDedupe = (LastDedupe.Length > 0 ? LastDedupe + "; " : "") + profile.Name + ": " + note;
         return profile;
+    }
+
+    public static string LastDedupe = "";
+
+    /// <summary>One row per monitor. A repeated <c>\\.\DISPLAYn</c> keeps the row whose id is that device name. Swapped id and device are rewritten to the device.</summary>
+    public static string DedupeMonitors(MonitorProfile profile)
+    {
+        if (profile?.Monitors == null || profile.Monitors.Count == 0) return "";
+        string Key(ProfileMonitor m)
+        {
+            if (MonitorKey.IsGdi(m.Device)) return m.Device;
+            if (MonitorKey.IsGdi(m.Id)) return m.Id;
+            if (m.Path.Length > 0) return "p:" + m.Path;
+            if (m.Edid.Length > 0) return "e:" + m.Edid;
+            return "n:" + m.Number;
+        }
+        bool SameDevice(ProfileMonitor m) => MonitorKey.IsGdi(m.Device) && string.Equals(m.Id, m.Device, StringComparison.OrdinalIgnoreCase);
+        var notes = new List<string>();
+        var keep = new List<ProfileMonitor>();
+        foreach (var group in profile.Monitors.GroupBy(Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var rows = group.ToList();
+            ProfileMonitor winner;
+            if (rows.Count == 1) winner = rows[0];
+            else
+            {
+                var matched = rows.Where(SameDevice).ToList();
+                winner = matched.FirstOrDefault(m => m.Enabled) ?? matched.FirstOrDefault()
+                    ?? rows.FirstOrDefault(m => MonitorKey.IsGdi(m.Device) && string.Equals(m.Device, @"\\.\DISPLAY" + m.Number, StringComparison.OrdinalIgnoreCase))
+                    ?? rows.FirstOrDefault(m => m.Enabled) ?? rows[0];
+                foreach (var row in rows)
+                    if (!ReferenceEquals(row, winner))
+                        notes.Add("dropped " + (row.Id.Length > 0 ? row.Id : row.Device) + " for " + group.Key);
+            }
+            if (MonitorKey.IsGdi(winner.Device) && winner.Id.Length > 0 && !string.Equals(winner.Id, winner.Device, StringComparison.OrdinalIgnoreCase))
+            {
+                notes.Add("id " + winner.Id + " -> " + winner.Device);
+                winner.Id = winner.Device;
+            }
+            keep.Add(winner);
+        }
+        if (notes.Count == 0) return "";
+        profile.Monitors = keep;
+        SyncLists(profile);
+        return string.Join("; ", notes);
     }
 
     static string Str(JsonNode? node) => node == null ? "" : node.GetValue<string>() ?? "";

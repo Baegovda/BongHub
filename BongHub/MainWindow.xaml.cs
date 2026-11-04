@@ -621,7 +621,9 @@ public partial class MainWindow : Window
         }
         catch { }
         Profiles.Clear();
+        ProfileDoc.LastDedupe = "";
         Profiles.AddRange(ProfileDoc.Migrate(ConfigStore.Presets, ConfigStore.WindowRules, json, ScreenMap.Current()));
+        if (ProfileDoc.LastDedupe.Length > 0) AppEnv.Log("display: " + ProfileDoc.LastDedupe);
         if (Profiles.All(p => p.Id != SelectedProfileId))
             SelectedProfileId = Profiles.FirstOrDefault()?.Id ?? "";
     }
@@ -691,7 +693,10 @@ public partial class MainWindow : Window
     void ApplyPresetNow(MonitorPreset plan, MonitorProfile? profile = null)
     {
         if (profile != null && profile.Monitors.Count > 0)
-            DisplayNative.ApplyArrangement(DeskArrange.FromProfile(profile));
+        {
+            DisplayNative.ApplyArrangement(DeskArrange.FromProfile(profile), profile.Name);
+            if (CcdLayout.Stamp(profile, CcdBank.Saved)) SaveProfiles();
+        }
         else
             new RealDisplay().Apply(PresetPlan.Commands(plan));
         var sleep = PresetExtras.Sleep;

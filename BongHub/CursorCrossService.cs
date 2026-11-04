@@ -72,9 +72,12 @@ public static class CursorCrossService
             foreach (var s in Win32.DisplayIdentities())
             {
                 var (wmm, hmm) = EdidMm(s.Device);
+                string id = MonitorKey.Choose(s.Path, s.Edid, s.Device);
+                if (!string.Equals(id, s.Device, StringComparison.OrdinalIgnoreCase))
+                    AppSettings.RetargetPhysical(s.Device, id);
                 var panel = new EdgeMonitor
                 {
-                    Id = s.Path.Length > 0 ? s.Path : s.Device,
+                    Id = id,
                     X = s.X, Y = s.Y, W = s.W, H = s.H,
                     WidthMm = wmm, HeightMm = hmm,
                     Orientation = s.Orientation

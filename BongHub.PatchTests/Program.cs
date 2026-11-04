@@ -408,6 +408,8 @@ try { new RealBright().Set("SAM73D3", 30, out _); } catch (InvalidOperationExcep
 Check("display and brightness refuse before any api", displayThrew && brightThrew && !DisplayGate.RealAllowed && DisplaySystem.NativeCalls == 0 && DisplaySystem.MmtStarts == 0 && DisplaySystem.ChangeDisplaySettingsExCalls == 0 && DisplaySystem.SetDisplayConfigCalls == 0 && DisplaySystem.BrightnessCalls == 0 && DisplaySystem.DdcCalls == 0);
 string ccdStory = CcdLayout.DisconnectStory();
 Check("disabled monitor deactivates and the primary returns to the origin", ccdStory.Length == 0 && DisplaySystem.SetDisplayConfigCalls == 0 && DisplaySystem.MmtStarts == 0, ccdStory);
+string allPaths = CcdLayout.AllPathsStory();
+Check("ccd all-paths keeps one path per monitor and does not call a display api", allPaths.Length == 0 && DisplayNative.TargetNameBytes == 420 && DisplayNative.SourceNameBytes == 84 && DisplayNative.ModeBytes == 64 && DisplayNative.PathBytes == 72 && DisplaySystem.SetDisplayConfigCalls == 0 && DisplaySystem.MmtStarts == 0 && DisplaySystem.NativeCalls == 0, allPaths + " sizes " + DisplayNative.TargetNameBytes + "/" + DisplayNative.SourceNameBytes + "/" + DisplayNative.ModeBytes + "/" + DisplayNative.PathBytes);
 string holdStory = SwitchHold.Story();
 Check("windows keep their snapshot when a monitor turns off", holdStory.Length == 0 && LiveWindowSurface.NativeCalls == 0, holdStory);
 byte[]? dataBefore = null;

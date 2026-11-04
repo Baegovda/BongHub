@@ -510,10 +510,29 @@ public static class ProfileSwitch
     }
 }
 
+/// <summary>Stable monitor identity. A saved <c>\\.\DISPLAYn</c> key migrates to the device path, then the EDID id.</summary>
+public static class MonitorKey
+{
+    public static bool IsGdi(string? value)
+        => !string.IsNullOrEmpty(value) && value.StartsWith(@"\\.\DISPLAY", StringComparison.OrdinalIgnoreCase);
+
+    public static string Choose(string? path, string? edid, string? gdi)
+    {
+        if (!string.IsNullOrEmpty(path) && !IsGdi(path)) return path;
+        if (!string.IsNullOrEmpty(edid)) return edid;
+        if (!string.IsNullOrEmpty(gdi)) return gdi;
+        return path ?? "";
+    }
+}
+
 /// <summary>One CCD path. <see cref="StableId"/> is the device-interface path or the EDID id, never <c>\\.\DISPLAYn</c>.</summary>
 public sealed class CcdPath
 {
+    public int Index = -1;
     public string StableId = "";
+    public string Edid = "";
+    /// <summary>The id the profile asked for, kept when <see cref="StableId"/> is rewritten to the live path.</summary>
+    public string Alias = "";
     public string Gdi = "";
     public int X, Y, W, H;
     public bool Active = true;
@@ -532,7 +551,8 @@ public sealed class CcdCommit
 
 /// <summary>
 /// Plans one CCD commit. Disabled monitors are deactivated. The enabled primary moves to (0,0)
-/// and every other enabled monitor keeps its offset from that primary. Matching uses <see cref="CcdPath.StableId"/> only.
+/// and every other enabled monitor keeps its offset from that primary.
+/// Matching is the device path, then the EDID id, then the live <c>\\.\DISPLAYn</c> name.
 /// </summary>
 public static class CcdLayout
 {
@@ -567,10 +587,15 @@ public static class CcdLayout
                 var current = Find(want.StableId, live);
                 var src = current ?? Find(want.StableId, saved);
                 if (want.Enabled && current?.Active != true) revive = true;
+                string resolved = current != null && current.StableId.Length > 0 && !MonitorKey.IsGdi(current.StableId) ? current.StableId : want.StableId;
+                if (!seen.Add(resolved)) continue;
                 var path = new CcdPath
                 {
-                    StableId = want.StableId,
-                    Gdi = src?.Gdi ?? "",
+                    Index = src?.Index ?? -1,
+                    StableId = resolved,
+                    Edid = src?.Edid ?? "",
+                    Alias = want.StableId,
+                    Gdi = src?.Gdi ?? want.Device ?? "",
                     X = want.Enabled ? want.X - ox : src?.X ?? want.X,
                     Y = want.Enabled ? want.Y - oy : src?.Y ?? want.Y,
                     W = want.W > 0 ? want.W : src?.W ?? 0,
@@ -580,7 +605,6 @@ public static class CcdLayout
                     Available = src?.Available ?? true
                 };
                 commit.Paths.Add(path);
-                seen.Add(want.StableId);
             }
         }
         if (live != null)
@@ -599,16 +623,158 @@ public static class CcdLayout
     public static CcdPath? Find(string? id, IReadOnlyList<CcdPath>? list)
     {
         if (list == null || string.IsNullOrEmpty(id)) return null;
+        CcdPath? edid = null, gdi = null, alias = null;
         foreach (var p in list)
+        {
             if (string.Equals(p.StableId, id, StringComparison.OrdinalIgnoreCase)) return p;
-        return null;
+            if (edid == null && p.Edid.Length > 0 && string.Equals(p.Edid, id, StringComparison.OrdinalIgnoreCase)) edid = p;
+            if (gdi == null && p.Gdi.Length > 0 && string.Equals(p.Gdi, id, StringComparison.OrdinalIgnoreCase)) gdi = p;
+            if (alias == null && p.Alias.Length > 0 && string.Equals(p.Alias, id, StringComparison.OrdinalIgnoreCase)) alias = p;
+        }
+        return edid ?? gdi ?? alias;
+    }
+
+    public static bool Covers(IReadOnlyList<CcdPath>? live, CcdCommit? commit)
+    {
+        if (commit?.Paths == null) return true;
+        foreach (var want in commit.Paths)
+        {
+            if (!want.Active || want.StableId.Length == 0) continue;
+            if (Find(want.StableId, live) == null && Find(want.Alias, live) == null) return false;
+        }
+        return true;
+    }
+
+    /// <summary>One path per target. An active path wins. Otherwise the first available path whose source is still free.</summary>
+    public static List<CcdPath> Collapse(IReadOnlyList<CcdPath>? paths)
+    {
+        var chosen = new List<CcdPath>();
+        if (paths == null || paths.Count == 0) return chosen;
+        var groups = new Dictionary<string, List<CcdPath>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in paths)
+        {
+            if (!p.Active && !p.Available) continue;
+            string key = p.StableId.Length > 0 ? p.StableId : (p.Edid.Length > 0 ? "edid:" + p.Edid : "src:" + p.Gdi + "#" + p.Index);
+            if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<CcdPath>();
+            list.Add(p);
+        }
+        var ordered = groups.Values.OrderByDescending(g => g.Any(p => p.Active)).ToList();
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in ordered)
+        {
+            CcdPath? pick = null;
+            foreach (var p in group)
+                if (p.Active) { pick = p; break; }
+            if (pick == null)
+            {
+                foreach (var p in group)
+                {
+                    if (!p.Available) continue;
+                    if (p.Gdi.Length > 0 && used.Contains(p.Gdi)) continue;
+                    pick = p;
+                    break;
+                }
+            }
+            if (pick == null) continue;
+            if (pick.Gdi.Length > 0) used.Add(pick.Gdi);
+            chosen.Add(pick);
+        }
+        return chosen;
+    }
+
+    public static bool Stamp(MonitorProfile? profile, IReadOnlyList<CcdPath>? live)
+    {
+        if (profile?.Monitors == null || live == null) return false;
+        bool changed = false;
+        foreach (var m in profile.Monitors)
+        {
+            string key = m.Path.Length > 0 ? m.Path : (m.Edid.Length > 0 ? m.Edid : (m.Device.Length > 0 ? m.Device : m.Id));
+            var hit = Find(key, live);
+            if (hit == null || hit.StableId.Length == 0 || MonitorKey.IsGdi(hit.StableId)) continue;
+            if (!string.Equals(m.Path, hit.StableId, StringComparison.OrdinalIgnoreCase)) { m.Path = hit.StableId; changed = true; }
+            if (hit.Edid.Length > 0 && !string.Equals(m.Edid, hit.Edid, StringComparison.OrdinalIgnoreCase)) { m.Edid = hit.Edid; changed = true; }
+            if (MonitorKey.IsGdi(m.Id)) { m.Id = hit.StableId; changed = true; }
+        }
+        if (changed) ProfileDoc.SyncLists(profile);
+        return changed;
     }
 
     public static CcdPath Clone(CcdPath p) => new()
     {
-        StableId = p.StableId, Gdi = p.Gdi, X = p.X, Y = p.Y, W = p.W, H = p.H,
+        Index = p.Index, StableId = p.StableId, Edid = p.Edid, Alias = p.Alias, Gdi = p.Gdi,
+        X = p.X, Y = p.Y, W = p.W, H = p.H,
         Active = p.Active, Primary = p.Primary, Available = p.Available
     };
+
+    /// <summary>92 QDC_ALL_PATHS rows, several sources per monitor, and unavailable targets. No display API.</summary>
+    public static string AllPathsStory()
+    {
+        var raw = new List<CcdPath>();
+        for (int m = 1; m <= 5; m++)
+        {
+            string path = @"\\?\DISPLAY#DEL" + m.ToString("000") + "#4&" + m + "#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+            string edid = "DEL" + m.ToString("X4") + ":" + m.ToString("X4") + ":Mon" + m;
+            for (int s = 0; s < 16; s++)
+            {
+                raw.Add(new CcdPath
+                {
+                    Index = raw.Count,
+                    StableId = path,
+                    Edid = edid,
+                    Gdi = s == 0 ? @"\\.\DISPLAY" + m : @"\\.\DISPLAY" + m + "#" + s,
+                    Active = s == 0,
+                    Available = true,
+                    Primary = m == 1 && s == 0,
+                    X = (m - 1) * 1920,
+                    Y = 0,
+                    W = 1920,
+                    H = 1080
+                });
+            }
+        }
+        for (int i = 0; i < 12; i++)
+            raw.Add(new CcdPath { Index = raw.Count, Available = false, Active = false });
+        if (raw.Count != 92) return "rows " + raw.Count;
+        var collapsed = Collapse(raw);
+        if (collapsed.Count != 5) return "collapsed " + collapsed.Count;
+        if (collapsed.Any(p => !p.Active)) return "kept an inactive source";
+        if (collapsed.Select(p => p.StableId).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 5) return "targets merged";
+        var desired = new List<DeskScreen>();
+        for (int m = 1; m <= 5; m++)
+            desired.Add(new DeskScreen { StableId = @"\\.\DISPLAY" + m, Device = @"\\.\DISPLAY" + m, Number = m, X = (m - 1) * 1920, Y = 0, W = 1920, H = 1080, Enabled = true, Primary = m == 1 });
+        desired.Add(new DeskScreen { StableId = @"\\.\DISPLAY2", Device = @"\\.\DISPLAY2", Number = 2, X = 1920, Y = 0, W = 1920, H = 1080, Enabled = false });
+        var commit = Build(collapsed, desired, null);
+        if (!Covers(collapsed, commit)) return "gdi name did not cover";
+        int active = commit.Paths.Count(p => p.Active);
+        if (active != 5 || commit.Paths.Where(p => p.Active).Select(p => p.StableId).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 5)
+            return "commit paths " + active;
+        var hit = Find(@"\\.\DISPLAY3", collapsed);
+        if (hit == null || !hit.StableId.Contains("DEL003", StringComparison.Ordinal)) return "gdi match";
+        if (Find(hit.Edid, collapsed) != hit) return "edid match";
+        var fake = new FakeCcd();
+        foreach (var p in collapsed) fake.Paths.Add(Clone(p));
+        if (fake.Apply(commit) != 0) return "fake apply";
+        if (fake.Paths.Count(p => p.Active) != 5) return "fake active " + fake.Paths.Count(p => p.Active);
+        if (MonitorKey.Choose(hit.StableId, hit.Edid, hit.Gdi) != hit.StableId) return "key stayed on the gdi name";
+        var dup = new MonitorProfile { Name = "자리비움" };
+        dup.Monitors.Add(new ProfileMonitor { Id = @"\\.\DISPLAY1", Device = @"\\.\DISPLAY1", Number = 1, Enabled = true, Primary = true });
+        dup.Monitors.Add(new ProfileMonitor { Id = @"\\.\DISPLAY2", Device = @"\\.\DISPLAY2", Number = 2, Enabled = true, X = 1920 });
+        dup.Monitors.Add(new ProfileMonitor { Id = "stale-2", Device = @"\\.\DISPLAY2", Number = 2, Enabled = false, X = 1 });
+        dup.Monitors.Add(new ProfileMonitor { Id = @"\\.\DISPLAY4", Device = @"\\.\DISPLAY3", Number = 3, Enabled = true });
+        dup.Monitors.Add(new ProfileMonitor { Id = @"\\.\DISPLAY3", Device = @"\\.\DISPLAY4", Number = 4, Enabled = true });
+        dup.Monitors.Add(new ProfileMonitor { Id = @"\\.\DISPLAY5", Device = @"\\.\DISPLAY5", Number = 5, Enabled = false });
+        string note = ProfileDoc.DedupeMonitors(dup);
+        if (dup.Monitors.Count != 5) return "deduped " + dup.Monitors.Count + " " + note;
+        var second = dup.Monitors.First(m => m.Number == 2);
+        if (!second.Enabled || second.X != 1920 || !string.Equals(second.Id, second.Device, StringComparison.OrdinalIgnoreCase)) return "display2 " + second.Id;
+        var third = dup.Monitors.First(m => string.Equals(m.Device, @"\\.\DISPLAY3", StringComparison.OrdinalIgnoreCase));
+        var fourth = dup.Monitors.First(m => string.Equals(m.Device, @"\\.\DISPLAY4", StringComparison.OrdinalIgnoreCase));
+        if (!string.Equals(third.Id, third.Device, StringComparison.OrdinalIgnoreCase)) return "swapped 3 " + third.Id;
+        if (!string.Equals(fourth.Id, fourth.Device, StringComparison.OrdinalIgnoreCase)) return "swapped 4 " + fourth.Id;
+        if (dup.Enable.Contains(@"\\.\DISPLAY2") && dup.Disable.Contains(@"\\.\DISPLAY2")) return "display2 stayed in both lists";
+        if (!note.Contains("dropped", StringComparison.Ordinal)) return "no dedupe note";
+        return "";
+    }
 
     /// <summary>Empty when a disabled monitor is deactivated, the primary lands at (0,0), and a later profile turns it back on. No display API.</summary>
     public static string DisconnectStory()

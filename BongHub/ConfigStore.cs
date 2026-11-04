@@ -386,6 +386,16 @@ public static class AppSettings
     }
     public static PhysicalTune? FindPhysical(string? id)
         => string.IsNullOrEmpty(id) ? null : physical.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase));
+    /// <summary>A tune saved under <c>\\.\DISPLAYn</c> follows the device path once EDID lookup works.</summary>
+    public static void RetargetPhysical(string? from, string? to)
+    {
+        if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to) || string.Equals(from, to, StringComparison.OrdinalIgnoreCase)) return;
+        if (!MonitorKey.IsGdi(from) || MonitorKey.IsGdi(to)) return;
+        var old = FindPhysical(from);
+        if (old == null || FindPhysical(to) != null) return;
+        old.Id = to;
+        Write();
+    }
     public static void SetPhysical(IReadOnlyList<PhysicalTune> next)
     {
         physical = next.Where(p => p.Id.Length > 0).Select(p => new PhysicalTune
