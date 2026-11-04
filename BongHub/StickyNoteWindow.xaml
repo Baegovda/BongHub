@@ -32,12 +32,13 @@
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
-      <Grid Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center" ClipToBounds="True">
-        <TextBlock x:Name="TitleHint" Text="제목" FontWeight="Bold" Opacity="0.38" IsHitTestVisible="False" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+      <Grid x:Name="TitleSlot" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center" ClipToBounds="True">
+        <TextBlock x:Name="TitleHint" Text="제목" FontWeight="Bold" Opacity="0.38" IsHitTestVisible="False" HorizontalAlignment="Left" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         <TextBox x:Name="TitleBox" FontWeight="Bold" Background="Transparent" BorderThickness="0" Padding="0" BorderBrush="Transparent"
-                 MaxLength="80" VerticalContentAlignment="Center" VerticalAlignment="Center" TextWrapping="NoWrap"
+                 HorizontalAlignment="Left" MaxLength="80" VerticalContentAlignment="Center" VerticalAlignment="Center" TextWrapping="NoWrap"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled"
                  IsTabStop="False" WindowChrome.IsHitTestVisibleInChrome="True"/>
+        <TextBlock x:Name="TitleClip" FontWeight="Bold" HorizontalAlignment="Left" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" IsHitTestVisible="False" Visibility="Collapsed"/>
       </Grid>
       <StackPanel x:Name="Bar" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Opacity="1">
         <Button x:Name="NewBtn" Style="{StaticResource IconButton}" Content="&#xE710;" ToolTip="새 메모" WindowChrome.IsHitTestVisibleInChrome="True"/>

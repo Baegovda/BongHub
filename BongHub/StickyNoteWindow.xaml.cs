@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -61,6 +62,7 @@ public partial class StickyNoteWindow : Window
     Image? selectedImage;
     bool loading, metaDirty, corruptBackedUp, closing, discarding, sizing, stylingLinks;
     Brush linkBrush = Brushes.Transparent;
+    Brush titleInkBrush = Brushes.White;
     Run? hoveredLink;
     RichTextBox? editor;
     public bool IsEditing => editor != null;
@@ -136,7 +138,14 @@ public partial class StickyNoteWindow : Window
             if (editor == null && !AppEnv.ReadOnly) EnsureEditor().Focus();
         };
         ApplyTitle();
-        TitleBox.TextChanged += (_, _) => OnTitleEdited();
+        TitleBox.TextChanged += (_, _) => { OnTitleEdited(); SizeTitle(); };
+        TitleBox.GotKeyboardFocus += (_, _) => SizeTitle();
+        TitleBox.LostKeyboardFocus += (_, _) => SizeTitle();
+        Caption.PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            if (CaptionPress(e.GetPosition(this), e.ClickCount) != "drag") return;
+            e.Handled = true;
+        };
         TitleBox.PreviewKeyDown += (_, e) =>
         {
             if (e.Key != Key.Enter) return;
@@ -869,6 +878,7 @@ public partial class StickyNoteWindow : Window
     void ApplyInk()
     {
         var body = InkBrush(NoteColors.Ink(Meta.Color));
+        titleInkBrush = body;
         double size = Math.Round(PointsToDip(ClampPt(ConfigStore.Notes.FontSize)) * 1.6, 2);
         TitleBox.Opacity = 1;
         TitleBox.Foreground = body;
@@ -876,12 +886,16 @@ public partial class StickyNoteWindow : Window
         TitleBox.FontSize = size;
         TitleHint.Foreground = body;
         TitleHint.FontSize = size;
+        TitleClip.Foreground = body;
+        TitleClip.FontSize = size;
+        TitleClip.FontFamily = TitleBox.FontFamily;
         foreach (var button in new[] { NewBtn, FontBtn, ColorBtn, ListBtn, CloseBtn, MoreBtn }) button.Foreground = body;
         if (editor != null)
         {
             editor.Foreground = body;
             editor.CaretBrush = body;
         }
+        SizeTitle();
         linkBrush = InkBrush(NoteColors.LinkInk(Meta.Color));
         UpdatePin();
         var doc = editor != null ? editor.Document : Viewer.Document;
@@ -1153,6 +1167,7 @@ public partial class StickyNoteWindow : Window
         TitleBox.Text = Meta.Title ?? "";
         TitleHint.Visibility = TitleBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         suppressTitle = false;
+        SizeTitle();
     }
     void OnTitleEdited()
     {
@@ -1281,12 +1296,15 @@ public partial class StickyNoteWindow : Window
         return true;
     }
 
-    /// <summary>Empty when the title and the tools both sit in the caption and inside <paramref name="width"/>.</summary>
+    /// <summary>Empty when the title and the tools both sit in the caption and inside <paramref name="width"/> physical pixels.</summary>
     public string CaptionFitReport(double width)
     {
         int metaW = Meta.W;
         double saved = Width;
-        Width = width;
+        double scale = 1;
+        try { scale = VisualTreeHelper.GetDpi(this).DpiScaleX; } catch { }
+        if (scale < 0.5 || double.IsNaN(scale)) scale = 1;
+        Width = width / scale;
         UpdateLayout();
         FitCaption();
         UpdateLayout();
@@ -1310,6 +1328,96 @@ public partial class StickyNoteWindow : Window
         return "w=" + ActualWidth.ToString("0") + " title=" + titleW.ToString("0") + " barR=" + barRight.ToString("0") + " titleR=" + titleRight.ToString("0") + " barL=" + barLeft.ToString("0");
     }
 
+    /// <summary><c>title</c> when the point is on the title text, <c>drag</c> on the empty caption, <c>tools</c> on the buttons.</summary>
+    public string CaptionHit(Point windowPoint)
+    {
+        if (TitleBox != null && BoundsOf(TitleBox).Contains(windowPoint)) return "title";
+        if (Bar != null && BoundsOf(Bar).Contains(windowPoint)) return "tools";
+        if (Caption != null && BoundsOf(Caption).Contains(windowPoint)) return "drag";
+        return "outside";
+    }
+
+    /// <summary>True only when a real hit-test lands on the title box, not the empty caption.</summary>
+    public bool TitleEditsAt(Point windowPoint)
+    {
+        bool titleHit = false;
+        VisualTreeHelper.HitTest(this,
+            potential => potential is UIElement element && !element.IsHitTestVisible
+                ? HitTestFilterBehavior.ContinueSkipSelfAndChildren
+                : HitTestFilterBehavior.Continue,
+            result =>
+            {
+                var hit = result.VisualHit as DependencyObject;
+                while (hit != null)
+                {
+                    if (hit == TitleBox) { titleHit = true; return HitTestResultBehavior.Stop; }
+                    hit = VisualTreeHelper.GetParent(hit) as DependencyObject;
+                }
+                return HitTestResultBehavior.Continue;
+            },
+            new PointHitTestParameters(windowPoint));
+        return titleHit;
+    }
+
+    /// <summary>A click on the empty caption drags. A double-click there does not focus the title.</summary>
+    public string CaptionPress(Point windowPoint, int clicks)
+    {
+        string zone = CaptionHit(windowPoint);
+        if (zone != "drag") return zone == "title" ? "edit" : zone;
+        if (clicks > 1) return "drag";
+        if (!AppEnv.Off && !AppEnv.Smoke && !AppEnv.NoteTest && Mouse.LeftButton == MouseButtonState.Pressed)
+            try { DragMove(); } catch { }
+        return "drag";
+    }
+
+    public double MeasureTitle(string? text)
+    {
+        string shown = string.IsNullOrEmpty(text) ? (TitleHint?.Text ?? "제목") : text!;
+        double dpi = 1;
+        try { dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip; } catch { dpi = 1; }
+        if (dpi < 0.5 || double.IsNaN(dpi)) dpi = 1;
+        double size = TitleBox.FontSize > 0 ? TitleBox.FontSize : 16;
+        var formatted = new FormattedText(shown, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            new Typeface(TitleBox.FontFamily, FontStyles.Normal, FontWeights.Bold, FontStretches.Normal), size, Brushes.Black, dpi);
+        return Math.Ceiling(formatted.Width) + 8;
+    }
+
+    Rect BoundsOf(FrameworkElement el)
+    {
+        if (el == null || el.ActualWidth < 1 || el.ActualHeight < 1) return Rect.Empty;
+        var origin = el.TranslatePoint(new Point(0, 0), this);
+        return new Rect(origin, new Size(el.ActualWidth, el.ActualHeight));
+    }
+
+    void SizeTitle()
+    {
+        if (TitleBox == null || TitleSlot == null) return;
+        string text = TitleBox.Text ?? "";
+        bool empty = text.Length == 0;
+        double textW = MeasureTitle(empty ? "" : text);
+        double avail = TitleSlot.ActualWidth;
+        if (double.IsNaN(avail) || avail < 8) avail = textW;
+        double width = Math.Min(textW, Math.Max(8, avail));
+        if (width < 28) width = Math.Min(28, avail);
+        TitleBox.Width = width;
+        TitleBox.MaxWidth = avail;
+        TitleHint.Width = width;
+        TitleHint.MaxWidth = avail;
+        bool clip = !empty && textW > avail + 1;
+        bool editing = TitleBox.IsKeyboardFocusWithin;
+        TitleClip.Text = text;
+        TitleClip.Width = width;
+        TitleClip.MaxWidth = avail;
+        TitleClip.FontSize = TitleBox.FontSize;
+        TitleClip.FontFamily = TitleBox.FontFamily;
+        // The textbox text is transparent while clipped so the ellipsis can replace it. Keep the
+        // visible ink separate: a later sizing pass must not copy that transparent brush here.
+        TitleClip.Foreground = titleInkBrush;
+        TitleClip.Visibility = clip && !editing ? Visibility.Visible : Visibility.Collapsed;
+        TitleBox.Foreground = clip && !editing ? Brushes.Transparent : titleInkBrush;
+        TitleBox.Opacity = 1; // keep the text box hit-testable beneath the non-hit-testable ellipsis
+    }
+
     void FitCaption()
     {
         var tools = new[] { NewBtn, FontBtn, ColorBtn, ListBtn, PinBtn, CloseBtn };
@@ -1324,7 +1432,7 @@ public partial class StickyNoteWindow : Window
         MoreBtn.Height = 30;
         if (FormatTools != null) FormatTools.MaxWidth = Math.Max(80, ActualWidth - 20);
         double inner = Math.Max(0, ActualWidth - 20);
-        if (inner < 1) return;
+        if (inner < 1) { SizeTitle(); return; }
         const double titleMin = 36;
         double Used()
         {
@@ -1334,17 +1442,18 @@ public partial class StickyNoteWindow : Window
             if (MoreBtn.Visibility == Visibility.Visible) w += MoreBtn.Width;
             return w;
         }
-        if (Used() + titleMin <= inner) return;
+        if (Used() + titleMin <= inner) { SizeTitle(); return; }
         foreach (var button in tools) { button.Width = 22; button.Height = 22; }
         MoreBtn.Width = 22;
         MoreBtn.Height = 22;
-        if (Used() + titleMin <= inner) return;
+        if (Used() + titleMin <= inner) { SizeTitle(); return; }
         foreach (var button in new[] { NewBtn, FontBtn, ColorBtn, ListBtn, PinBtn })
         {
             button.Visibility = Visibility.Collapsed;
             MoreBtn.Visibility = Visibility.Visible;
-            if (Used() + titleMin <= inner) return;
+            if (Used() + titleMin <= inner) { SizeTitle(); return; }
         }
+        SizeTitle();
     }
 
     void ShowHiddenTools()

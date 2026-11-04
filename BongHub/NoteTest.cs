@@ -518,6 +518,19 @@ public static class NoteTest
             t.Check("slash command turns the line into a to-do", made && todo.StartsWith("Todo|☐"), menu + " -> " + todo);
             string narrow = host.CaptionFitReport(StickyNoteWindow.NoteMinWidth);
             t.Check("narrow note keeps the title and toolbar inside the caption", narrow.Length == 0, narrow);
+            host.SetTitle("강 메모");
+            host.UpdateLayout();
+            var textPt = host.TitleBox.TranslatePoint(new Point(6, Math.Max(1, host.TitleBox.ActualHeight / 2)), host);
+            double titleEdge = host.TitleBox.TranslatePoint(new Point(host.TitleBox.ActualWidth, 0), host).X;
+            double toolsLeft = host.Bar.TranslatePoint(new Point(0, 0), host).X;
+            var gapPt = new Point(titleEdge + 18, textPt.Y);
+            bool titleHit = host.TitleEditsAt(textPt) && host.CaptionHit(textPt) == "title";
+            bool gapDrag = gapPt.X < toolsLeft - 4 && !host.TitleEditsAt(gapPt) && host.CaptionPress(gapPt, 1) == "drag" && host.CaptionPress(gapPt, 2) == "drag";
+            host.SetTitle(new string('가', 40));
+            host.UpdateLayout();
+            bool clipped = host.TitleClip.Visibility == Visibility.Visible && host.TitleBox.ActualWidth + 6 < host.MeasureTitle(host.TitleBox.Text);
+            t.Check("title hit stays on the text and the empty caption does not edit", titleHit && gapDrag && clipped && !host.TitleBox.IsKeyboardFocusWithin);
+            host.SetTitle("회의록");
             host.Editor.Document.Blocks.Clear();
             for (int line = 0; line < 40; line++)
                 host.Editor.Document.Blocks.Add(new Paragraph(new Run("줄 " + line + " 스크롤 유지")) { FontSize = 28 });

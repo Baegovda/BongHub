@@ -1,6 +1,6 @@
 # BongHub 인수인계
 
-지금 제품은 **BongHub 1.7.2** 하나예요. WPF 앱이고 실행 파일은 `BongHub.exe`예요. WinForms 3.4.x 소스(`app/`, `build.ps1`)는 저장소에 없어요. 메모·설정 파일과 `%LOCALAPPDATA%\BongHub`, `Local\BongHub_NotesWriter`는 3.4.x와 같이 읽혀요.
+지금 제품은 **BongHub 1.7.3** 하나예요. WPF 앱이고 실행 파일은 `BongHub.exe`예요. WinForms 3.4.x 소스(`app/`, `build.ps1`)는 저장소에 없어요. 메모·설정 파일과 `%LOCALAPPDATA%\BongHub`, `Local\BongHub_NotesWriter`는 3.4.x와 같이 읽혀요.
 
 이 문서가 절차의 기준이에요. 예전에 있던 `docs/HANDOFF.md`와 `docs/PORTING_PLAN.md`는 0.x 계획과 3.4.9 배포 기록이 섞여 있어서 뺐어요. 그 글은 git 기록에 있어요. 버전별 사용자 변화는 `CHANGELOG.md`예요.
 
@@ -70,8 +70,8 @@ dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Relea
 
 | 명령 | 결과 |
 |---|---|
-| `--smoketest` | **166 PASS**. 임시 폴더만 써요. `--data`와 `BONGHUB_DATA`는 무시해요. |
-| `--notetest --data <복사본>` | **154 PASS**. `data/` 원본이 아니라 복사본만 넘겨요. |
+| `--smoketest` | **168 PASS**. 임시 폴더만 써요. `--data`와 `BONGHUB_DATA`는 무시해요. |
+| `--notetest --data <복사본>` | **155 PASS**. `data/` 원본이 아니라 복사본만 넘겨요. |
 | PatchTests | `RESULT PASS` |
 | RichEditTests | 1×1 `\pngblip` 왕복 `RESULT PASS` |
 
@@ -94,7 +94,7 @@ dotnet run --project BongHub.RichEditTests\BongHub.RichEditTests.csproj -c Relea
 
 `.github/workflows/repo-check.yml`
 
-- `ubuntu-latest`: `check-versions.sh` (csproj `Version` / `FileVersion`, `AppEnv.Version`, `AppInfo.Version`이 **1.7.2** / **1.7.2.0**으로 같은지), PR에서 `sync:`가 아닌 `data/` 변경이 있으면 실패, PatchTests.
+- `ubuntu-latest`: `check-versions.sh` (csproj `Version` / `FileVersion`, `AppEnv.Version`, `AppInfo.Version`이 **1.7.3** / **1.7.3.0**으로 같은지), PR에서 `sync:`가 아닌 `data/` 변경이 있으면 실패, PatchTests.
 - `windows-latest`: 게시 후 스모크, 그다음 노트 시험. 노트 시험 단계는 `if: always()`라서 스모크가 실패해도 돌아요. 스모크는 120초 안에 프로세스가 끝나지 않으면 실패예요. 노트 시험은 `Start-Process -Wait -PassThru`로 기다리고 종료 코드로 판단해요. 로그는 `--out`과 exe 옆을 둘 다 봐요. 산출물은 `wpf-tests`로 올라가요.
 
 Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI가 담당이에요.
@@ -136,7 +136,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 
 `data/`는 클라우드가 `sync: <기기> yyyy-MM-dd HH:mm:ss`로 커밋해요. PR에서 그 접두사가 아닌 커밋이 `data/`를 바꾸면 CI가 실패해요.
 
-## 6. 버전 1.0.0–1.7.2
+## 6. 버전 1.0.0–1.7.3
 
 번호는 사용자에게 나간 WPF 앱이에요. 0.x는 `CHANGELOG.md`의 이식 단계예요.
 
@@ -163,6 +163,7 @@ Linux에서는 `BongHub.exe`가 실행되지 않아요. GUI 시험은 Windows CI
 | 1.7.0 | 맞닿은 변을 넘는 커서를 EDID mm의 같은 실물 위치로 옮겨요. 기본은 꺼짐이고, 후크는 없어요. | 162 / 154 |
 | 1.7.1 | 프로필 편집 창, 스위치는 누른 것만 움직이고, 현재 프로필 표시, 실물 배치에서 mm를 고쳐요. | 165 / 154 |
 | 1.7.2 | CCD 대상 이름은 420바이트예요. 모니터마다 경로 하나만 켜고, 장치 경로·EDID·GDI 이름 순으로 맞춰요. | 166 / 154 |
+| 1.7.3 | 메모 제목은 글자 너비만큼만 고치고, 빈 제목 막대는 창을 끌어요. | 168 / 155 |
 
 ## 7. 시험할 때 지키면 안 되는 것
 
