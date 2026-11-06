@@ -503,6 +503,6 @@
     "Enabled": true,
     "Hotkey": "Ctrl+Space",
     "Icon": 56,
-    "Items": [{"Name":"Anty","Path":"C:\\Users\\Revaptor_FX\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Anty.lnk"},{"Name":"ChatGPT","Path":"C:\\Users\\Revaptor_FX\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Chrome \uC571\\ChatGPT.lnk"}]
+    "Items": [{"Name":"Anty","Path":"C:\\Users\\Revaptor_FX\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Anty.lnk"}]
   }
 }
