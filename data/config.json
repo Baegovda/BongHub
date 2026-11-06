@@ -498,5 +498,11 @@
       "Fallback": "png",
       "PngInterlace": 0
     }
+  },
+  "AirDock": {
+    "Enabled": true,
+    "Hotkey": "Ctrl+Space",
+    "Icon": 56,
+    "Items": []
   }
 }
