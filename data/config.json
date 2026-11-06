@@ -502,7 +502,7 @@
   "AirDock": {
     "Enabled": true,
     "Hotkey": "Ctrl+Space",
-    "Icon": 56,
+    "Icon": 60,
     "Items": [{"Name":"Anty","Path":"C:\\Users\\Revaptor_FX\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Anty.lnk"}]
   }
 }
