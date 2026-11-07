@@ -503,6 +503,6 @@
     "Enabled": true,
     "Hotkey": "Ctrl+Space",
     "Icon": 60,
-    "Items": [{"Name":"Anty","Path":"C:\\Users\\Revaptor_FX\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Anty.lnk"},{"Name":"Google Chrome","Path":"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Google Chrome.lnk"}]
+    "Items": [{"Name":"Anty","Path":"C:\\Users\\Revaptor_FX\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Anty.lnk"},{"Name":"Google Chrome","Path":"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Google Chrome.lnk"},{"Name":"Dolphin Anty","Path":"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Dolphin Anty.lnk"}]
   }
 }
