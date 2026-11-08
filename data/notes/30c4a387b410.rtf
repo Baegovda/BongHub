@@ -29,6 +29,5 @@
 {\f2 {\ltrch - Save a PNG and read the file. Do not move the window onto another monitor to make capture easier.}\li0\ri0\sa45\sb0\fi0\ql\par}
 {\f2 {\ltrch Add-Type -AssemblyName System.Drawing $bmp = New-Object System.Drawing.Bitmap ($width), ($height) $g = [}{\ul\cf3\ltrch {\field{\*\fldinst { HYPERLINK "https://System.Drawing.Graphics" }}{\fldrslt {System.Drawing.Graphics}}}}{\ltrch ]::FromImage($bmp) $g.CopyFromScreen($x, $y, 0, 0, $bmp.Size) $}{\ul\cf3\ltrch {\field{\*\fldinst { HYPERLINK "https://bmp.Save" }}{\fldrslt {bmp.Save}}}}{\ltrch ('\\window_capture.png') $g.Dispose(); $bmp.Dispose()}\li0\ri0\sa45\sb0\fi0\ql\par}
 {\f2 {\ltrch 1. }{\ltrch Report only what those reads show: process state, rectangle, monitor match, and screenshot contents if you captured one. If a visual detail was not in the capture, do not invent it.}\li0\ri0\sa45\sb0\fi0\ql\par}
-{\f2 \li0\ri0\sa45\sb0\fi0\ql\par}
 }
 }
