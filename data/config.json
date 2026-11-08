@@ -102,7 +102,7 @@
   "Kakao": {
     "AdBlock": true,
     "Compact": true,
-    "Dark": false,
+    "Dark": true,
     "AutoApply": true
   },
   "GlobalRules": [
