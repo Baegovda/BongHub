@@ -504,6 +504,6 @@
     "Enabled": true,
     "Hotkey": "Ctrl+Space",
     "Icon": 60,
-    "Items": [{"Name":"Google Chrome","Path":"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Google Chrome.lnk"},{"Name":"Dolphin Anty","Path":"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Dolphin Anty.lnk"}]
+    "Items": [{"Name":"Google Chrome","Path":"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Google Chrome.lnk"},{"Name":"Dolphin Anty","Path":"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Dolphin Anty.lnk"},{"Name":"BongHub","Path":"C:\\Users\\Revaptor_FX\\BongHub\\BongHub.exe"}]
   }
 }
