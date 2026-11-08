@@ -1,4 +1,4 @@
-{\rtf1\ansi\ansicpg1252\uc1\htmautsp\deff2{\fonttbl{\f0\fcharset0 Times New Roman;}{\f2\fcharset0 Segoe UI Variable Text, Segoe UI, Malgun Gothic;}}{\colortbl\red0\green0\blue0;\red255\green255\blue255;}\loch\hich\dbch\pard\plain\ltrpar\itap0{\lang1033\fs21\f2\ql{\f2 {\ltrch STANDING WORK ORDER \emdash  OBEY THIS BEFORE ANYTHING ELSE}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\rtf1\ansi\ansicpg1252\uc1\htmautsp\deff2{\fonttbl{\f0\fcharset0 Times New Roman;}{\f2\fcharset0 Segoe UI Variable Text, Segoe UI, Malgun Gothic;}}{\colortbl\red0\green0\blue0;\red255\green255\blue255;\red0\green0\blue255;\red109\green109\blue109;}\loch\hich\dbch\pard\plain\ltrpar\itap0{\lang1033\fs21\f2\ql{\f2 {\ltrch STANDING WORK ORDER \emdash  OBEY THIS BEFORE ANYTHING ELSE}\li0\ri0\sa45\sb0\fi0\ql\par}
 {\f2 {\ltrch Act first. Report later. Do not wait to be told what to do next. Find the next remaining work yourself and keep going.}\li0\ri0\sa45\sb0\fi0\ql\par}
 {\f2 {\ltrch If you are blocked, do something else immediately. Sitting idle because one path is stuck is unacceptable. Switch to another remaining task at once. Never stop mid-work to wait for permission, praise, or a new instruction.}\li0\ri0\sa45\sb0\fi0\ql\par}
 {\f2 {\ltrch Do not do meaningless re-verification. Do not re-check work that is already proven just to look busy. Do not waste tokens on recaps, ceremony, duplicated reads, or \ldblquote just to be sure\rdblquote  loops that change nothing.}\li0\ri0\sa45\sb0\fi0\ql\par}
@@ -7,5 +7,24 @@
 {\f2 {\ltrch Open the viewer yourself. Look at it yourself. Give yourself feedback from what you actually see, then develop from that. Do not ask the user to click around and describe the screen for you.}\li0\ri0\sa45\sb0\fi0\ql\par}
 {\f2 {\ltrch This order stays in force until the user explicitly changes it. Keep chaining remaining work without being prompted.}\li0\ri0\sa45\sb0\fi0\ql\par}
 {\f2 \li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch \u-12556?\u-11032?\u-11984? \u-14560?\u-13944? \u-17367?\u-15651? \u-16212?\u-14679?\u-10920?\u-13888?\u-17968?\u-21280? \u-17359?\u-21000?\u-18564?\u-14668?\u-19236?\u-14896?\u-16100? \u-14224?\u-14447? \u-10892?\u-21328?\u-10920?\u-18564?\u-19820? \u-11004?\u-18324?\u-11004?\u-11592?}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch Windows inspection without Computer Use / GUI driving}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch Do not use Computer Use, mouse movement, clicks, keyboard send, SetForegroundWindow, ShowWindow, SetWindowPos, or SendKeys just to look at a window. Do not activate, move, resize, or minimize/restore a window to inspect it.}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch 1) Identify the process with no GUI:}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch - Use Get-Process / Win32_Process.}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch - Record PID, start time, working set, executable path, and command line.}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch - If you need a file version, read it from the executable path.}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch 2) Read the window rectangle without activating it:}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch - Take MainWindowHandle (or find the HWND some other read-only way).}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch - Call user32 GetWindowRect only. This is a read.}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch - Report Left, Top, Right, Bottom (and width/height).}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch - Compare that rectangle to the monitor layout if you need to know which display it is on.}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch Add-Type @" using System; using System.Runtime.InteropServices; public static class WinRect \{ [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [StructLayout(LayoutKind.Sequential)] public struct RECT \{ public int Left; public int Top; public int Right; public int Bottom; \} \} "@ $p = Get-Process -Id $r = New-Object WinRect+RECT [void][WinRect]::GetWindowRect($p.MainWindowHandle, [ref]$r) $r}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch 3) If you need to see the pixels, capture that rectangle without touching the window:}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch - Preferred: System.Drawing CopyFromScreen using the rectangle from GetWindowRect. The window must already be visible on a monitor. This does not focus it.}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch - Fallback: user32 PrintWindow on the same HWND. Some GPU-rendered windows come out black; if so, say that and keep the CopyFromScreen image.}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch - Save a PNG and read the file. Do not move the window onto another monitor to make capture easier.}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch Add-Type -AssemblyName System.Drawing $bmp = New-Object System.Drawing.Bitmap ($width), ($height) $g = [}{\ul\cf3\ltrch {\field{\*\fldinst { HYPERLINK "https://System.Drawing.Graphics" }}{\fldrslt {System.Drawing.Graphics}}}}{\ltrch ]::FromImage($bmp) $g.CopyFromScreen($x, $y, 0, 0, $bmp.Size) $}{\ul\cf3\ltrch {\field{\*\fldinst { HYPERLINK "https://bmp.Save" }}{\fldrslt {bmp.Save}}}}{\ltrch ('\\window_capture.png') $g.Dispose(); $bmp.Dispose()}\li0\ri0\sa45\sb0\fi0\ql\par}
+{\f2 {\ltrch 1. }{\ltrch Report only what those reads show: process state, rectangle, monitor match, and screenshot contents if you captured one. If a visual detail was not in the capture, do not invent it.}\li0\ri0\sa45\sb0\fi0\ql\par}
 }
 }
