@@ -131,7 +131,8 @@
     "FontSize": 11,
     "Opacity": 80,
     "Hotkey": "Ctrl+Alt+N",
-    "OpenOnStartup": true
+    "OpenOnStartup": true,
+    "ListHotkey": "Shift+Space"
   },
   "Desk": {
     "AutoSave": true,
