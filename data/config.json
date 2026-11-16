@@ -454,7 +454,7 @@
       "Custom": []
     },
     "Peek": {
-      "Enabled": true,
+      "Enabled": false,
       "Hotkey": "Space",
       "CloseOnFocusLoss": true,
       "RenderHtml": true
